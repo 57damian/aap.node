@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Detalle Orden de Compra</title>
+</head>
+<body>
+
+<h2>Orden de Compra</h2>
+
+<h3>Resumen</h3>
+<div id="resumen"></div>
+
+<hr>
+
+<h3>Detalle de productos</h3>
+
+<h4>Agregar ítem</h4>
+<form id="itemForm">
+  <select id="ficha_id" required>
+  <option value="">-- Seleccionar modelo --</option>
+  </select>
+  <input type="number" id="cantidad_pedida" placeholder="Cantidad" required />
+  <button type="submit">Agregar</button>
+</form>
+
+<table border="1">
+  <thead>
+    <tr>
+      <th>Modelo</th>
+      <th>Pedido</th>
+      <th>Entregado</th>
+      <th>Pendiente</th>
+    </tr>
+  </thead>
+  <tbody id="detalle"></tbody>
+</table>
+
+<hr>
+
+<h3>Registrar entrega parcial</h3>
+
+<form id="entregaForm">
+
+  <table border="1">
+    <thead>
+      <tr>
+        <th>Modelo</th>
+        <th>Pendiente</th>
+        <th>Entregar ahora</th>
+        <th>Incluir</th>
+      </tr>
+    </thead>
+    <tbody id="entregaItems">
+      <!-- filas dinámicas -->
+    </tbody>
+  </table>
+
+  <br>
+  <button type="button" id="btnRegistrarEntrega">Registrar entrega</button>
+</form>
+
+
+<hr>
+
+<h3>Facturas y pagos</h3>
+<table border="1">
+  <thead>
+    <tr>
+      <th>Factura</th>
+      <th>Fecha</th>
+      <th>Total</th>
+      <th>Cobrado</th>
+    </tr>
+  </thead>
+  <tbody id="facturas"></tbody>
+</table>
+
+<br>
+<button id="btnVolver">Volver</button>
+
+<!-- ⚠️ scripts SOLO UNA VEZ y AL FINAL -->
+<script src="js/api.js"></script>
+<script src="js/oc_detalle.js"></script>
+
+</body>
+</html>

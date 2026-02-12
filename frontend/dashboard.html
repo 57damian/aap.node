@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: Arial, sans-serif; 
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 40px;
+      text-align: center;
+      font-size: 32px;
+    }
+    .menu {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 20px;
+      margin-top: 30px;
+    }
+    .menu button {
+      padding: 25px 20px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+    .menu button:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+      background: linear-gradient(135deg, #5568d3 0%, #653ea0 100%);
+    }
+    .menu button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .logout-btn {
+      margin-top: 40px;
+      padding: 15px 40px;
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: block;
+      margin: 40px auto 0;
+    }
+    .logout-btn:hover {
+      background: #c82333;
+      transform: scale(1.05);
+    }
+    .user-info {
+      text-align: right;
+      margin-bottom: 20px;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="user-info" id="userInfo"></div>
+    <h1>🎛️ Dashboard - Gestión de Transformadores</h1>
+
+    <div class="menu">
+      <button data-roles="admin,control" onclick="go('ficha.html')">
+        📋 Fichas Técnicas
+      </button>
+
+      <button data-roles="admin,control" onclick="go('oc.html')">
+        📦 Órdenes de Compra
+      </button>
+
+      <button data-roles="admin,control" onclick="go('ventas.html')">
+        🚚 Ventas / Entregas
+      </button>
+
+      <button data-roles="admin,control" onclick="go('clientes.html')">
+        👥 Clientes
+      </button>
+
+      <button data-roles="admin,control" onclick="go('reportes.html')">
+        📊 Reportes
+      </button>
+
+      <button data-roles="admin,operario" onclick="go('produccion.html')">
+        ⚙️ Producción
+      </button>
+    </div>
+
+    <button data-roles="admin" onclick="go('precios.html')">
+  💲 Gestión de Precios
+    </button>
+
+
+    <button class="logout-btn" onclick="logout()">🚪 Salir</button>
+  </div>
+
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

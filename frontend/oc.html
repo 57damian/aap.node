@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Órdenes de Compra</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+    .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+    h1 { margin-bottom: 20px; }
+    form { margin-bottom: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .full-width { grid-column: span 3; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input, select, button { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; }
+    button { background: #007bff; color: white; border: none; cursor: pointer; }
+    ul { list-style: none; }
+    li { padding: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+    .btn-warning { background: #ffc107; color: black; padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📋 Órdenes de Compra</h1>
+
+    <form id="ocForm">
+      <div class="full-width">
+        <label for="cliente_id">Cliente *</label>
+        <select id="cliente_id" required>
+          <option value="">-- Seleccionar --</option>
+        </select>
+      </div>
+      <div>
+        <label for="numero_oc">N° OC *</label>
+        <input type="text" id="numero_oc" required>
+      </div>
+      <div>
+        <label for="fecha_oc">Fecha *</label>
+        <input type="date" id="fecha_oc" required>
+      </div>
+      <div class="full-width">
+        <button type="submit">➕ Crear OC</button>
+      </div>
+    </form>
+
+    <h2>Lista de OCs</h2>
+    <ul id="listaOC"></ul>
+
+    <div style="margin-top: 20px;">
+      <button class="btn-warning" onclick="window.location.href='dashboard.html'">🏠 Volver</button>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/oc.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Gestión de Precios</title>
+</head>
+<body>
+
+<h2>Gestión de Precios</h2>
+
+<h3>Aumento por Modelo (%)</h3>
+
+<select id="modeloSelect"></select>
+<input type="number" id="porcentaje" placeholder="% aumento" />
+<input type="text" id="observaciones" placeholder="Observaciones" />
+<button id="btnAumentar">Aplicar aumento</button>
+
+
+<hr>
+<br>
+
+<table border="1">
+  <thead>
+    <tr>
+      <th>Modelo</th>
+      <th>Precio USD</th>
+      <th>Fecha desde</th>
+      <th>Acción</th>
+    </tr>
+  </thead>
+  <tbody id="tablaPrecios"></tbody>
+</table>
+
+<br>
+<hr>
+
+<h3>Historial de Precios</h3>
+
+<table border="1">
+  <thead>
+    <tr>
+      <th>Precio USD</th>
+      <th>Fecha</th>
+      <th>Observaciones</th>
+    </tr>
+  </thead>
+  <tbody id="tablaHistorial"></tbody>
+</table>
+
+
+<hr>
+
+<br>
+<button onclick="window.location.href='dashboard.html'">Volver</button>
+
+<script src="js/api.js"></script>
+<script src="js/precios.js"></script>
+
+</body>
+</html>
