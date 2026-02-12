@@ -46,33 +46,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // =====================
 async function cargarClientes() {
   try {
-    console.log('📥 Cargando clientes...');
-    const response = await fetch('http://localhost:3000/clientes', {
-      headers: { 'rol': localStorage.getItem('rol') }
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw error;
-    }
-    
-    const clientes = await response.json();
-    console.log('✅ Clientes cargados:', clientes.length);
-    
+    const clientes = await apiFetch('/clientes');
     const tbody = document.getElementById('clientesList');
     tbody.innerHTML = '';
 
-    if (clientes.length === 0) {
+    if (!clientes.length) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="6" style="text-align: center; padding: 30px;">
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
-              <div style="font-size: 48px;">👥</div>
-              <p style="color: #999; font-size: 16px;">No hay clientes creados aún</p>
-              <button class="btn-primary" onclick="showTab('crear', event)" style="padding: 10px 30px;">
-                ➕ Crear Primer Cliente
-              </button>
-            </div>
+          <td colspan="6" style="text-align:center;padding:20px;">
+            No hay clientes creados
           </td>
         </tr>
       `;
@@ -81,26 +63,29 @@ async function cargarClientes() {
 
     clientes.forEach(cliente => {
       const tr = document.createElement('tr');
-      
       tr.innerHTML = `
-        <td><strong>#${cliente.id}</strong></td>
-        <td><strong>${cliente.nombre}</strong></td>
+        <td>#${cliente.id}</td>
+        <td>${cliente.nombre}</td>
         <td>${cliente.cuit || '-'}</td>
         <td>${cliente.telefono || '-'}</td>
         <td>${getFormaPagoLabel(cliente.forma_pago)}</td>
         <td>
-          <button class="btn-info" onclick="verDetalles(${cliente.id})" style="padding: 6px 12px; margin-right: 5px;">👁️ Ver</button>
-          <button class="btn-warning" onclick="editarCliente(${cliente.id})" style="padding: 6px 12px; margin-right: 5px;">✏️ Editar</button>
-          ${rolPermiteEliminar() ? `<button class="btn-danger" onclick="confirmarEliminar(${cliente.id}, '${cliente.nombre.replace(/'/g, "\\'")}')">🗑️ Eliminar</button>` : ''}
+          <button onclick="verDetalles(${cliente.id})">Ver</button>
+          <button onclick="editarCliente(${cliente.id})">Editar</button>
+          ${rolPermiteEliminar() ? 
+            `<button onclick="confirmarEliminar(${cliente.id}, '${cliente.nombre}')">Eliminar</button>` 
+            : ''
+          }
         </td>
       `;
       tbody.appendChild(tr);
     });
+
   } catch (err) {
-    console.error('❌ Error cargando clientes:', err);
-    showAlert('Error al cargar clientes: ' + (err.error || err.message || 'Error desconocido'), 'error');
+    showAlert(err.error || err.message || 'Error cargando clientes', 'error');
   }
 }
+
 
 // =====================
 // FUNCIÓN AUXILIAR: Obtener label de forma de pago
@@ -226,44 +211,18 @@ function confirmarEliminar(id, nombre) {
 // =====================
 async function eliminarCliente(id) {
   try {
-    const rol = localStorage.getItem('rol');
-    if (rol !== 'admin' && rol !== 'control') {
-      showAlert('⚠️ Solo administradores y control pueden eliminar clientes', 'error');
-      return;
-    }
-    
-    console.log('🗑️ Intentando eliminar cliente ID:', id, 'con rol:', rol);
-    
-    const response = await fetch(`http://localhost:3000/clientes/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'rol': rol
-      }
+    await apiFetch(`/clientes/${id}`, {
+      method: 'DELETE'
     });
-    
-    console.log('📥 Respuesta DELETE status:', response.status);
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-      throw new Error(errorData.error || `Error ${response.status}`);
-    }
-    
-    const result = await response.json();
-    console.log('✅ Cliente eliminado:', result);
-    
-    showAlert('✅ Cliente eliminado correctamente', 'success');
-    
-    // Recargar lista con pequeño delay para UX
-    setTimeout(() => {
-      cargarClientes();
-    }, 300);
-    
+
+    showAlert('Cliente eliminado correctamente', 'success');
+    cargarClientes();
+
   } catch (err) {
-    console.error('❌ Error al eliminar:', err);
-    showAlert('❌ Error al eliminar: ' + (err.message || 'Verifica permisos'), 'error');
+    showAlert(err.error || err.message || 'Error al eliminar', 'error');
   }
 }
+
 // =====================
 // SUBMIT FORMULARIO
 // =====================

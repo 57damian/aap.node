@@ -5,37 +5,34 @@ if (!rol) {
 }
 
 // =====================
-// IR A PÁGINA
+// NAVEGACIÓN
 // =====================
 function go(page) {
   window.location.href = page;
 }
 
-// =====================
-// LOGOUT
-// =====================
 function logout() {
   localStorage.clear();
   window.location.href = 'index.html';
 }
 
 // =====================
-// INICIALIZAR MENÚ ACTIVO (OPCIONAL)
+// INICIALIZAR MENÚ Y ROLES
 // =====================
 document.addEventListener('DOMContentLoaded', () => {
-  // Si estamos en una página específica, marcar el botón correspondiente
   const currentPage = window.location.pathname.split('/').pop();
-  
+
+  // Activar botón actual
   document.querySelectorAll('.navbar-menu button').forEach(btn => {
     const targetPage = btn.getAttribute('onclick')?.match(/go\('([^']+)'/)?.[1];
-    if (targetPage && targetPage === currentPage) {
+    if (targetPage === currentPage) {
       btn.classList.add('active');
     } else {
       btn.classList.remove('active');
     }
   });
-  
-  // Ocultar botones según rol
+
+  // Ocultar por rol
   document.querySelectorAll('[data-roles]').forEach(btn => {
     const roles = btn.dataset.roles.split(',');
     if (!roles.includes(rol)) {

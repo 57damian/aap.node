@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Ventas / Entregas</title>
+</head>
+<body>
+
+<h2>🚚 Ventas / Entregas</h2>
+
+<div>
+  <label>Cliente:</label>
+  <select id="filtroCliente">
+    <option value="">Todos</option>
+  </select>
+
+  <button onclick="cargarVentas()">Filtrar</button>
+</div>
+
+<hr>
+
+<table border="1" width="100%">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Fecha</th>
+      <th>Cliente</th>
+      <th>OC</th>
+      <th>Factura</th>
+      <th>Estado</th>
+      <th>Acción</th>
+    </tr>
+  </thead>
+  <tbody id="tablaVentas"></tbody>
+</table>
+
+<br>
+<button onclick="window.location.href='dashboard.html'">
+  Volver
+</button>
+
+<script src="js/api.js"></script>
+<script src="js/ventas.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Detalle Venta</title>
+</head>
+<body>
+
+<h2>📦 Detalle de Entrega</h2>
+
+<div id="cabecera"></div>
+
+<hr>
+
+<h3>Items entregados</h3>
+<table border="1" width="100%">
+  <thead>
+    <tr>
+      <th>Modelo</th>
+      <th>Cantidad</th>
+      <th>Precio USD</th>
+      <th>Precio Pesos</th>
+    </tr>
+  </thead>
+  <tbody id="tablaItems"></tbody>
+</table>
+
+<hr>
+
+<h3>📄 Remito</h3>
+<div>
+  Número: <input type="text" id="remito_numero"><br><br>
+  Fecha: <input type="date" id="remito_fecha"><br><br>
+  Observaciones:<br>
+  <textarea id="remito_obs" rows="3" cols="40"></textarea><br><br>
+  <button onclick="guardarRemito()">Guardar Remito</button>
+</div>
+
+<hr>
+
+<div id="facturacion"></div>
+
+<br>
+<button onclick="window.location.href='ventas.html'">Volver</button>
+
+<script src="js/api.js"></script>
+<script src="js/venta_detalle.js"></script>
+
+</body>
+</html>
