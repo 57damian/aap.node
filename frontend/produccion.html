@@ -1,0 +1,174 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Produccion - Transformadores</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+</div>
+
+<div class="container">
+    <div class="header">
+      <h1 class="header-title">Gestion de Produccion y Stock</h1>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('registrar', event)">Registrar Produccion</button>
+      <button class="tab" onclick="showTab('stock', event)">Stock Actual</button>
+      <button class="tab" onclick="showTab('historial', event)">Historial</button>
+      <!-- El tab de Reporte solo visible para admin/control -->
+      <button class="tab" onclick="showTab('reporte', event)" data-roles="admin,control">Reporte Produccion vs Entregas</button>
+    </div>
+
+    <!-- TAB REGISTRAR PRODUCCION -->
+    <div id="registrar" class="tab-content active">
+      <h2>Registrar Nueva Produccion</h2>
+      
+      <form id="produccionForm" class="form-grid">
+        <div class="form-group">
+          <label>Modelo *</label>
+          <select id="ficha_id" required>
+            <option value="">-- Seleccionar Modelo --</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Cantidad *</label>
+          <input type="number" id="cantidad" min="1" required placeholder="Ej: 10">
+        </div>
+
+        <div class="form-group">
+          <label>Fecha de Produccion</label>
+          <input type="date" id="fecha_produccion">
+        </div>
+
+        <div class="form-group">
+          <label>Observaciones</label>
+          <textarea id="observaciones" rows="3" placeholder="Lote, observaciones, etc..."></textarea>
+        </div>
+
+        <div class="produccion-actions">
+          <button type="submit" class="btn btn-primary">Registrar Produccion</button>
+        </div>
+      </form>
+
+      <div id="alert" class="alert"></div>
+    </div>
+
+    <!-- TAB STOCK ACTUAL -->
+    <div id="stock" class="tab-content">
+      <h2>Stock Actual</h2>
+
+      <div class="filtros produccion-toolbar">
+        <select id="filtroStockCliente">
+          <option value="">Todos los modelos</option>
+          <option value="genericos">Solo genericos</option>
+        </select>
+        <select id="filtroStockEstado">
+          <option value="">Todos</option>
+          <option value="con_stock">Con stock</option>
+          <option value="sin_stock">Sin stock</option>
+        </select>
+        <button onclick="cargarStock()" class="btn-info">Filtrar</button>
+      </div>
+
+      <div id="stockContainer" class="stock-grid">
+        <!-- Se carga dinamicamente -->
+        <div>
+          Cargando stock...
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB HISTORIAL -->
+    <div id="historial" class="tab-content">
+      <h2>Historial de Produccion</h2>
+
+      <div class="filtros produccion-toolbar">
+        <select id="filtroModelo">
+          <option value="">Todos los modelos</option>
+        </select>
+        <input type="date" id="filtroDesde" placeholder="Desde">
+        <input type="date" id="filtroHasta" placeholder="Hasta">
+        <button onclick="cargarHistorial()" class="btn-info">Buscar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Modelo</th>
+            <th>Cantidad</th>
+            <th>Registrado por</th>
+            <th>Observaciones</th>
+          </tr>
+        </thead>
+        <tbody id="historialTable">
+          <tr>
+            <td colspan="5">
+              Cargando historial...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- TAB REPORTE -->
+    <div id="reporte" class="tab-content">
+      <h2>Reporte Produccion vs Entregas</h2>
+
+      <div class="filtros produccion-toolbar" data-roles="admin,control">
+        <input type="date" id="reporteDesde" placeholder="Desde">
+        <input type="date" id="reporteHasta" placeholder="Hasta">
+        <button onclick="cargarReporte()" class="btn-info">Generar Reporte</button>
+      </div>
+
+      <table data-roles="admin,control">
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th>Producido (periodo)</th>
+            <th>Entregado (periodo)</th>
+            <th>Producido (total)</th>
+            <th>Entregado (total)</th>
+            <th>Stock Actual</th>
+          </tr>
+        </thead>
+        <tbody id="reporteTable">
+          <tr>
+            <td colspan="6">
+              Seleccione un periodo para ver el reporte
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <script src="js/api.js"></script>
+  <script src="js/produccion.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
+
+

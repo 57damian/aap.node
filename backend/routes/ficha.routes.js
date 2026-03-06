@@ -2,17 +2,20 @@ const upload = require('../middlewares/uploadModelo');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const authorize = require('../middlewares/authorize');
+const { verificarToken, authorize } = require('../middlewares/auth');
 
-/* CREATE */
-/* CREATE */
+router.use(verificarToken);
+
+/* =========================
+   CREATE - Crear nueva ficha
+========================= */
 router.post('/', authorize(['admin', 'control', 'operario']), upload.single('foto'), async (req, res) => {
   const { 
     modelo,
     cliente_id,
     voltaje_entrada,
     voltaje_salida,
-    tipo_carretel,  // ✅ Cambiado de "carretel" a "tipo_carretel"
+    tipo_carretel,
     laminacion,
     observaciones
   } = req.body;
@@ -41,7 +44,7 @@ router.post('/', authorize(['admin', 'control', 'operario']), upload.single('fot
       [
         modelo,
         cliente_id || null,
-        tipo_carretel,  // ✅ Usar la variable destructurada
+        tipo_carretel,
         foto,
         voltaje_entrada,
         voltaje_salida,
@@ -65,20 +68,21 @@ router.post('/', authorize(['admin', 'control', 'operario']), upload.single('fot
 
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('Error creando ficha:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-/* READ ALL */
-router.get('/', authorize(['admin', 'control', 'operario']), async (req, res) => {
+/* =========================
+   READ ALL - Listar todas las fichas
+========================= */
+router.get('/', authorize(['admin', 'control', 'operario', 'empleado']), async (req, res) => {
   const { cliente_id } = req.query;
 
   try {
     let result;
 
     if (cliente_id) {
-      // Fichas genéricas + del cliente específico
       result = await pool.query(
         `SELECT * FROM ficha_transformador
          WHERE cliente_id IS NULL OR cliente_id = $1
@@ -86,7 +90,6 @@ router.get('/', authorize(['admin', 'control', 'operario']), async (req, res) =>
         [cliente_id]
       );
     } else {
-      // ✅ Mostrar TODAS las fichas (genéricas + específicas)
       result = await pool.query(
         `SELECT * FROM ficha_transformador
          ORDER BY modelo`
@@ -95,28 +98,38 @@ router.get('/', authorize(['admin', 'control', 'operario']), async (req, res) =>
 
     res.json(result.rows);
   } catch (err) {
+    console.error('Error listando fichas:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-/* READ ONE 
-router.get('/:id',authorize(['admin', 'control', 'operario']), async (req, res) => {
+/* =========================
+   READ ONE - Obtener una ficha por ID
+========================= */
+router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM ficha_transformador WHERE id = $1',
       [req.params.id]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'No encontrado' });
+    
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Ficha no encontrada' });
+    }
+    
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('Error obteniendo ficha:', err);
     res.status(500).json({ error: err.message });
   }
-});*/
+});
 
-/* UPDATE */
+/* =========================
+   UPDATE - Actualizar ficha
+========================= */
 router.put('/:id', authorize(['admin', 'control', 'operario']), upload.single('foto'), async (req, res) => {
   try {
-    // ✅ Obtener la ficha actual para mantener la foto si no se cambia
+    // Obtener la ficha actual para mantener la foto si no se cambia
     const fichaActual = await pool.query(
       'SELECT foto_modelo FROM ficha_transformador WHERE id = $1',
       [req.params.id]
@@ -142,7 +155,7 @@ router.put('/:id', authorize(['admin', 'control', 'operario']), upload.single('f
         req.body.modelo,
         req.body.cliente_id || null,
         req.body.tipo_carretel,
-        nuevaFoto,  // ✅ Mantener foto anterior si no se cambia
+        nuevaFoto,
         req.body.voltaje_entrada,
         req.body.voltaje_salida,
         req.body.amperaje_entrada,
@@ -166,41 +179,36 @@ router.put('/:id', authorize(['admin', 'control', 'operario']), upload.single('f
 
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('Error actualizando ficha:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-/* DELETE */
-/* DELETE - CORREGIDO */
+/* =========================
+   DELETE - Eliminar ficha
+========================= */
 router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
   try {
-    // ✅ Validar y convertir ID a entero
     const id = parseInt(req.params.id, 10);
     
     if (isNaN(id) || id <= 0) {
-      console.error('❌ DELETE ficha: ID inválido', req.params.id);
       return res.status(400).json({ error: 'ID inválido' });
     }
-
-    console.log(`🗑️ DELETE ficha ID: ${id} (tipo: ${typeof id})`);
     
     const result = await pool.query(
       'DELETE FROM ficha_transformador WHERE id = $1',
       [id]
     );
 
-    console.log(`✅ DELETE ficha: rowCount = ${result.rowCount}`);
-    
     if (result.rowCount === 0) {
-      console.warn(`⚠️  No se encontró ficha con ID ${id} para eliminar`);
       return res.status(404).json({ error: 'Ficha no encontrada' });
     }
 
     res.json({ ok: true, deletedId: id });
   } catch (err) {
-    console.error('❌ Error DELETE ficha:', err);
+    console.error('Error eliminando ficha:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
 module.exports = router;

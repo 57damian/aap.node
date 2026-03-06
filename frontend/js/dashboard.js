@@ -1,30 +1,57 @@
-const rol = localStorage.getItem('rol');
+﻿const dashboardUsuario = (() => {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('usuario');
 
-if (!rol) {
-  window.location.href = 'index.html';
-}
+  if (!token || !userStr) {
+    window.location.href = 'login.html';
+    return null;
+  }
 
-// =====================
-// NAVEGACIÓN
-// =====================
-function go(page) {
-  window.location.href = page;
-}
+  try {
+    const usuario = JSON.parse(userStr);
+    
+    // Verificar si es empleado intentando acceder al dashboard
+    const currentPage = window.location.pathname.split('/').pop();
+    if (usuario.rol === 'empleado' && currentPage === 'dashboard.html') {
+      // Redirigir empleados a producción
+      window.location.href = 'produccion.html';
+      return null;
+    }
+    
+    return usuario;
+  } catch (error) {
+    window.location.href = 'login.html';
+    return null;
+  }
+})();
 
 function logout() {
-  localStorage.clear();
-  window.location.href = 'index.html';
+  localStorage.removeItem('token');
+  localStorage.removeItem('usuario');
+  localStorage.removeItem('rol');
+  localStorage.removeItem('usuario_id');
+  window.location.href = 'login.html';
 }
 
-// =====================
-// INICIALIZAR MENÚ Y ROLES
-// =====================
+function verificarPermisosUsuario() {
+  if (!dashboardUsuario) return;
+
+  document.querySelectorAll('[data-roles]').forEach((elemento) => {
+    const rolesPermitidos = (elemento.getAttribute('data-roles') || '').split(',');
+    if (!rolesPermitidos.includes(dashboardUsuario.rol)) {
+      elemento.classList.add('is-hidden');
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const currentPage = window.location.pathname.split('/').pop();
 
-  // Activar botón actual
-  document.querySelectorAll('.navbar-menu button').forEach(btn => {
-    const targetPage = btn.getAttribute('onclick')?.match(/go\('([^']+)'/)?.[1];
+  document.querySelectorAll('.navbar-menu button').forEach((btn) => {
+    const onClick = btn.getAttribute('onclick') || '';
+    const match = onClick.match(/window\.location\.href='([^']+)'/);
+    const targetPage = match ? match[1] : '';
+
     if (targetPage === currentPage) {
       btn.classList.add('active');
     } else {
@@ -32,11 +59,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Ocultar por rol
-  document.querySelectorAll('[data-roles]').forEach(btn => {
-    const roles = btn.dataset.roles.split(',');
-    if (!roles.includes(rol)) {
-      btn.style.display = 'none';
-    }
-  });
+  verificarPermisosUsuario();
 });
+

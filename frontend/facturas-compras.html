@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facturas de Compra | Sistema ERP</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/modal-fix.css">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-brand">
+                <i class="fas fa-industry"></i>
+                <span>Sistema ERP</span>
+            </div>
+            <div class="navbar-menu">
+                <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='ficha.html'">
+                    <i class="fas fa-file-alt"></i> Fichas Técnicas
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='oc.html'">
+                    <i class="fas fa-clipboard-list"></i> Órdenes de Compra
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='ventas.html'">
+                    <i class="fas fa-chart-bar"></i> Ventas
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='clientes.html'">
+                    <i class="fas fa-user-tie"></i> Clientes
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">
+                    <i class="fas fa-truck"></i> Proveedores
+                </button>
+                <button data-roles="admin,control" class="active" onclick="window.location.href='facturas-compras.html'">
+                    <i class="fas fa-file-invoice"></i> Facturas
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">
+                    <i class="fas fa-money-bill"></i> Pagos
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='stock.html'">
+                    <i class="fas fa-boxes"></i> Stock
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='reportes.html'">
+                    <i class="fas fa-file-pdf"></i> Reportes
+                </button>
+                <button data-roles="admin,control,operario,empleado" onclick="window.location.href='produccion.html'">
+                    <i class="fas fa-industry"></i> Producción
+                </button>
+                <button data-roles="admin" onclick="window.location.href='usuarios.html'">
+                    <i class="fas fa-users-cog"></i> Usuarios
+                </button>
+                <button data-roles="admin" onclick="window.location.href='precios.html'">
+                    <i class="fas fa-tags"></i> Precios
+                </button>
+            </div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <span id="userName">Usuario</span>
+                    <button onclick="logout()" class="btn-logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container-fluid">
+            <!-- Header -->
+            <div class="page-header">
+                <div class="page-title">
+                    <h1><i class="fas fa-file-invoice"></i> Facturas de Compra</h1>
+                    <p>Gestión de facturas de compra a proveedores</p>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-primary" onclick="abrirModalFactura()">
+                        <i class="fas fa-plus"></i> Nueva Factura
+                    </button>
+                </div>
+            </div>
+
+            <!-- Estadísticas -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-file-invoice"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label">Total Facturas</div>
+                        <div class="stat-value" id="totalFacturas">0</div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label">Pendientes</div>
+                        <div class="stat-value" id="facturasPendientes">0</div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label">Pagadas</div>
+                        <div class="stat-value" id="facturasPagadas">0</div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-dollar-sign"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label">Deuda Total</div>
+                        <div class="stat-value" id="deudaTotal">$0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div class="filter-section">
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label for="filtroProveedor">Proveedor</label>
+                        <select id="filtroProveedor" class="form-control">
+                            <option value="">Todos los proveedores</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filtroEstado">Estado</label>
+                        <select id="filtroEstado" class="form-control">
+                            <option value="">TODOS</option>
+                            <option value="PENDIENTE">PENDIENTE</option>
+                            <option value="PAGADA">PAGADA</option>
+                            <option value="ANULADA">ANULADA</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filtroFechaDesde">Fecha Desde</label>
+                        <input type="date" id="filtroFechaDesde" class="form-control">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filtroFechaHasta">Fecha Hasta</label>
+                        <input type="date" id="filtroFechaHasta" class="form-control">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filtroBusqueda">Buscar</label>
+                        <input type="text" id="filtroBusqueda" class="form-control" placeholder="N° Factura o CAE">
+                    </div>
+                    
+                    <div class="filter-actions">
+                        <button class="btn btn-outline-secondary" onclick="limpiarFiltros()">
+                            <i class="fas fa-eraser"></i> Limpiar
+                        </button>
+                        <button class="btn btn-primary" onclick="buscarFacturas()">
+                            <i class="fas fa-search"></i> Buscar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs-container">
+                <ul class="nav nav-tabs" id="facturasTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="lista-tab" data-bs-toggle="tab" data-bs-target="#lista" type="button" role="tab">
+                            <i class="fas fa-list"></i> Lista
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="proximas-tab" data-bs-toggle="tab" data-bs-target="#proximas" type="button" role="tab">
+                            <i class="fas fa-clock"></i> Próximas a Vencer
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="vencidas-tab" data-bs-toggle="tab" data-bs-target="#vencidas" type="button" role="tab">
+                            <i class="fas fa-exclamation-triangle"></i> Vencidas
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="facturasTabsContent">
+                    <!-- Tab Lista -->
+                    <div class="tab-pane fade show active" id="lista" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="tablaFacturas">
+                                <thead>
+                                    <tr>
+                                        <th>Factura</th>
+                                        <th>Proveedor</th>
+                                        <th>Fecha Emisión</th>
+                                        <th>Fecha Vencimiento</th>
+                                        <th>Total</th>
+                                        <th>Pagado</th>
+                                        <th>Saldo</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablaFacturasBody">
+                                    <!-- Se llenará dinámicamente -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab Próximas a Vencer -->
+                    <div class="tab-pane fade" id="proximas" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="tablaProximas">
+                                <thead>
+                                    <tr>
+                                        <th>Factura</th>
+                                        <th>Proveedor</th>
+                                        <th>Fecha Vencimiento</th>
+                                        <th>Días Restantes</th>
+                                        <th>Saldo</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablaProximasBody">
+                                    <!-- Se llenará dinámicamente -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab Vencidas -->
+                    <div class="tab-pane fade" id="vencidas" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="tablaVencidas">
+                                <thead>
+                                    <tr>
+                                        <th>Factura</th>
+                                        <th>Proveedor</th>
+                                        <th>Fecha Vencimiento</th>
+                                        <th>Días Vencida</th>
+                                        <th>Saldo</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablaVencidasBody">
+                                    <!-- Se llenará dinámicamente -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Nueva Factura -->
+    <div class="modal fade" id="facturaModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-file-invoice"></i> Registrar Factura de Compra
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Pestañas -->
+                    <ul class="nav nav-tabs mb-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="tab-datos" data-bs-toggle="tab" data-bs-target="#datos-factura" type="button" role="tab">
+                                <i class="fas fa-file"></i> Datos de Factura
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-items" data-bs-toggle="tab" data-bs-target="#items-factura" type="button" role="tab">
+                                <i class="fas fa-shopping-cart"></i> Items
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-totales" data-bs-toggle="tab" data-bs-target="#totales-factura" type="button" role="tab">
+                                <i class="fas fa-calculator"></i> Totales
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <!-- TAB 1: DATOS FACTURA -->
+                        <div class="tab-pane fade show active" id="datos-factura" role="tabpanel">
+                            <form id="facturaForm">
+                                <input type="hidden" id="facturaId">
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Proveedor *</label>
+                                        <select id="factura_proveedor_id" class="form-select" required>
+                                            <option value="">-- Seleccionar --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Fecha Emisión *</label>
+                                        <input type="date" id="fecha_emision" class="form-control" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Fecha Recepción</label>
+                                        <input type="date" id="fecha_recepcion" class="form-control">
+                                    </div>
+                                </div>
+
+                                <div class="row mt-3">
+                                    <div class="col-md-2">
+                                        <label class="form-label">Tipo *</label>
+                                        <select id="tipo_factura" class="form-select">
+                                            <option value="A">A</option>
+                                            <option value="B">B</option>
+                                            <option value="C">C</option>
+                                            <option value="X">X</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label">Pto. Venta</label>
+                                        <input type="text" id="punto_venta" class="form-control" placeholder="0001">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">N° Factura *</label>
+                                        <input type="text" id="numero_factura" class="form-control" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">CAE</label>
+                                        <input type="text" id="cae" class="form-control">
+                                    </div>
+                                </div>
+
+                                <div class="row mt-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Condición Pago</label>
+                                        <select id="condicion_pago" class="form-select">
+                                            <option value="CONTADO">Contado</option>
+                                            <option value="CREDITO 30">Crédito 30 días</option>
+                                            <option value="CREDITO 60">Crédito 60 días</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label">Observaciones</label>
+                                        <input type="text" id="observaciones_factura" class="form-control">
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- TAB 2: ITEMS -->
+                        <div class="tab-pane fade" id="items-factura" role="tabpanel">
+                            <div class="d-flex justify-content-between mb-3">
+                                <h6>Items de la Factura</h6>
+                                <button class="btn btn-sm btn-outline-primary" onclick="agregarItemFactura()">
+                                    <i class="fas fa-plus-circle"></i> Agregar Item
+                                </button>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm" id="itemsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Artículo</th>
+                                            <th>Descripción</th>
+                                            <th>Cantidad</th>
+                                            <th>Precio Unit.</th>
+                                            <th>% IVA</th>
+                                            <th>Subtotal</th>
+                                            <th>Total</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="itemsBody">
+                                        <!-- Items dinámicos -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- TAB 3: TOTALES -->
+                        <div class="tab-pane fade" id="totales-factura" role="tabpanel">
+                            <div class="row">
+                                <div class="col-md-6 offset-md-6">
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>Subtotal:</th>
+                                            <td><input type="text" id="subtotal_factura" class="form-control form-control-sm text-end" readonly></td>
+                                        </tr>
+                                        <tr>
+                                            <th>IVA (21%):</th>
+                                            <td><input type="number" id="iva_factura" class="form-control form-control-sm text-end" step="0.01" onchange="calcularTotal()"></td>
+                                        </tr>
+                                        <tr>
+                                            <th>Percepciones:</th>
+                                            <td><input type="number" id="percepciones_factura" class="form-control form-control-sm text-end" step="0.01" value="0" onchange="calcularTotal()"></td>
+                                        </tr>
+                                        <tr>
+                                            <th>Retenciones:</th>
+                                            <td><input type="number" id="retenciones_factura" class="form-control form-control-sm text-end" step="0.01" value="0" onchange="calcularTotal()"></td>
+                                        </tr>
+                                        <tr class="fw-bold">
+                                            <th>TOTAL:</th>
+                                            <td><input type="text" id="total_factura" class="form-control form-control-sm text-end fw-bold" readonly></td>
+                                        </tr>
+                                        <tr>
+                                            <th>Neto a Pagar:</th>
+                                            <td><input type="text" id="neto_pagado" class="form-control form-control-sm text-end" readonly></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ÁREA DE ALERTAS DE VARIACIÓN -->
+                    <div id="alertasVariacion" class="mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" onclick="guardarFacturaCompra()">
+                        <i class="fas fa-save"></i> Guardar Factura
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Detalle Factura -->
+    <div class="modal fade" id="detalleFacturaModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Detalle de Factura</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detalleFacturaContent">
+                    <!-- Se llena con JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Registrar Pago -->
+    <div class="modal fade" id="pagoModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Registrar Pago</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="pagoForm">
+                        <input type="hidden" id="pago_factura_id">
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Factura</label>
+                            <input type="text" class="form-control" id="pago_factura_numero" readonly>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Saldo Pendiente</label>
+                            <input type="text" class="form-control" id="pago_saldo" readonly>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Monto a Pagar *</label>
+                            <input type="number" id="pago_monto" class="form-control" step="0.01" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Fecha de Pago *</label>
+                            <input type="date" id="pago_fecha" class="form-control" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Forma de Pago *</label>
+                            <select id="pago_forma" class="form-select" required>
+                                <option value="">-- Seleccionar --</option>
+                                <option value="EFECTIVO">Efectivo</option>
+                                <option value="TRANSFERENCIA">Transferencia</option>
+                                <option value="CHEQUE">Cheque</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Referencia/Comprobante</label>
+                            <input type="text" id="pago_referencia" class="form-control">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarPago()">
+                        <i class="fas fa-save"></i> Registrar Pago
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/navbar-filter.js"></script>
+    <script src="js/facturas-compras.js"></script>
+    <script>
+        // Verificar autenticación al cargar
+        document.addEventListener('DOMContentLoaded', function() {
+            verificarAuth();
+        });
+    </script>
+</body>
+</html>

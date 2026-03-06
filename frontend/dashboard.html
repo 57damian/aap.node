@@ -1,124 +1,332 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Dashboard</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      font-family: Arial, sans-serif; 
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 40px 20px;
-    }
-    .container {
-      max-width: 1000px;
-      margin: 0 auto;
-      background: white;
-      padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    }
-    h1 {
-      color: #333;
-      margin-bottom: 40px;
-      text-align: center;
-      font-size: 32px;
-    }
-    .menu {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 20px;
-      margin-top: 30px;
-    }
-    .menu button {
-      padding: 25px 20px;
-      border: none;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: all 0.3s;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-      text-align: center;
-    }
-    .menu button:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-      background: linear-gradient(135deg, #5568d3 0%, #653ea0 100%);
-    }
-    .menu button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .logout-btn {
-      margin-top: 40px;
-      padding: 15px 40px;
-      background: #dc3545;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: all 0.3s;
-      display: block;
-      margin: 40px auto 0;
-    }
-    .logout-btn:hover {
-      background: #c82333;
-      transform: scale(1.05);
-    }
-    .user-info {
-      text-align: right;
-      margin-bottom: 20px;
-      color: #666;
-      font-size: 14px;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <div class="container">
-    <div class="user-info" id="userInfo"></div>
-    <h1>🎛️ Dashboard - Gestión de Transformadores</h1>
-
-    <div class="menu">
-      <button data-roles="admin,control" onclick="go('ficha.html')">
-        📋 Fichas Técnicas
-      </button>
-
-      <button data-roles="admin,control" onclick="go('oc.html')">
-        📦 Órdenes de Compra
-      </button>
-
-      <button data-roles="admin,control" onclick="go('ventas.html')">
-        🚚 Ventas / Entregas
-      </button>
-
-      <button data-roles="admin,control" onclick="go('clientes.html')">
-        👥 Clientes
-      </button>
-
-      <button data-roles="admin,control" onclick="go('reportes.html')">
-        📊 Reportes
-      </button>
-
-      <button data-roles="admin,operario" onclick="go('produccion.html')">
-        ⚙️ Producción
-      </button>
+  <div class="navbar">
+    <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+    <div class="navbar-menu">
+      <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+      <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+      <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+      <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+      <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+      <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+      <button data-roles="admin,control" onclick="window.location.href='facturas-compras.html'">Facturas</button>
+      <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+      <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+      <button data-roles="admin,control,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
+      <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+      <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
     </div>
-
-    <button data-roles="admin" onclick="go('precios.html')">
-  💲 Gestión de Precios
-    </button>
-
-
-    <button class="logout-btn" onclick="logout()">🚪 Salir</button>
+    <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
   </div>
 
+  <div class="container main-container dashboard-page">
+    <div class="dashboard-header">
+      <h1><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
+      <p>Panel de control principal del sistema ERP</p>
+    </div>
+
+    <div class="form-section welcome-panel">
+      <div class="welcome-avatar">&#128100;</div>
+      <div>
+        <h3 class="welcome-title">Bienvenido, <span id="userNameDisplay">Usuario</span></h3>
+      </div>
+    </div>
+
+    <div class="quick-stats" data-roles="admin,control">
+      <div class="kpi-card primary">
+        <div class="stat-icon primary"><i class="fas fa-users"></i></div>
+        <div class="stat-value" id="totalClientes">-</div>
+        <div class="stat-label">Clientes</div>
+      </div>
+      <div class="kpi-card success">
+        <div class="stat-icon success"><i class="fas fa-truck"></i></div>
+        <div class="stat-value" id="totalProveedores">-</div>
+        <div class="stat-label">Proveedores</div>
+      </div>
+      <div class="kpi-card warning">
+        <div class="stat-icon warning"><i class="fas fa-shopping-cart"></i></div>
+        <div class="stat-value" id="totalVentas">-</div>
+        <div class="stat-label">Ventas Mes</div>
+      </div>
+      <div class="kpi-card info">
+        <div class="stat-icon info"><i class="fas fa-dollar-sign"></i></div>
+        <div class="stat-value" id="facturacionMensual">$ 0,00</div>
+        <div class="stat-label">Facturacion</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div>
+        <section class="widget">
+          <div class="widget-header">
+            <h5 class="widget-title"><i class="fas fa-rocket"></i> Accesos Rápidos</h5>
+          </div>
+          <div class="widget-body">
+            <div class="quick-actions">
+              <a href="ficha.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-file-alt"></i></div>
+                <div class="quick-action-title">Fichas Técnicas</div>
+                <div class="quick-action-description">Especificaciones técnicas</div>
+              </a>
+              <a href="proveedores.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-truck"></i></div>
+                <div class="quick-action-title">Proveedores</div>
+                <div class="quick-action-description">Compras y proveedores</div>
+              </a>
+              <a href="oc.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-clipboard-list"></i></div>
+                <div class="quick-action-title">Órdenes de Compra</div>
+                <div class="quick-action-description">Gestión de compras</div>
+              </a>
+              <a href="clientes.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-users"></i></div>
+                <div class="quick-action-title">Clientes</div>
+                <div class="quick-action-description">ABM de clientes</div>
+              </a>
+              <a href="ventas.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-shopping-cart"></i></div>
+                <div class="quick-action-title">Ventas</div>
+                <div class="quick-action-description">Entregas y facturación</div>
+              </a>
+              <a href="produccion.html" class="quick-action" data-roles="admin,control,operario,empleado">
+                <div class="quick-action-icon"><i class="fas fa-industry"></i></div>
+                <div class="quick-action-title">Producción</div>
+                <div class="quick-action-description">Control de planta</div>
+              </a>
+              <a href="facturas-compras.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-file-invoice"></i></div>
+                <div class="quick-action-title">Facturas</div>
+                <div class="quick-action-description">Facturas de compra</div>
+              </a>
+              <a href="pagos.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="quick-action-title">Pagos</div>
+                <div class="quick-action-description">Pagos y cobranzas</div>
+              </a>
+              <a href="reportes.html" class="quick-action" data-roles="admin,control">
+                <div class="quick-action-icon"><i class="fas fa-file-pdf"></i></div>
+                <div class="quick-action-title">Reportes</div>
+                <div class="quick-action-description">Informes y estadísticas</div>
+              </a>
+              <a href="precios.html" class="quick-action" data-roles="admin">
+                <div class="quick-action-icon"><i class="fas fa-users-cog"></i></div>
+                <div class="quick-action-title">Precios</div>
+                <div class="quick-action-description">Gestión de precios</div>
+              </a>
+              <a href="usuarios.html" class="quick-action" data-roles="admin">
+                <div class="quick-action-icon"><i class="fas fa-users-cog"></i></div>
+                <div class="quick-action-title">Usuarios</div>
+                <div class="quick-action-description">Gestión de permisos</div>
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section class="widget" data-roles="admin,control">
+          <div class="widget-header">
+            <h5 class="widget-title"><i class="fas fa-clock"></i> Actividad Reciente</h5>
+            <button class="btn btn-sm" onclick="cargarActividad()">Actualizar</button>
+          </div>
+          <div class="widget-body">
+            <div id="actividadReciente" class="activity-feed">
+              <div class="empty-state">Cargando actividad...</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div>
+        <section class="widget" data-roles="admin,control">
+          <div class="widget-header">
+            <h5 class="widget-title"><i class="fas fa-heartbeat"></i> Estado del Sistema</h5>
+          </div>
+          <div class="widget-body">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Servicio</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Base de Datos</td>
+                  <td>Conectada</td>
+                </tr>
+                <tr>
+                  <td>Servidor API</td>
+                  <td>Activo</td>
+                </tr>
+                <tr>
+                  <td>Último Backup</td>
+                  <td>Hace 2 horas</td>
+                </tr>
+                <tr>
+                  <td>Usuarios Activos</td>
+                  <td id="usuariosActivos">-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="widget">
+          <div class="widget-header">
+            <h5 class="widget-title"><i class="fas fa-chart-line"></i> Ventas Últimos 30 Días</h5>
+            <button class="btn btn-sm" onclick="exportarVentas()">Exportar</button>
+          </div>
+          <div class="widget-body">
+            <div class="chart-placeholder">Gráfico de ventas próximo a habilitar</div>
+          </div>
+        </section>
+
+        <section class="widget">
+          <div class="widget-header">
+            <h5 class="widget-title"><i class="fas fa-bell"></i> Alertas</h5>
+            <span class="badge" id="alertasCount">0</span>
+          </div>
+          <div class="widget-body">
+            <div id="alertasList" class="alerts-list">
+              <div class="empty-state">Sin alertas activas</div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/css-utilities.js"></script>
   <script src="js/dashboard.js"></script>
+  <script>
+    function mostrarInfoUsuario() {
+      const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+      document.getElementById('userNameDisplay').textContent = usuario.nombre_usuario || usuario.usuario || 'Usuario';
+    }
+
+    function applyFadeIn() {
+      const header = document.querySelector('.dashboard-header');
+      if (header) {
+        header.classList.add('fade-in');
+      }
+      document.querySelectorAll('.kpi-card').forEach((card, i) => {
+        setTimeout(() => card.classList.add('fade-in'), i * 100);
+      });
+    }
+
+    function setLoadingState(isLoading) {
+      const placeholders = ['totalClientes', 'totalProveedores', 'totalVentas', 'usuariosActivos'];
+      if (!isLoading) return;
+      placeholders.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '...';
+      });
+      const fact = document.getElementById('facturacionMensual');
+      if (fact) fact.textContent = '$ 0,00';
+    }
+
+    async function cargarDatosDashboard() {
+      setLoadingState(true);
+      try {
+        const [clientesRes, proveedoresRes, ventasRes] = await Promise.all([
+          apiFetch('/api/clientes/count'),
+          apiFetch('/api/proveedores/count'),
+          apiFetch('/api/ventas/resumen-mensual')
+        ]);
+
+        document.getElementById('totalClientes').textContent = clientesRes?.total || 0;
+        document.getElementById('totalProveedores').textContent = proveedoresRes?.total || 0;
+        document.getElementById('totalVentas').textContent = ventasRes?.cantidad || 0;
+        document.getElementById('facturacionMensual').textContent = (window.cssUtils && window.cssUtils.formatCurrency)
+          ? window.cssUtils.formatCurrency(ventasRes?.total || 0)
+          : '$' + Number(ventasRes?.total || 0).toFixed(2);
+        document.getElementById('usuariosActivos').textContent = clientesRes?.usuarios_activos || 0;
+      } catch (error) {
+        console.error('Error cargando datos del dashboard:', error);
+        if (window.cssUtils && window.cssUtils.showNotification) {
+          window.cssUtils.showNotification('Error al cargar datos del dashboard', 'danger');
+        }
+      }
+    }
+
+    function getIconoActividad(tipo) {
+      const iconos = {
+        venta: 'fa-shopping-cart',
+        compra: 'fa-truck',
+        cliente: 'fa-user-plus',
+        proveedor: 'fa-user-tie',
+        pago: 'fa-money-bill',
+        produccion: 'fa-industry'
+      };
+      return iconos[tipo] || 'fa-circle';
+    }
+
+    function formatearTiempo(fecha) {
+      const ahora = new Date();
+      const fechaActividad = new Date(fecha);
+      const diffMinutos = Math.floor((ahora - fechaActividad) / (1000 * 60));
+      if (diffMinutos < 1) return 'Ahora';
+      if (diffMinutos < 60) return 'Hace ' + diffMinutos + ' min';
+      if (diffMinutos < 1440) return 'Hace ' + Math.floor(diffMinutos / 60) + ' h';
+      return 'Hace ' + Math.floor(diffMinutos / 1440) + ' d';
+    }
+
+    async function cargarActividad() {
+      const cont = document.getElementById('actividadReciente');
+      try {
+        const actividad = await apiFetch('/api/actividad-reciente');
+        if (!actividad || actividad.length === 0) {
+          cont.innerHTML = '<div class="empty-state">Sin actividad reciente</div>';
+          return;
+        }
+
+        cont.innerHTML = actividad.map(item =>
+          '<div class="activity-item">' +
+            '<div class="activity-icon ' + (item.tipo || '') + '"><i class="fas ' + getIconoActividad(item.tipo) + '"></i></div>' +
+            '<div class="activity-content">' +
+              '<div class="activity-title">' + (item.titulo || 'Actividad') + '</div>' +
+              '<div class="activity-description">' + (item.descripcion || '') + '</div>' +
+              '<div class="activity-time">' + formatearTiempo(item.fecha) + '</div>' +
+            '</div>' +
+          '</div>'
+        ).join('');
+      } catch (error) {
+        console.error('Error cargando actividad:', error);
+        cont.innerHTML = '<div class="empty-state">No se pudo cargar la actividad</div>';
+      }
+    }
+
+    function exportarVentas() {
+      if (window.cssUtils && window.cssUtils.showNotification) {
+        window.cssUtils.showNotification('Función de exportación próximamente disponible', 'info');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!localStorage.getItem('token')) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      mostrarInfoUsuario();
+      cargarDatosDashboard();
+      cargarActividad();
+      if (typeof verificarPermisosUsuario === 'function') {
+        verificarPermisosUsuario();
+      }
+      applyFadeIn();
+
+      setInterval(cargarDatosDashboard, 5 * 60 * 1000);
+    });
+  </script>
 </body>
 </html>
+

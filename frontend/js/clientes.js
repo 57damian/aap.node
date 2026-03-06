@@ -2,14 +2,33 @@ let editMode = false;
 let currentId = null;
 let currentCliente = null;
 
-// =====================
-// DEBUG INIT
-// =====================
-console.log('🔍 clientes.js cargado');
-console.log('👤 localStorage.rol:', localStorage.getItem('rol'));
 
-if (!localStorage.getItem('rol')) {
-  console.warn('❌ No hay rol en localStorage, redirigiendo a login...');
+
+// =====================
+// VERIFICAR AUTENTICACIÃƒâ€œN
+// =====================
+const usuario = (() => {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('usuario');
+  
+  if (!token || !userStr) {
+    window.location.href = 'index.html';
+    return null;
+  }
+  
+  try {
+    return JSON.parse(userStr);
+  } catch {
+    window.location.href = 'index.html';
+    return null;
+  }
+})();
+
+
+
+
+if (!usuario || !usuario.rol) {
+  console.warn('No hay rol de usuario vÃƒÂ¡lido, redirigiendo a login...');
   setTimeout(() => {
     window.location.href = 'index.html';
   }, 100);
@@ -20,14 +39,14 @@ if (!localStorage.getItem('rol')) {
 // INICIALIZAR
 // =====================
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('✅ DOMContentLoaded - Adjuntando event listeners');
+  console.log('Ã¢Å“â€¦ DOMContentLoaded - Adjuntando event listeners');
   
   const form = document.getElementById('clienteForm');
   if (form) {
     form.addEventListener('submit', handleSubmit);
-    console.log('✅ Event listener "submit" adjuntado al formulario');
+    console.log('Ã¢Å“â€¦ Event listener "submit" adjuntado al formulario');
   } else {
-    console.error('❌ Formulario #clienteForm no encontrado');
+    console.error('Ã¢ÂÅ’ Formulario #clienteForm no encontrado');
   }
   
   // Cerrar modal al hacer clic fuera
@@ -46,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // =====================
 async function cargarClientes() {
   try {
-    const clientes = await apiFetch('/clientes');
+    const clientes = await apiFetch('/api/clientes');
     const tbody = document.getElementById('clientesList');
     tbody.innerHTML = '';
 
@@ -88,10 +107,10 @@ async function cargarClientes() {
 
 
 // =====================
-// FUNCIÓN AUXILIAR: Obtener label de forma de pago
+// FUNCIÃƒâ€œN AUXILIAR: Obtener label de forma de pago
 // =====================
 // =====================
-// FUNCIÓN AUXILIAR: Obtener label de forma de pago - ACTUALIZADA
+// FUNCIÃƒâ€œN AUXILIAR: Obtener label de forma de pago - ACTUALIZADA
 // =====================
 function getFormaPagoLabel(formaPago) {
   const labels = {
@@ -99,79 +118,170 @@ function getFormaPagoLabel(formaPago) {
     'cheque': 'Cheque',
     'transferencia': 'Transferencia',
     'otro': 'Otro',
-    '': '-'
+    '': 'No especificado'
   };
-  return labels[formaPago] || formaPago || '-';
+  return labels[formaPago] || formaPago || 'No especificado';
 }
 // =====================
-// VER DETALLES (MODAL)
+// VER DETALLES (MODAL) - VERSIÃ“N MEJORADA
 // =====================
 async function verDetalles(id) {
   try {
-    const cliente = await apiFetch(`/clientes/${id}`);
+    const cliente = await apiFetch(`/api/clientes/${id}`);
     currentCliente = cliente;
     
     const content = document.getElementById('detailContent');
     const title = document.getElementById('detailNombre');
     
-    title.textContent = `👥 ${cliente.nombre || 'Sin nombre'} - Ficha del Cliente`;
+    title.textContent = `ðŸ‘¥ ${cliente.nombre || 'Sin nombre'} - Ficha Completa`;
     
-    // Construir contenido del modal
+    // Determinar clase para badge de forma de pago
+    const formaPagoClass = {
+      'contado': 'badge-contado',
+      'cheque': 'badge-cheque',
+      'transferencia': 'badge-transferencia',
+      'otro': 'badge-otro'
+    }[cliente.forma_pago] || 'badge-otro';
+    
+    // Construir contenido del modal con diseÃ±o mejorado
     let html = `
-      <!-- INFORMACIÓN GENERAL -->
-      <div class="detail-section">
-        <div class="detail-section-title">📋 Información General</div>
-        <div class="detail-grid">
-          <div class="detail-item">
-            <div class="detail-label">ID</div>
-            <div class="detail-value">#${cliente.id}</div>
+      <!-- Tarjeta de informaciÃ³n general -->
+      <div class="detail-card">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+          <span style="font-size: 1.5rem;">ðŸ“Œ</span>
+          <h3 style="margin: 0; color: #007bff;">InformaciÃ³n General</h3>
+        </div>
+        
+        <div class="detail-grid-modern">
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">ID Cliente</div>
+            <div class="detail-value-modern">#${cliente.id}</div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Nombre</div>
-            <div class="detail-value"><strong>${cliente.nombre || '-'}</strong></div>
+          
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">Nombre</div>
+            <div class="detail-value-modern"><strong>${cliente.nombre || '-'}</strong></div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">CUIT</div>
-            <div class="detail-value">${cliente.cuit || '-'}</div>
+          
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">CUIT</div>
+            <div class="detail-value-modern">${cliente.cuit || '-'}</div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Teléfono</div>
-            <div class="detail-value">${cliente.telefono || '-'}</div>
+          
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">TelÃ©fono</div>
+            <div class="detail-value-modern">
+              ${cliente.telefono ? `ðŸ“ž ${cliente.telefono}` : '-'}
+            </div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Correo</div>
-            <div class="detail-value">${cliente.correo || '-'}</div>
+          
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">Correo</div>
+            <div class="detail-value-modern">
+              ${cliente.correo ? `âœ‰ï¸ ${cliente.correo}` : '-'}
+            </div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Dirección</div>
-            <div class="detail-value">${cliente.direccion || '-'}</div>
+          
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">DirecciÃ³n</div>
+            <div class="detail-value-modern">
+              ${cliente.direccion ? `ðŸ“ ${cliente.direccion}` : '-'}
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- CONDICIONES DE PAGO -->
-      <div class="detail-section">
-        <div class="detail-section-title">💳 Condiciones de Pago</div>
-        <div class="detail-grid">
-          <div class="detail-item">
-            <div class="detail-label">Forma de Pago</div>
-            <div class="detail-value">${getFormaPagoLabel(cliente.forma_pago)}</div>
+      <div class="section-divider"></div>
+
+      <!-- Tarjeta de condiciones de pago -->
+      <div class="detail-card" style="border-left-color: #28a745;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+          <span style="font-size: 1.5rem;">ðŸ’³</span>
+          <h3 style="margin: 0; color: #28a745;">Condiciones de Pago</h3>
+        </div>
+        
+        <div class="detail-grid-modern">
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">Forma de Pago</div>
+            <div class="detail-value-modern">
+              <span class="badge-pago ${formaPagoClass}">
+                ${getFormaPagoLabel(cliente.forma_pago)}
+              </span>
+            </div>
           </div>
-          <div class="detail-item">
-            <div class="detail-label">Días Máximo de Pago</div>
-            <div class="detail-value">${cliente.dias_max_pago || '-'} días</div>
+          
+          <div class="detail-item-modern">
+            <div class="detail-label-modern">DÃ­as MÃ¡ximo de Pago</div>
+            <div class="detail-value-modern">
+              ${cliente.dias_max_pago ? `
+                <span style="font-weight: bold; color: #007bff;">${cliente.dias_max_pago}</span> dÃ­as
+              ` : 'No especificado'}
+            </div>
           </div>
         </div>
       </div>
-      
-      <!-- OBSERVACIONES -->
-      <div class="detail-section">
-        <div class="detail-section-title">📝 Observaciones</div>
-        <div class="detail-value" style="white-space: pre-wrap; padding: 15px; background: #fff9e6; border-radius: 6px; min-height: 60px;">
-          ${cliente.observaciones || 'Sin observaciones'}
+
+      <div class="section-divider"></div>
+
+      <!-- Tarjeta de observaciones -->
+      <div class="detail-card" style="border-left-color: #ffc107;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+          <span style="font-size: 1.5rem;">ðŸ“</span>
+          <h3 style="margin: 0; color: #856404;">Observaciones</h3>
+        </div>
+        
+        <div class="observaciones-box">
+          ${cliente.observaciones ? 
+            cliente.observaciones.replace(/\n/g, '<br>') : 
+            '<span style="color: #999;">Sin observaciones registradas</span>'
+          }
         </div>
       </div>
     `;
+    
+    // Si el usuario tiene permisos, mostrar informaciÃ³n financiera adicional
+    if (usuario.rol === 'admin' || usuario.rol === 'control') {
+      try {
+        // Intentar cargar estado financiero
+        const estado = await apiFetch(`/api/clientes/${id}/estado`);
+        html += `
+          <div class="section-divider"></div>
+          
+          <!-- Tarjeta de estado financiero -->
+          <div class="detail-card" style="border-left-color: #17a2b8;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+              <span style="font-size: 1.5rem;">ðŸ’°</span>
+              <h3 style="margin: 0; color: #17a2b8;">Estado Financiero</h3>
+            </div>
+            
+            <div class="detail-grid-modern">
+              <div class="detail-item-modern">
+                <div class="detail-label-modern">Total Facturado</div>
+                <div class="detail-value-modern" style="color: #007bff;">
+                  $${estado.total_facturado.toFixed(2)}
+                </div>
+              </div>
+              
+              <div class="detail-item-modern">
+                <div class="detail-label-modern">Total Pagado</div>
+                <div class="detail-value-modern" style="color: #28a745;">
+                  $${estado.total_pagado.toFixed(2)}
+                </div>
+              </div>
+              
+              <div class="detail-item-modern">
+                <div class="detail-label-modern">Saldo Pendiente</div>
+                <div class="detail-value-modern" style="color: ${estado.saldo > 0 ? '#dc3545' : '#28a745'}; font-weight: bold;">
+                  $${estado.saldo.toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } catch (e) {
+        console.log('No se pudo cargar estado financiero:', e);
+      }
+    }
     
     content.innerHTML = html;
     document.getElementById('detailModal').style.display = 'block';
@@ -193,25 +303,54 @@ function closeDetailModal() {
 // VERIFICAR SI EL ROL PERMITE ELIMINAR
 // =====================
 function rolPermiteEliminar() {
-  const rol = localStorage.getItem('rol');
-  return rol === 'admin' || rol === 'control';
+  return usuario.rol === 'admin' || usuario.rol === 'control';
 }
 
 // =====================
-// CONFIRMAR ELIMINAR
+// CONFIRMAR ELIMINAR - CON MODAL PERSONALIZADO
 // =====================
 function confirmarEliminar(id, nombre) {
-  if (confirm(`⚠️ ¿Estás seguro de eliminar al cliente "${nombre}"?\n\nEsta acción no se puede deshacer.`)) {
-    eliminarCliente(id);
-  }
+  const modalHtml = `
+    <div id="confirmModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:9999;">
+      <div style="background:white; padding:25px; border-radius:8px; max-width:400px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+        <div style="text-align:center; margin-bottom:20px;">
+          <span style="font-size:48px;">!</span>
+          <h3 style="margin:10px 0; color:#721c24;">Confirmar Eliminacion</h3>
+        </div>
+        <p style="margin-bottom:20px; text-align:center;">
+          Estas seguro de eliminar al cliente <strong>"${nombre}"</strong>?<br>
+          <span style="color:#dc3545; font-size:0.9rem;">Esta accion no se puede deshacer.</span>
+        </p>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button id="cancelDelete" style="padding:10px 20px; background:#6c757d; color:white; border:none; border-radius:4px; cursor:pointer;">Cancelar</button>
+          <button id="confirmDelete" style="padding:10px 20px; background:#dc3545; color:white; border:none; border-radius:4px; cursor:pointer;">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modalContainer = document.createElement('div');
+  modalContainer.innerHTML = modalHtml;
+  document.body.appendChild(modalContainer);
+
+  document.getElementById('cancelDelete').addEventListener('click', () => {
+    document.body.removeChild(modalContainer);
+  });
+
+  document.getElementById('confirmDelete').addEventListener('click', async () => {
+    document.body.removeChild(modalContainer);
+    await eliminarCliente(id);
+  });
 }
 
 // =====================
-// ELIMINAR CLIENTE - CORREGIDO
+// ELIMINAR CLIENTE - CON FEEDBACK
 // =====================
 async function eliminarCliente(id) {
   try {
-    await apiFetch(`/clientes/${id}`, {
+    showAlert('Eliminando cliente...', 'info');
+
+    await apiFetch(`/api/clientes/${id}`, {
       method: 'DELETE'
     });
 
@@ -219,7 +358,11 @@ async function eliminarCliente(id) {
     cargarClientes();
 
   } catch (err) {
-    showAlert(err.error || err.message || 'Error al eliminar', 'error');
+    if (err.error && err.error.includes('foreign key')) {
+      showAlert('No se puede eliminar: El cliente tiene facturas o pagos asociados', 'error');
+    } else {
+      showAlert(err.error || err.message || 'Error al eliminar', 'error');
+    }
   }
 }
 
@@ -228,7 +371,7 @@ async function eliminarCliente(id) {
 // =====================
 async function handleSubmit(e) {
   e.preventDefault();
-  console.log('📤 Submit del formulario (prevención activa)');
+  console.log('Ã°Å¸â€œÂ¤ Submit del formulario (prevenciÃƒÂ³n activa)');
   
   const data = {
     nombre: document.getElementById('nombre').value,
@@ -246,7 +389,7 @@ async function handleSubmit(e) {
     
     if (editMode) {
       // Actualizar
-      response = await apiFetch(`/clientes/${currentId}`, {
+      response = await apiFetch(`/api/clientes/${currentId}`, {
         method: 'PUT',
         body: JSON.stringify(data)
       });
@@ -254,12 +397,12 @@ async function handleSubmit(e) {
       showAlert('Cliente actualizado correctamente', 'success');
     } else {
       // Crear
-      response = await apiFetch('/clientes', {
+      response = await apiFetch('/api/clientes', {
         method: 'POST',
         body: JSON.stringify(data)
       });
       
-      console.log('✅ Cliente creado:', response);
+      console.log('Ã¢Å“â€¦ Cliente creado:', response);
       showAlert('Cliente creado correctamente', 'success');
     }
 
@@ -267,19 +410,20 @@ async function handleSubmit(e) {
     cargarClientes();
     showTab('listar');
   } catch (err) {
-    console.error('❌ Error en submit:', err);
+    console.error('Ã¢ÂÅ’ Error en submit:', err);
     showAlert(err.error || err.message || 'Error al guardar', 'error');
   }
 }
 
 // =====================
-// EDITAR CLIENTE
+// EDITAR CLIENTE - VERSION MEJORADA
 // =====================
 async function editarCliente(id) {
   try {
-    const cliente = await apiFetch(`/clientes/${id}`);
-    
-    // Rellenar formulario
+    showAlert('Cargando datos del cliente...', 'info');
+
+    const cliente = await apiFetch(`/api/clientes/${id}`);
+
     document.getElementById('nombre').value = cliente.nombre || '';
     document.getElementById('cuit').value = cliente.cuit || '';
     document.getElementById('telefono').value = cliente.telefono || '';
@@ -288,12 +432,14 @@ async function editarCliente(id) {
     document.getElementById('forma_pago').value = cliente.forma_pago || '';
     document.getElementById('dias_max_pago').value = cliente.dias_max_pago || '';
     document.getElementById('observaciones').value = cliente.observaciones || '';
-    
+
     editMode = true;
     currentId = id;
-    
+
     showTab('crear');
-    showAlert('Editando cliente ID: ' + id, 'success');
+    showAlert(`Editando cliente: ${cliente.nombre}`, 'success');
+    document.getElementById('clienteForm').scrollIntoView({ behavior: 'smooth' });
+
   } catch (err) {
     console.error('Error al cargar cliente:', err);
     showAlert('Error al cargar cliente: ' + (err.error || err.message), 'error');
@@ -337,17 +483,31 @@ function showTab(tabName, event) {
 }
 
 // =====================
-// ALERTA
+// ALERTA MEJORADA
 // =====================
 function showAlert(message, type) {
   const alertDiv = document.getElementById('alert');
-  alertDiv.textContent = message;
-  alertDiv.className = type === 'success' ? 'alert alert-success' : 'alert alert-error';
+
+  const icons = {
+    success: '[OK]',
+    error: '[X]',
+    info: '[i]',
+    warning: '[!]'
+  };
+
+  alertDiv.innerHTML = `${icons[type] || ''} ${message}`;
+  alertDiv.className = `alert alert-${type}`;
   alertDiv.style.display = 'block';
-  
-  setTimeout(() => {
-    alertDiv.style.display = 'none';
-  }, 3000);
+
+  if (type !== 'error') {
+    setTimeout(() => {
+      alertDiv.style.opacity = '0';
+      setTimeout(() => {
+        alertDiv.style.display = 'none';
+        alertDiv.style.opacity = '1';
+      }, 300);
+    }, 3000);
+  }
 }
 
 // =====================
@@ -357,3 +517,7 @@ function logout() {
   localStorage.clear();
   window.location.href = 'index.html';
 }
+
+
+
+

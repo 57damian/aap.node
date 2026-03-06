@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const authorize = require('../middlewares/authorize');
+const { verificarToken, authorize } = require('../middlewares/auth');
+
+router.use(verificarToken);
 
 /* Saldo por cliente */
 router.get('/saldo/cliente/:cliente_id', authorize(['admin', 'control']), async (req, res) => {

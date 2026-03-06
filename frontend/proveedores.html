@@ -1,0 +1,718 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proveedores - Sistema Transformadores</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='facturas-compras.html'">Facturas</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='stock.html'">Stock</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+</div>
+
+<!-- Navbar -->
+    
+
+    <div class="container main-container">
+        <!-- Header Principal -->
+        <div class="proveedores-header">
+            <h1><i class="fas fa-truck"></i> Gestión de Proveedores</h1>
+            <p>Administre proveedores, facturas, compras y pagos de manera integral</p>
+        </div>
+
+        <!-- Tabs de navegación -->
+        <div class="tabs-container">
+            <ul class="nav nav-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-proveedores" type="button" role="tab">
+                        <i class="fas fa-building"></i> Proveedores
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-facturas" type="button" role="tab">
+                        <i class="fas fa-file-invoice"></i> Facturas
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-compras" type="button" role="tab">
+                        <i class="fas fa-shopping-cart"></i> Compras
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-pagos" type="button" role="tab">
+                        <i class="fas fa-money-bill"></i> Pagos
+                    </button>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- TAB 1: PROVEEDORES -->
+            <div class="tab-pane fade show active" id="tab-proveedores" role="tabpanel">
+                <!-- Estadísticas Principales -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <div class="stat-value" id="totalProveedores">0</div>
+                        <div class="stat-label">Total Proveedores</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-icon success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-value" id="proveedoresActivos">0</div>
+                        <div class="stat-label">Proveedores Activos</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-icon warning">
+                            <i class="fas fa-dollar-sign"></i>
+                        </div>
+                        <div class="stat-value" id="deudaTotal">$0</div>
+                        <div class="stat-label">Deuda Total</div>
+                    </div>
+                    <div class="stat-card info">
+                        <div class="stat-icon info">
+                            <i class="fas fa-file-invoice"></i>
+                        </div>
+                        <div class="stat-value" id="comprasMes">0</div>
+                        <div class="stat-label">Compras del Mes</div>
+                    </div>
+                </div>
+
+                <!-- Filtros y búsqueda -->
+                <div class="filtros-container">
+                    <div class="filtros-row">
+                        <div class="filtro-group">
+                            <label class="filtro-label">Buscar proveedor</label>
+                            <input type="text" class="filtro-input" id="searchInput" 
+                                   placeholder="Nombre, CUIT, email o contacto...">
+                        </div>
+                        <div class="filtro-group">
+                            <label class="filtro-label">Estado</label>
+                            <select class="filtro-select" id="filtroEstado">
+                                <option value="todos">Todos los estados</option>
+                                <option value="activos">Activos</option>
+                                <option value="inactivos">Inactivos</option>
+                            </select>
+                        </div>
+                        <div class="filtro-group">
+                            <label class="filtro-label">Rango de deuda</label>
+                            <select class="filtro-select" id="filtroDeuda">
+                                <option value="todos">Todos</option>
+                                <option value="con-deuda">Con deuda</option>
+                                <option value="sin-deuda">Sin deuda</option>
+                                <option value="vencido">Deuda vencida</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filtros-acciones">
+                        <button class="btn btn-secondary" onclick="limpiarFiltros()">
+                            <i class="fas fa-times"></i> Limpiar
+                        </button>
+                        <button class="btn btn-primary" onclick="cargarProveedores()">
+                            <i class="fas fa-search"></i> Buscar
+                        </button>
+                        <button class="btn btn-success" onclick="abrirModalProveedor()">
+                            <i class="fas fa-plus"></i> Nuevo Proveedor
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabla de proveedores -->
+                <div class="proveedores-table-container">
+                    <table class="proveedores-table">
+                        <thead>
+                            <tr>
+                                <th>Proveedor</th>
+                                <th>Información de Contacto</th>
+                                <th>Compras</th>
+                                <th>Deuda Actual</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="proveedoresTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Cargando...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 2: FACTURAS -->
+            <div class="tab-pane fade" id="tab-facturas" role="tabpanel">
+                <div class="container-fluid">
+                    <!-- Estadísticas de facturas -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon primary">
+                                <i class="fas fa-file-invoice"></i>
+                            </div>
+                            <div class="stat-value" id="totalFacturas">0</div>
+                            <div class="stat-label">Total Facturas</div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon warning">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-value" id="facturasPendientes">0</div>
+                            <div class="stat-label">Pendientes</div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-icon success">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-value" id="facturasPagadas">0</div>
+                            <div class="stat-label">Pagadas</div>
+                        </div>
+                        <div class="stat-card danger">
+                            <div class="stat-icon danger">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="stat-value" id="deudaTotalFacturas">$0</div>
+                            <div class="stat-label">Deuda Total</div>
+                        </div>
+                    </div>
+
+                    <!-- Filtros de facturas -->
+                    <div class="filtros-container">
+                        <div class="filtros-row">
+                            <div class="filtro-group">
+                                <label class="filtro-label">Buscar factura</label>
+                                <input type="text" class="filtro-input" id="facturaSearch" 
+                                       placeholder="Número, proveedor...">
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Estado</label>
+                                <select class="filtro-select" id="facturaEstado">
+                                    <option value="todos">Todos</option>
+                                    <option value="PENDIENTE">Pendiente</option>
+                                    <option value="PAGADA">Pagada</option>
+                                    <option value="ANULADA">Anulada</option>
+                                </select>
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Fecha desde</label>
+                                <input type="date" class="filtro-input" id="facturaFechaDesde">
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Fecha hasta</label>
+                                <input type="date" class="filtro-input" id="facturaFechaHasta">
+                            </div>
+                        </div>
+                        <div class="filtros-acciones">
+                            <button class="btn btn-secondary" onclick="limpiarFiltrosFacturas()">
+                                <i class="fas fa-times"></i> Limpiar
+                            </button>
+                            <button class="btn btn-primary" onclick="cargarFacturas()">
+                                <i class="fas fa-search"></i> Buscar
+                            </button>
+                            <button class="btn btn-success" onclick="abrirModalFactura()">
+                                <i class="fas fa-plus"></i> Nueva Factura
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de facturas -->
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Factura</th>
+                                    <th>Proveedor</th>
+                                    <th>Fecha Emisión</th>
+                                    <th>Vencimiento</th>
+                                    <th>Total</th>
+                                    <th>Saldo</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="facturasTableBody">
+                                <tr>
+                                    <td colspan="8" class="text-center">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Cargando...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: COMPRAS -->
+            <div class="tab-pane fade" id="tab-compras" role="tabpanel">
+                <div class="container-fluid">
+                    <!-- Estadísticas de compras -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon primary">
+                                <i class="fas fa-shopping-cart"></i>
+                            </div>
+                            <div class="stat-value" id="totalCompras">0</div>
+                            <div class="stat-label">Total Compras</div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-icon success">
+                                <i class="fas fa-calendar"></i>
+                            </div>
+                            <div class="stat-value" id="comprasMes">0</div>
+                            <div class="stat-label">Compras Mes</div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon warning">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="stat-value" id="comprasTotal">$0</div>
+                            <div class="stat-label">Total Compras Mes</div>
+                        </div>
+                        <div class="stat-card info">
+                            <div class="stat-icon info">
+                                <i class="fas fa-boxes"></i>
+                            </div>
+                            <div class="stat-value" id="materiasPrimas">0</div>
+                            <div class="stat-label">Materias Primas</div>
+                        </div>
+                    </div>
+
+                    <!-- Filtros de compras -->
+                    <div class="filtros-container">
+                        <div class="filtros-row">
+                            <div class="filtro-group">
+                                <label class="filtro-label">Buscar compra</label>
+                                <input type="text" class="filtro-input" id="compraSearch" 
+                                       placeholder="Proveedor, comprobante...">
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Fecha desde</label>
+                                <input type="date" class="filtro-input" id="compraFechaDesde">
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Fecha hasta</label>
+                                <input type="date" class="filtro-input" id="compraFechaHasta">
+                            </div>
+                        </div>
+                        <div class="filtros-acciones">
+                            <button class="btn btn-secondary" onclick="limpiarFiltrosCompras()">
+                                <i class="fas fa-times"></i> Limpiar
+                            </button>
+                            <button class="btn btn-primary" onclick="cargarCompras()">
+                                <i class="fas fa-search"></i> Buscar
+                            </button>
+                            <button class="btn btn-success" onclick="abrirModalCompra()">
+                                <i class="fas fa-plus"></i> Nueva Compra
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de compras -->
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Comprobante</th>
+                                    <th>Proveedor</th>
+                                    <th>Fecha</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="comprasTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Cargando...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: PAGOS -->
+            <div class="tab-pane fade" id="tab-pagos" role="tabpanel">
+                <div class="container-fluid">
+                    <!-- Estadísticas de pagos -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon primary">
+                                <i class="fas fa-money-bill"></i>
+                            </div>
+                            <div class="stat-value" id="totalPagos">0</div>
+                            <div class="stat-label">Total Pagos</div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-icon success">
+                                <i class="fas fa-calendar-check"></i>
+                            </div>
+                            <div class="stat-value" id="pagosMes">0</div>
+                            <div class="stat-label">Pagos Mes</div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon warning">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="stat-value" id="pagosTotal">$0</div>
+                            <div class="stat-label">Total Pagado Mes</div>
+                        </div>
+                        <div class="stat-card info">
+                            <div class="stat-icon info">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-value" id="proximosVencimientos">0</div>
+                            <div class="stat-label">Próximos Vencimientos</div>
+                        </div>
+                    </div>
+
+                    <!-- Filtros de pagos -->
+                    <div class="filtros-container">
+                        <div class="filtros-row">
+                            <div class="filtro-group">
+                                <label class="filtro-label">Buscar pago</label>
+                                <input type="text" class="filtro-input" id="pagoSearch" 
+                                       placeholder="Proveedor, referencia...">
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Forma de pago</label>
+                                <select class="filtro-select" id="pagoForma">
+                                    <option value="todos">Todas</option>
+                                    <option value="EFECTIVO">Efectivo</option>
+                                    <option value="TRANSFERENCIA">Transferencia</option>
+                                    <option value="CHEQUE">Cheque</option>
+                                </select>
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Fecha desde</label>
+                                <input type="date" class="filtro-input" id="pagoFechaDesde">
+                            </div>
+                            <div class="filtro-group">
+                                <label class="filtro-label">Fecha hasta</label>
+                                <input type="date" class="filtro-input" id="pagoFechaHasta">
+                            </div>
+                        </div>
+                        <div class="filtros-acciones">
+                            <button class="btn btn-secondary" onclick="limpiarFiltrosPagos()">
+                                <i class="fas fa-times"></i> Limpiar
+                            </button>
+                            <button class="btn btn-primary" onclick="cargarPagos()">
+                                <i class="fas fa-search"></i> Buscar
+                            </button>
+                            <button class="btn btn-success" onclick="abrirModalPago()">
+                                <i class="fas fa-plus"></i> Nuevo Pago
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de pagos -->
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Proveedor</th>
+                                    <th>Factura</th>
+                                    <th>Forma Pago</th>
+                                    <th>Monto</th>
+                                    <th>Referencia</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pagosTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Cargando...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Proveedor -->
+    <div class="modal fade" id="proveedorModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Nuevo Proveedor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="proveedorForm">
+                        <input type="hidden" id="proveedorId">
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Nombre *</label>
+                                <input type="text" class="form-control" id="nombre" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">CUIT</label>
+                                <input type="text" class="form-control" id="cuit" 
+                                       placeholder="XX-XXXXXXXX-X">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Teléfono</label>
+                                <input type="text" class="form-control" id="telefono">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Dirección</label>
+                            <input type="text" class="form-control" id="direccion">
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contacto</label>
+                                <input type="text" class="form-control" id="contacto" 
+                                       placeholder="Persona de contacto">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Condición IVA</label>
+                                <select class="form-select" id="condicion_iva">
+                                    <option value="RESPONSABLE INSCRIPTO">Responsable Inscripto</option>
+                                    <option value="MONOTRIBUTO">Monotributo</option>
+                                    <option value="EXENTO">Exento</option>
+                                    <option value="CONSUMIDOR FINAL">Consumidor Final</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Observaciones</label>
+                            <textarea class="form-control" id="observaciones" rows="2"></textarea>
+                        </div>
+
+                        <div class="mb-3" id="estadoField">
+                            <label class="form-label">Estado</label>
+                            <select class="form-select" id="activo">
+                                <option value="true">Activo</option>
+                                <option value="false">Inactivo</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarProveedor()">
+                        <i class="fas fa-save"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Ver Detalle -->
+    <div class="modal fade" id="detalleModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Detalle del Proveedor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detalleContent">
+                    <!-- Se llena con JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nueva Compra -->
+    <div class="modal fade" id="compraModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-file-invoice-dollar"></i> Registrar Compra a Proveedor
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="compraForm" onsubmit="return false;">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Proveedor *</label>
+                                <select class="form-select" id="compra_proveedor_id">
+                                    <option value="">-- Seleccionar proveedor --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Fecha de compra *</label>
+                                <input type="date" class="form-control" id="compra_fecha_compra">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">NÂ° Comprobante</label>
+                                <input type="text" class="form-control" id="compra_numero_comprobante" placeholder="Ej: FC A 0001-00001234">
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Moneda</label>
+                                <select class="form-select" id="compra_moneda">
+                                    <option value="ARS">ARS - Pesos</option>
+                                    <option value="USD">USD - Dólar</option>
+                                </select>
+                            </div>
+                            <div class="col-md-9">
+                                <label class="form-label">Observaciones</label>
+                                <input type="text" class="form-control" id="compra_observaciones">
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">Items de la compra</h6>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirModalNuevaMateriaPrima()">
+                                    <i class="fas fa-boxes"></i> Nuevo artículo
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarItemCompra()">
+                                    <i class="fas fa-plus"></i> Agregar item
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm table-hover align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Materia prima</th>
+                                        <th>Descripción</th>
+                                        <th>Unidad</th>
+                                        <th>Cantidad</th>
+                                        <th>Precio unit.</th>
+                                        <th>Subtotal</th>
+                                        <th>Var. precio</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="compraItemsBody">
+                                    <!-- filas dinámicas -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex justify-content-end">
+                            <div class="text-end">
+                                <div>Total compra:</div>
+                                <div id="compraTotal" class="fw-bold fs-5">$ 0,00</div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <div class="me-auto text-muted small" id="compraMensajeVariaciones"></div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" onclick="guardarCompra()">
+                        <i class="fas fa-save"></i> Guardar Compra
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nueva Materia Prima -->
+    <div class="modal fade" id="mpModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-boxes"></i> Nueva materia prima
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="mpForm" onsubmit="return false;">
+                        <div class="mb-3">
+                            <label class="form-label">Código</label>
+                            <input type="text" class="form-control" id="mp_codigo" placeholder="Opcional">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Nombre *</label>
+                            <input type="text" class="form-control" id="mp_nombre" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Unidad de medida *</label>
+                            <select class="form-select" id="mp_unidad_medida">
+                                <option value="UNI">UNI - Unidad</option>
+                                <option value="KG">KG - Kilogramos</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Stock mínimo</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="mp_stock_minimo" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Ubicación</label>
+                            <input type="text" class="form-control" id="mp_ubicacion">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Descripción</label>
+                            <textarea class="form-control" id="mp_descripcion" rows="2"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarMateriaPrimaDesdeModal()">
+                        <i class="fas fa-save"></i> Guardar artículo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/proveedores-integrado.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
+
+

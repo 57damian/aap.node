@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Stock - Sistema Transformadores</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='facturas-compras.html'">Facturas</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='stock.html'" class="active">Stock</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+</div>
+
+<div class="container main-container">
+    <!-- Header Principal -->
+    <div class="proveedores-header">
+        <h1><i class="fas fa-boxes"></i> Control de Stock</h1>
+        <p>Gestione el inventario de artículos y controle niveles de stock</p>
+    </div>
+
+    <!-- Estadísticas Principales -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon primary">
+                <i class="fas fa-cubes"></i>
+            </div>
+            <div class="stat-value" id="totalArticulos">0</div>
+            <div class="stat-label">Total Artículos</div>
+        </div>
+        <div class="stat-card success">
+            <div class="stat-icon success">
+                <i class="fas fa-dollar-sign"></i>
+            </div>
+            <div class="stat-value" id="stockValorizado">$0</div>
+            <div class="stat-label">Stock Valorizado</div>
+        </div>
+        <div class="stat-card warning">
+            <div class="stat-icon warning">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="stat-value" id="articulosStockBajo">0</div>
+            <div class="stat-label">Stock Bajo</div>
+        </div>
+        <div class="stat-card danger">
+            <div class="stat-icon danger">
+                <i class="fas fa-times-circle"></i>
+            </div>
+            <div class="stat-value" id="articulosCriticos">0</div>
+            <div class="stat-label">Sin Stock</div>
+        </div>
+    </div>
+
+    <!-- Filtros y búsqueda -->
+    <div class="filtros-container">
+        <div class="filtros-row">
+            <div class="filtro-group">
+                <label class="filtro-label">Proveedor</label>
+                <select class="filtro-select" id="filtroProveedor">
+                    <option value="">Todos los proveedores</option>
+                </select>
+            </div>
+            <div class="filtro-group">
+                <label class="filtro-label">Estado Stock</label>
+                <select class="filtro-select" id="filtroEstadoStock">
+                    <option value="">Todos</option>
+                    <option value="normal">Normal</option>
+                    <option value="bajo">Stock Bajo</option>
+                    <option value="critico">Sin Stock</option>
+                </select>
+            </div>
+            <div class="filtro-group">
+                <label class="filtro-label">Buscar</label>
+                <input type="text" class="filtro-input" id="searchInput" placeholder="Código, nombre...">
+            </div>
+        </div>
+        <div class="filtros-acciones">
+            <button class="btn btn-secondary" onclick="limpiarFiltros()">
+                <i class="fas fa-times"></i> Limpiar
+            </button>
+            <button class="btn btn-primary" onclick="cargarStock()">
+                <i class="fas fa-search"></i> Buscar
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs de visualización -->
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-general" data-bs-toggle="tab" data-bs-target="#general" type="button" role="tab">
+                <i class="fas fa-list"></i> Vista General
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-bajo" data-bs-toggle="tab" data-bs-target="#bajo" type="button" role="tab">
+                <i class="fas fa-exclamation-triangle"></i> Stock Bajo
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-critico" data-bs-toggle="tab" data-bs-target="#critico" type="button" role="tab">
+                <i class="fas fa-times-circle"></i> Sin Stock
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-movimientos" data-bs-toggle="tab" data-bs-target="#movimientos" type="button" role="tab">
+                <i class="fas fa-exchange-alt"></i> Movimientos
+            </button>
+        </li>
+    </ul>
+
+    <!-- Contenido de tabs -->
+    <div class="tab-content">
+        <!-- Tab: Vista General -->
+        <div class="tab-pane fade show active" id="general" role="tabpanel">
+            <div class="proveedores-table-container">
+                <table class="proveedores-table">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Artículo</th>
+                            <th>Proveedor</th>
+                            <th>Stock Actual</th>
+                            <th>Stock Mínimo</th>
+                            <th>Ubicación</th>
+                            <th>Último Precio</th>
+                            <th>Última Compra</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockTableBody">
+                        <tr>
+                            <td colspan="10" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Cargando...</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Stock Bajo -->
+        <div class="tab-pane fade" id="bajo" role="tabpanel">
+            <div class="proveedores-table-container">
+                <table class="proveedores-table">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Artículo</th>
+                            <th>Proveedor</th>
+                            <th>Stock Actual</th>
+                            <th>Stock Mínimo</th>
+                            <th>Diferencia</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bajoTableBody">
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">No hay artículos con stock bajo</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Sin Stock -->
+        <div class="tab-pane fade" id="critico" role="tabpanel">
+            <div class="proveedores-table-container">
+                <table class="proveedores-table">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Artículo</th>
+                            <th>Proveedor</th>
+                            <th>Última Compra</th>
+                            <th>Último Precio</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="criticoTableBody">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">No hay artículos sin stock</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Movimientos -->
+        <div class="tab-pane fade" id="movimientos" role="tabpanel">
+            <div class="proveedores-table-container">
+                <table class="proveedores-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Artículo</th>
+                            <th>Tipo Movimiento</th>
+                            <th>Cantidad</th>
+                            <th>Stock Anterior</th>
+                            <th>Stock Nuevo</th>
+                            <th>Usuario</th>
+                            <th>Observación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="movimientosTableBody">
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">No hay movimientos registrados</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajuste de Stock -->
+<div class="modal fade" id="ajusteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-cubes"></i> Ajuste de Stock
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="ajusteForm">
+                    <input type="hidden" id="ajuste_articulo_id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Artículo</label>
+                        <input type="text" class="form-control" id="ajuste_articulo_nombre" readonly>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Stock Actual</label>
+                        <input type="text" class="form-control" id="ajuste_stock_actual" readonly>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Nuevo Stock *</label>
+                        <input type="number" id="ajuste_nuevo_stock" class="form-control" step="0.01" min="0" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Tipo de Ajuste *</label>
+                        <select id="ajuste_tipo" class="form-select" required>
+                            <option value="">-- Seleccionar --</option>
+                            <option value="ENTRADA">Entrada</option>
+                            <option value="SALIDA">Salida</option>
+                            <option value="AJUSTE">Ajuste</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Motivo del Ajuste *</label>
+                        <textarea id="ajuste_motivo" class="form-control" rows="3" required></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Fecha del Ajuste *</label>
+                        <input type="date" id="ajuste_fecha" class="form-control" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="guardarAjuste()">
+                    <i class="fas fa-save"></i> Guardar Ajuste
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Historial de Movimientos -->
+<div class="modal fade" id="historialModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Historial de Movimientos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm" id="historialTable">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Cantidad</th>
+                                <th>Stock Anterior</th>
+                                <th>Stock Nuevo</th>
+                                <th>Usuario</th>
+                                <th>Observación</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historialBody">
+                            <!-- Se llena con JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Historial de Precios -->
+<div class="modal fade" id="preciosModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Historial de Precios</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm" id="preciosTable">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Precio Anterior</th>
+                                <th>Precio Nuevo</th>
+                                <th>Variación %</th>
+                                <th>Factura</th>
+                            </tr>
+                        </thead>
+                        <tbody id="preciosBody">
+                            <!-- Se llena con JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/stock.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>

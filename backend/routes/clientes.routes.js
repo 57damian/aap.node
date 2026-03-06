@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const authorize = require('../middlewares/authorize');
+const { verificarToken, authorize } = require('../middlewares/auth');
+
+router.use(verificarToken);
 
 /* CREATE */
 router.post('/', authorize(['admin', 'control']), async (req, res) => {
@@ -51,11 +53,29 @@ router.get('/', authorize(['admin', 'control', 'operario']), async (req, res) =>
   res.json(result.rows);
 });
 
+/* COUNT */
+router.get('/count', authorize(['admin', 'control', 'operario']), async (req, res) => {
+  try {
+    const result = await pool.query('SELECT COUNT(*)::int AS total FROM clientes');
+    res.json({
+      total: result.rows[0]?.total || 0,
+      usuarios_activos: 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* GET ONE */
 router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: 'ID de cliente inválido' });
+  }
+
   const result = await pool.query(
     'SELECT * FROM clientes WHERE id = $1',
-    [req.params.id]
+    [id]
   );
 
   if (!result.rows.length)
@@ -64,9 +84,83 @@ router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res)
   res.json(result.rows[0]);
 });
 
-/* ESTADO FINANCIERO */
-router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
+/* ============================================
+   ✅ UPDATE - ENDPOINT AGREGADO (FALTABA)
+   ============================================ */
+router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
+  const {
+    nombre,
+    cuit,
+    telefono,
+    correo,
+    direccion,
+    forma_pago,
+    dias_max_pago,
+    observaciones
+  } = req.body;
 
+  if (!nombre) {
+    return res.status(400).json({ error: 'El nombre es obligatorio' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE clientes SET
+        nombre = $1,
+        cuit = $2,
+        telefono = $3,
+        correo = $4,
+        direccion = $5,
+        forma_pago = $6,
+        dias_max_pago = $7,
+        observaciones = $8
+       WHERE id = $9
+       RETURNING *`,
+      [
+        nombre,
+        cuit || null,
+        telefono || null,
+        correo || null,
+        direccion || null,
+        forma_pago || null,
+        dias_max_pago || null,
+        observaciones || null,
+        req.params.id
+      ]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Cliente no encontrado' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ============================================
+   ✅ DELETE - ENDPOINT AGREGADO (FALTABA)
+   ============================================ */
+router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM clientes WHERE id = $1',
+      [req.params.id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Cliente no encontrado' });
+    }
+
+    res.json({ ok: true, deletedId: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ESTADO FINANCIERO - CORREGIDO */
+router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
   const { id } = req.params;
 
   const clienteCheck = await pool.query(
@@ -77,23 +171,27 @@ router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
   if (!clienteCheck.rows.length)
     return res.status(404).json({ error: 'Cliente no encontrado' });
 
-  /* TOTAL FACTURADO NETO */
+  // CORREGIDO: Calcular total facturado por cliente correctamente
   const facturadoRes = await pool.query(
     `
-    SELECT
-      COALESCE(SUM(f.total),0)
-      - COALESCE(SUM(nc.total),0) AS total_facturado
+    SELECT COALESCE(SUM(f.total - COALESCE(nc.total_credito, 0)), 0) AS total_facturado
     FROM facturas f
-    LEFT JOIN notas_credito nc ON nc.factura_id = f.id
+    LEFT JOIN (
+      SELECT factura_id, SUM(total) AS total_credito
+      FROM notas_credito
+      GROUP BY factura_id
+    ) nc ON nc.factura_id = f.id
     WHERE f.cliente_id = $1
     `,
     [id]
   );
 
+  const totalFacturado = parseFloat(facturadoRes.rows[0].total_facturado) || 0;
+
   /* TOTAL PAGADO SOLO ACREDITADO */
   const pagadoRes = await pool.query(
     `
-    SELECT COALESCE(SUM(ap.monto_aplicado),0) AS total_pagado
+    SELECT COALESCE(SUM(ap.monto_aplicado), 0) AS total_pagado
     FROM aplicacion_pagos ap
     JOIN facturas f ON f.id = ap.factura_id
     JOIN pagos p ON p.id = ap.pago_id
@@ -103,29 +201,23 @@ router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
     [id]
   );
 
-  const total_facturado = parseFloat(facturadoRes.rows[0].total_facturado);
-  const total_pagado = parseFloat(pagadoRes.rows[0].total_pagado);
-  const saldo = total_facturado - total_pagado;
+  const total_pagado = parseFloat(pagadoRes.rows[0].total_pagado) || 0;
+  const saldo = totalFacturado - total_pagado;
 
   res.json({
     cliente: clienteCheck.rows[0],
-    total_facturado,
+    total_facturado: totalFacturado,
     total_pagado,
     saldo
   });
 });
 
-/* =========================
-   CUENTA CORRIENTE CLIENTE
-   CON FILTRO Y CHEQUE PROFESIONAL
-========================= */
+/* CUENTA CORRIENTE CLIENTE */
 router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, res) => {
-
   const { id } = req.params;
   const { desde, hasta } = req.query;
 
   try {
-
     const clienteCheck = await pool.query(
       'SELECT id, nombre FROM clientes WHERE id = $1',
       [id]
@@ -151,7 +243,6 @@ router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, 
       `
       SELECT *
       FROM (
-
         -- FACTURAS
         SELECT
           f.fecha,
@@ -179,7 +270,7 @@ router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, 
 
         UNION ALL
 
-        -- PAGOS (SOLO RESTAN SI ACREDITADO)
+        -- PAGOS
         SELECT
           p.fecha_recepcion AS fecha,
           'PAGO' AS tipo,
@@ -193,7 +284,6 @@ router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, 
           p.estado AS estado_pago
         FROM pagos p
         WHERE p.cliente_id = $1
-
       ) movimientos
       WHERE 1=1
       ${filtroFecha}
@@ -203,10 +293,8 @@ router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, 
     );
 
     let saldoAcumulado = 0;
-
     const movimientosConSaldo = movimientosRes.rows.map(m => {
       saldoAcumulado += parseFloat(m.debe) - parseFloat(m.haber);
-
       return {
         ...m,
         saldo: saldoAcumulado
@@ -223,7 +311,6 @@ router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, 
     console.error('Error cuenta corriente:', err);
     res.status(500).json({ error: err.message });
   }
-
 });
 
 module.exports = router;

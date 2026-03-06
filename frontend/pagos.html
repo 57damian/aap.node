@@ -1,0 +1,361 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestion de Pagos y Recibos</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+</div>
+
+<div class="container">
+    <div class="header">
+      <h1 class="header-title">Gestion de Pagos y Recibos</h1>
+    </div>
+
+    <!-- Alertas de cheques proximos -->
+    <div id="alertasCheques" class="alert alert-warning">
+      <div class="alerta-cheques-row">
+        <div>
+          <strong>Cheques proximos a vencer</strong>
+          <span id="alertasChequesCount"></span>
+        </div>
+        <button class="btn btn-info btn-sm" onclick="verAlertasCheques()">Ver detalles</button>
+      </div>
+    </div>
+
+    <!-- Tabs principales -->
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('nuevo-pago', event)">Nuevo Pago</button>
+      <button class="tab" onclick="showTab('pagos-list', event)">Lista de Pagos</button>
+      <button class="tab" onclick="showTab('recibos-list', event)">Recibos</button>
+      <button class="tab" onclick="showTab('cheques-list', event)">Cheques</button>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TAB NUEVO PAGO -->
+    <!-- ============================================ -->
+    <div id="nuevo-pago" class="tab-content active">
+      <div class="form-section">
+        <div class="form-section-title">
+          <span>Datos del Pago</span>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Cliente *</label>
+            <select id="cliente_id" required>
+              <option value="">-- Seleccionar Cliente --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Fecha de Recepcion *</label>
+            <input type="date" id="fecha_recepcion" required>
+          </div>
+          <div class="form-group">
+            <label>Observaciones</label>
+            <input type="text" id="observaciones_pago" placeholder="Observaciones del pago">
+          </div>
+        </div>
+      </div>
+
+      <!-- Items de pago -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <span>Items de Pago</span>
+          <button type="button" class="btn btn-info btn-sm" onclick="agregarItemPago()">+ Agregar Item</button>
+        </div>
+        <div id="pago-items-container"></div>
+        <div>
+          <strong>TOTAL PAGO: </strong>
+          <span id="total-pago">$0.00</span>
+        </div>
+      </div>
+
+      <!-- Facturas pendientes -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <span>Facturas Pendientes</span>
+        </div>
+        <table id="facturas-pendientes-table">
+          <thead>
+            <tr>
+              <th>Seleccionar</th>
+              <th>Factura</th>
+              <th>Tipo</th>
+              <th>Fecha</th>
+              <th>Total</th>
+              <th>Saldo</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="facturasPendientesList">
+            <tr>
+              <td colspan="7">
+                Seleccione un cliente para ver sus facturas pendientes
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Boton guardar pago -->
+      <div class="pagos-actions">
+        <button class="btn btn-primary" id="btnGuardarPago">Guardar Pago</button>
+      </div>
+
+      <!-- Seccion de aplicacion (oculta hasta crear pago) -->
+      <div id="pago-aplicar-section" class="hidden-section">
+        <h3>Aplicar Pago #<span id="pago-id"></span></h3>
+        <p><strong>Monto disponible:</strong> <span id="monto-pago"></span></p>
+
+        <table id="facturas-aplicar-table">
+          <thead>
+            <tr>
+              <th>Factura</th>
+              <th>Saldo</th>
+              <th>Monto a aplicar</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="facturasAplicarList">
+            <tr>
+              <td colspan="4">
+                Seleccione facturas para aplicar
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3"><strong>TOTAL A APLICAR:</strong></td>
+              <td><strong id="total-aplicar">$0.00</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div class="pagos-actions">
+          <button class="btn btn-success" id="btnAplicarPago">Aplicar Pago</button>
+        </div>
+      </div>
+
+      <!-- Seccion de recibo (oculta hasta aplicar) -->
+      <div id="recibo-section" class="hidden-section">
+        <h3>Generar Recibo</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Numero de Recibo *</label>
+            <input type="text" id="numero_recibo" required placeholder="Ej: R-2026-001">
+          </div>
+          <div class="form-group">
+            <label>Talonario</label>
+            <select id="talonario_id">
+              <option value="">-- Seleccionar Talonario --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Fecha de Emision *</label>
+            <input type="date" id="fecha_emision" required>
+          </div>
+          <div class="form-group">
+            <label>Observaciones</label>
+            <input type="text" id="observaciones_recibo" placeholder="Observaciones del recibo">
+          </div>
+        </div>
+        <div class="pagos-actions">
+          <button class="btn btn-primary" id="btnGenerarRecibo">Generar Recibo</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TAB LISTA DE PAGOS -->
+    <!-- ============================================ -->
+    <div id="pagos-list" class="tab-content">
+      <h2>Historial de Pagos</h2>
+
+      <div class="pagos-toolbar">
+        <select id="filtroCliente">
+          <option value="">Todos los clientes</option>
+        </select>
+        <input type="date" id="filtroDesde">
+        <input type="date" id="filtroHasta">
+        <select id="filtroEstado">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="parcial">Parcial</option>
+          <option value="aplicado">Aplicado</option>
+        </select>
+        <button class="btn btn-info" onclick="cargarPagos()">Filtrar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Monto</th>
+            <th>Items</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="pagosList">
+          <tr>
+            <td colspan="7">
+              <div>...</div>
+              Cargando pagos...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TAB RECIBOS -->
+    <!-- ============================================ -->
+    <div id="recibos-list" class="tab-content">
+      <h2>Recibos Emitidos</h2>
+
+      <div class="pagos-toolbar">
+        <select id="filtroReciboCliente">
+          <option value="">Todos los clientes</option>
+        </select>
+        <input type="date" id="filtroReciboDesde">
+        <input type="date" id="filtroReciboHasta">
+        <button class="btn btn-info" onclick="cargarRecibos()">Filtrar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Nro Recibo</th>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Total</th>
+            <th>Talonario</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="recibosList">
+          <tr>
+            <td colspan="6">
+              <div>...</div>
+              Cargando recibos...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TAB CHEQUES -->
+    <!-- ============================================ -->
+    <div id="cheques-list" class="tab-content">
+      <h2>Gestion de Cheques</h2>
+
+      <div class="pagos-toolbar">
+        <select id="filtroChequeCliente">
+          <option value="">Todos los clientes</option>
+        </select>
+        <select id="filtroChequeEstado">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="depositado">Depositado</option>
+          <option value="acreditado">Acreditado</option>
+          <option value="rechazado">Rechazado</option>
+        </select>
+        <input type="date" id="filtroChequeDesde">
+        <input type="date" id="filtroChequeHasta">
+        <button class="btn btn-info" onclick="cargarCheques()">Filtrar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Cheque Nro</th>
+            <th>Banco</th>
+            <th>Cliente</th>
+            <th>Monto</th>
+            <th>Emision</th>
+            <th>Cobro</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="chequesList">
+          <tr>
+            <td colspan="8">
+              <div>...</div>
+              Cargando cheques...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- MODALES -->
+    <!-- ============================================ -->
+
+    <!-- Modal Detalle Pago -->
+    <div id="pagoModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Detalle del Pago</h3>
+          <span class="close" onclick="cerrarModal('pagoModal')">&times;</span>
+        </div>
+        <div id="pagoDetalle"></div>
+      </div>
+    </div>
+
+    <!-- Modal Detalle Recibo -->
+    <div id="reciboModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Detalle del Recibo</h3>
+          <span class="close" onclick="cerrarModal('reciboModal')">&times;</span>
+        </div>
+        <div id="reciboDetalle"></div>
+      </div>
+    </div>
+
+    <!-- Modal Gestion Cheque -->
+    <div id="chequeModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Gestion de Cheque</h3>
+          <span class="close" onclick="cerrarModal('chequeModal')">&times;</span>
+        </div>
+        <div id="chequeDetalle"></div>
+      </div>
+    </div>
+
+    <!-- Alerta global -->
+    <div id="globalAlert" class="alert"></div>
+  </div>
+  <script src="js/api.js"></script>
+  <script src="js/pagos.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
+
+

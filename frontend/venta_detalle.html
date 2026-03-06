@@ -1,50 +1,209 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Detalle Venta</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle Venta - Transformadores</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
-<h2>📦 Detalle de Entrega</h2>
-
-<div id="cabecera"></div>
-
-<hr>
-
-<h3>Items entregados</h3>
-<table border="1" width="100%">
-  <thead>
-    <tr>
-      <th>Modelo</th>
-      <th>Cantidad</th>
-      <th>Precio USD</th>
-      <th>Precio Pesos</th>
-    </tr>
-  </thead>
-  <tbody id="tablaItems"></tbody>
-</table>
-
-<hr>
-
-<h3>📄 Remito</h3>
-<div>
-  Número: <input type="text" id="remito_numero"><br><br>
-  Fecha: <input type="date" id="remito_fecha"><br><br>
-  Observaciones:<br>
-  <textarea id="remito_obs" rows="3" cols="40"></textarea><br><br>
-  <button onclick="guardarRemito()">Guardar Remito</button>
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Técnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Órdenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
 </div>
 
-<hr>
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h2>
+      📦 Detalle de Venta #<span id="ventaId">Cargando...</span>
+    </h2>
+    <button class="btn btn-secondary" onclick="window.location.href='ventas.html'">
+      ← Volver a Ventas
+    </button>
+  </div>
 
-<div id="facturacion"></div>
+  <!-- Info del cliente y venta -->
+  <div class="info-cliente" id="infoCliente">
+    <div class="info-item">
+      <span class="info-label">Cliente</span>
+      <span class="info-value" id="clienteNombre">Cargando...</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Orden de Compra</span>
+      <span class="info-value" id="ocNumero">Cargando...</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Fecha de Venta</span>
+      <span class="info-value" id="fechaVenta">Cargando...</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Tipo de Cambio</span>
+      <span class="info-value" id="tipoCambio">Cargando...</span>
+    </div>
+  </div>
 
-<br>
-<button onclick="window.location.href='ventas.html'">Volver</button>
+  <!-- Estado de facturación -->
+  <div id="estadoFacturacion"></div>
+
+  <!-- Items de la venta -->
+  <div class="section-title">
+    📋 Items Entregados
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Modelo</th>
+        <th>Cantidad</th>
+        <th>Precio USD</th>
+        <th>Precio Pesos</th>
+        <th>Subtotal</th>
+      </tr>
+    </thead>
+    <tbody id="tablaItems">
+      <tr>
+        <td colspan="5">
+          <div class="loading">
+            <div>⏳</div>
+            Cargando items de la venta...
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Sección Remito -->
+  <div class="remito-section">
+    <div class="remito-header">
+      <div class="section-title">
+        📄 Remito
+      </div>
+      <button class="btn btn-primary" id="btnGuardarRemito" onclick="guardarRemito()">
+        💾 Guardar Remito
+      </button>
+    </div>
+    
+    <div class="remito-grid">
+      <div class="form-group">
+        <label>Número de Remito</label>
+        <input type="text" id="remito_numero" placeholder="Ej: REM-2024-0001">
+      </div>
+      <div class="form-group">
+        <label>Fecha de Remito</label>
+        <input type="date" id="remito_fecha">
+      </div>
+      <div class="form-group">
+        <label>Observaciones</label>
+        <textarea id="remito_obs" rows="2" placeholder="Observaciones del remito..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Factura asociada (se muestra si ya está facturada) -->
+  <div id="facturaAsociada" style="display: none;">
+    <div class="section-title">
+      🧾 Factura Asociada
+    </div>
+    <div class="factura-info" id="detalleFactura">
+      <!-- Se llena dinámicamente -->
+    </div>
+  </div>
+
+  <!-- Alertas -->
+  <div id="alert" class="alert" style="display: none;"></div>
+</div>
+
+<!-- MODAL DE FACTURACIÓN -->
+<div id="facturaModal" class="modal" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>🧾 Generar Factura</h3>
+      <span class="close" onclick="cerrarModalFactura()">&times;</span>
+    </div>
+    
+    <div id="modalFacturaContent">
+      <!-- Resumen de la venta -->
+      <div class="resumen-venta">
+        <p><strong>Cliente:</strong> <span id="modalCliente"></span></p>
+        <p><strong>OC:</strong> <span id="modalOC"></span></p>
+        <p><strong>Total a facturar:</strong> <span id="modalTotal"></span></p>
+      </div>
+
+      <!-- Formulario de factura -->
+      <div class="factura-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Número de Factura *</label>
+            <input type="text" id="factura_numero" placeholder="Ej: 0001-00001234" required>
+          </div>
+          
+          <div class="form-group">
+            <label>Tipo de Factura *</label>
+            <select id="factura_tipo" required>
+              <option value="">-- Seleccionar --</option>
+              <option value="A">Factura A</option>
+              <option value="B">Factura B</option>
+              <option value="C">Factura C</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Fecha *</label>
+            <input type="date" id="factura_fecha" required>
+          </div>
+          <div class="form-group">
+            <label>Días de Crédito</label>
+            <input type="number" id="factura_dias_credito" value="0" min="0">
+          </div>
+        </div>
+
+        <div class="resumen-importes">
+          <h4>Resumen de Importes</h4>
+          <div class="importe-row">
+            <span>Subtotal sin IVA:</span>
+            <span id="resumenSubtotal">$0.00</span>
+          </div>
+          <div class="importe-row">
+            <span>IVA 21%:</span>
+            <span id="resumenIVA">$0.00</span>
+          </div>
+          <div class="importe-row total">
+            <span>TOTAL:</span>
+            <span id="resumenTotal">$0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="cerrarModalFactura()">
+          Cancelar
+        </button>
+        <button class="btn btn-success" onclick="confirmarFacturacion()">
+          ✅ Generar Factura
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="js/api.js"></script>
 <script src="js/venta_detalle.js"></script>
-
+<script src="js/auth.js"></script>
 </body>
 </html>

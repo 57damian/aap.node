@@ -1,0 +1,98 @@
+/* Fix para problemas de modal y backdrop */
+.modal {
+  z-index: 1055 !important;
+}
+
+.modal-backdrop {
+  z-index: 1050 !important;
+}
+
+.modal-content {
+  z-index: 1060 !important;
+  position: relative;
+}
+
+.modal-dialog {
+  z-index: 1061 !important;
+  pointer-events: auto !important;
+}
+
+/* Asegurar que los inputs dentro del modal sean focusables */
+.modal input,
+.modal select,
+.modal textarea,
+.modal button {
+  position: relative;
+  z-index: 1062 !important;
+  pointer-events: auto !important;
+}
+
+/* Evitar que el backdrop sea completamente opaco */
+.modal-backdrop.show {
+  opacity: 0.5 !important;
+  background-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Asegurar que el modal sea interactivo */
+.modal.show {
+  pointer-events: auto !important;
+}
+
+.modal.show .modal-dialog {
+  pointer-events: auto !important;
+}
+
+/* Fix para botones de toggle de contraseña */
+.password-toggle {
+  z-index: 10 !important;
+  pointer-events: auto !important;
+  position: absolute !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+}
+
+/* Estilos adicionales para formularios en modals */
+.modal .form-control {
+  background-color: #fff !important;
+  color: var(--gray-900) !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 5 !important;
+}
+
+.modal .form-control:focus {
+  background-color: #fff !important;
+  z-index: 10 !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
+/* Asegurar que el modal body no bloquee interacción */
+.modal-body {
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 5 !important;
+}
+
+/* Fix para el header y footer del modal */
+.modal-header,
+.modal-footer {
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 6 !important;
+}
+
+/* Evitar que el backdrop bloquee todo */
+body.modal-open {
+  overflow: hidden !important;
+}
+
+/* Fix específico para Bootstrap 5 */
+.modal.fade .modal-dialog {
+  transform: translate(0, -50px) !important;
+  transition: transform 0.3s ease-out !important;
+}
+
+.modal.show .modal-dialog {
+  transform: translate(0, 0) !important;
+}

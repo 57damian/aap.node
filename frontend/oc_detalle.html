@@ -1,87 +1,197 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Detalle Orden de Compra</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle Orden de Compra | Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
-<h2>Orden de Compra</h2>
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">
+    <i class="fas fa-bolt"></i> TRANSFORMADORES ERP
+  </a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'"><i class="fas fa-tachometer-alt"></i> Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'"><i class="fas fa-file-alt"></i> Fichas Técnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'" class="active"><i class="fas fa-shopping-cart"></i> Órdenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'"><i class="fas fa-chart-line"></i> Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'"><i class="fas fa-users"></i> Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'"><i class="fas fa-truck"></i> Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos.html'"><i class="fas fa-credit-card"></i> Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'"><i class="fas fa-chart-bar"></i> Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'"><i class="fas fa-industry"></i> Producción</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'"><i class="fas fa-user-cog"></i> Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'"><i class="fas fa-tags"></i> Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
+</div>
 
-<h3>Resumen</h3>
-<div id="resumen"></div>
+<div class="container">
+  <div class="page-header">
+    <h1><i class="fas fa-file-invoice"></i> Detalle de Orden de Compra</h1>
+    <p id="oc-titulo" class="text-muted">Cargando...</p>
+  </div>
+  
+  <!-- Resumen Card -->
+  <div class="card">
+    <div class="card-header">
+      <h2><i class="fas fa-chart-pie"></i> Resumen</h2>
+    </div>
+    <div class="card-body">
+      <div id="resumen" class="resumen-grid"></div>
+    </div>
+  </div>
+  
+  <!-- Detalle de productos -->
+  <div class="card">
+    <div class="card-header">
+      <h2><i class="fas fa-boxes"></i> Detalle de Productos</h2>
+    </div>
+    <div class="card-body">
+      <!-- Formulario para agregar items -->
+      <div class="form-agregar-item">
+        <h3><i class="fas fa-plus-circle"></i> Agregar Ítem</h3>
+        <form id="itemForm" class="form-inline">
+          <div class="form-group">
+            <select id="ficha_id" required class="form-control">
+              <option value="">-- Seleccionar modelo --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <input type="number" id="cantidad_pedida" placeholder="Cantidad" required class="form-control" min="1" />
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Agregar
+          </button>
+        </form>
+      </div>
+      
+      <!-- Tabla de detalle -->
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th>Pedido</th>
+              <th>Entregado</th>
+              <th>Pendiente</th>
+            </tr>
+          </thead>
+          <tbody id="detalle"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Registrar entrega parcial -->
+  <div class="card">
+    <div class="card-header">
+      <h2><i class="fas fa-truck"></i> Registrar Entrega Parcial</h2>
+    </div>
+    <div class="card-body">
+      <form id="entregaForm">
+        <div class="remito-info" style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+          <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #333;">
+            <i class="fas fa-file-invoice"></i> Datos del Remito
+          </h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div class="form-group">
+              <label for="remito_numero"><i class="fas fa-hashtag"></i> N° Remito *</label>
+              <input type="text" id="remito_numero" class="form-control" required placeholder="Ej: R-2024-001">
+            </div>
+            <div class="form-group">
+              <label for="remito_fecha"><i class="fas fa-calendar"></i> Fecha Remito *</label>
+              <input type="date" id="remito_fecha" class="form-control" required>
+            </div>
+            <div class="form-group full-width" style="grid-column: 1 / -1;">
+              <label for="remito_observaciones"><i class="fas fa-sticky-note"></i> Observaciones</label>
+              <textarea id="remito_observaciones" class="form-control" rows="2" placeholder="Observaciones del remito..."></textarea>
+            </div>
+          </div>
+        </div>
 
-<hr>
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Modelo</th>
+                <th>Pendiente</th>
+                <th>Entregar ahora</th>
+                <th>Incluir</th>
+              </tr>
+            </thead>
+            <tbody id="entregaItems"></tbody>
+          </table>
+        </div>
+        
+        <div class="form-actions">
+          <button type="button" id="btnRegistrarEntrega" class="btn btn-success">
+            <i class="fas fa-check-circle"></i> Registrar Entrega con Remito
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-<h3>Detalle de productos</h3>
+  <div class="card">
+    <div class="card-header">
+      <h2><i class="fas fa-file-invoice"></i> Remitos de Entrega</h2>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>N° Remito</th>
+              <th>Fecha</th>
+              <th>Venta</th>
+              <th>Items</th>
+              <th>Observaciones</th>
+            </tr>
+          </thead>
+          <tbody id="remitosList"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Facturas y pagos -->
+  <div class="card">
+    <div class="card-header">
+      <h2><i class="fas fa-file-invoice-dollar"></i> Facturas y Pagos</h2>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Modelo / Factura</th>
+              <th>Cantidad</th>
+              <th>Precio Unit.</th>
+              <th>Subtotal</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="facturas"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Botones de acción -->
+  <div class="action-buttons">
+    <button id="btnVolver" class="btn btn-secondary">
+      <i class="fas fa-arrow-left"></i> Volver
+    </button>
+  </div>
+</div>
 
-<h4>Agregar ítem</h4>
-<form id="itemForm">
-  <select id="ficha_id" required>
-  <option value="">-- Seleccionar modelo --</option>
-  </select>
-  <input type="number" id="cantidad_pedida" placeholder="Cantidad" required />
-  <button type="submit">Agregar</button>
-</form>
-
-<table border="1">
-  <thead>
-    <tr>
-      <th>Modelo</th>
-      <th>Pedido</th>
-      <th>Entregado</th>
-      <th>Pendiente</th>
-    </tr>
-  </thead>
-  <tbody id="detalle"></tbody>
-</table>
-
-<hr>
-
-<h3>Registrar entrega parcial</h3>
-
-<form id="entregaForm">
-
-  <table border="1">
-    <thead>
-      <tr>
-        <th>Modelo</th>
-        <th>Pendiente</th>
-        <th>Entregar ahora</th>
-        <th>Incluir</th>
-      </tr>
-    </thead>
-    <tbody id="entregaItems">
-      <!-- filas dinámicas -->
-    </tbody>
-  </table>
-
-  <br>
-  <button type="button" id="btnRegistrarEntrega">Registrar entrega</button>
-</form>
-
-
-<hr>
-
-<h3>Facturas y pagos</h3>
-<table border="1">
-  <thead>
-    <tr>
-      <th>Factura</th>
-      <th>Fecha</th>
-      <th>Total</th>
-      <th>Cobrado</th>
-    </tr>
-  </thead>
-  <tbody id="facturas"></tbody>
-</table>
-
-<br>
-<button id="btnVolver">Volver</button>
-
-<!-- ⚠️ scripts SOLO UNA VEZ y AL FINAL -->
 <script src="js/api.js"></script>
 <script src="js/oc_detalle.js"></script>
-
+<script src="js/auth.js"></script>
+<script src="js/dashboard.js"></script>
 </body>
 </html>

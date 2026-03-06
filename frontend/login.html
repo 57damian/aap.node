@@ -1,0 +1,213 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Background Animation -->
+    <div class="bg-animation"></div>
+    
+    <!-- Login Container -->
+    <div class="login-container">
+        <div class="login-header">
+            <div class="logo">
+                <i class="fas fa-bolt"></i>
+            </div>
+            <h1 class="login-title">Transformadores ERP</h1>
+            <p class="login-subtitle">Sistema de Gestión Integral</p>
+        </div>
+        
+        <form id="loginForm" class="login-form">
+            <div class="form-group">
+                <i class="fas fa-user form-icon"></i>
+                <input 
+                    type="text" 
+                    id="usuario" 
+                    class="form-input" 
+                    placeholder="Usuario" 
+                    required 
+                    autocomplete="username"
+                >
+            </div>
+            
+            <div class="form-group">
+                <i class="fas fa-lock form-icon"></i>
+                <input 
+                    type="password" 
+                    id="password" 
+                    class="form-input" 
+                    placeholder="Contraseña" 
+                    required 
+                    autocomplete="current-password"
+                >
+                <button type="button" class="password-toggle" onclick="togglePassword()">
+                    <i class="fas fa-eye" id="passwordIcon"></i>
+                </button>
+            </div>
+            
+            <div class="remember-forgot">
+                <label class="remember-me">
+                    <input type="checkbox" id="rememberMe">
+                    <span>Recordarme</span>
+                </label>
+                <a href="#" class="forgot-link">¿Olvidaste tu contraseña?</a>
+            </div>
+            
+            <button type="submit" class="login-button" id="loginButton">
+                <i class="fas fa-sign-in-alt"></i>
+                <span id="buttonText">Iniciar Sesión</span>
+            </button>
+        </form>
+        
+        <div class="error-message" id="errorMessage">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span id="errorText">Usuario o contraseña incorrectos</span>
+        </div>
+        
+        <div class="login-footer">
+            <p>&copy; 2024 Transformadores ERP</p>
+            <p class="version">v2.0.0</p>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/css-utilities.js"></script>
+    
+    <script>
+        // Toggle password visibility
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const passwordIcon = document.getElementById('passwordIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                passwordIcon.className = 'fas fa-eye-slash';
+            } else {
+                passwordInput.type = 'password';
+                passwordIcon.className = 'fas fa-eye';
+            }
+        }
+        
+        // Enhanced login form handling
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const usuario = document.getElementById('usuario').value.trim();
+            const password = document.getElementById('password').value;
+            const button = document.getElementById('loginButton');
+            const buttonText = document.getElementById('buttonText');
+            const errorMessage = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            
+            // Reset error state
+            errorMessage.classList.remove('show');
+            document.querySelectorAll('.form-input').forEach(input => {
+                input.classList.remove('error');
+            });
+            
+            // Validate inputs
+            if (!usuario || !password) {
+                errorText.textContent = 'Por favor complete todos los campos';
+                errorMessage.classList.add('show');
+                
+                if (!usuario) document.getElementById('usuario').classList.add('error');
+                if (!password) document.getElementById('password').classList.add('error');
+                return;
+            }
+            
+            // Show loading state
+            button.disabled = true;
+            button.classList.add('loading');
+            buttonText.textContent = 'Iniciando sesión...';
+            
+            try {
+                // Attempt login
+                const response = await apiFetch('/api/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ usuario, password })
+                });
+                
+                if (response.token) {
+                    // Success - store token and redirect
+                    localStorage.setItem('token', response.token);
+                    localStorage.setItem('usuario', JSON.stringify(response.usuario));
+                    
+                    // Remember me functionality
+                    if (document.getElementById('rememberMe').checked) {
+                        localStorage.setItem('rememberUser', usuario);
+                    } else {
+                        localStorage.removeItem('rememberUser');
+                    }
+                    
+                    // Show success message
+                    buttonText.textContent = '¡Acceso concedido!';
+                    button.style.background = 'var(--gradient-success)';
+                    
+                    // Redirect after short delay
+                    setTimeout(() => {
+                        window.location.href = 'dashboard.html';
+                    }, 1000);
+                } else {
+                    throw new Error('Credenciales inválidas');
+                }
+                
+            } catch (error) {
+                // Handle error
+                button.disabled = false;
+                button.classList.remove('loading');
+                buttonText.textContent = 'Iniciar Sesión';
+                
+                // Show error message
+                errorText.textContent = error.message || 'Usuario o contraseña incorrectos';
+                errorMessage.classList.add('show');
+                
+                // Add error styling to inputs
+                document.getElementById('usuario').classList.add('error');
+                document.getElementById('password').classList.add('error');
+                
+                // Shake animation
+                const loginContainer = document.querySelector('.login-container');
+                loginContainer.style.animation = 'shake 0.5s';
+                setTimeout(() => {
+                    loginContainer.style.animation = '';
+                }, 500);
+            }
+        });
+        
+        // Add shake animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-10px); }
+                75% { transform: translateX(10px); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Load remembered user
+        window.addEventListener('load', function() {
+            const rememberedUser = localStorage.getItem('rememberUser');
+            if (rememberedUser) {
+                document.getElementById('usuario').value = rememberedUser;
+                document.getElementById('rememberMe').checked = true;
+                document.getElementById('password').focus();
+            } else {
+                document.getElementById('usuario').focus();
+            }
+        });
+        
+        // Forgot password handler
+        document.querySelector('.forgot-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            cssUtils.showNotification('Función de recuperación de contraseña próximamente disponible', 'info');
+        });
+    </script>
+</body>
+</html>
+

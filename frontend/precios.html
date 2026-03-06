@@ -1,60 +1,826 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Gestión de Precios</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestión de Precios y Dólar | Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    /* Estilos adicionales específicos para precios */
+    :root {
+      --primary-color: #4361ee;
+      --success-color: #2ecc71;
+      --warning-color: #f39c12;
+      --danger-color: #e74c3c;
+      --dark-color: #2c3e50;
+      --light-bg: #f8f9fa;
+      --border-radius: 12px;
+      --box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      --transition: all 0.3s ease;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+
+    .navbar {
+      background: white;
+      padding: 1rem 2rem;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .navbar-brand {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      text-decoration: none;
+      letter-spacing: -0.5px;
+    }
+
+    .navbar-menu {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .navbar-menu button {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      background: transparent;
+      color: #666;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: var(--transition);
+    }
+
+    .navbar-menu button:hover {
+      background: var(--light-bg);
+      color: var(--primary-color);
+    }
+
+    .navbar-menu button[onclick*="precios.html"] {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: var(--border-radius);
+      box-shadow: var(--box-shadow);
+    }
+
+    h2 {
+      font-size: 2.2rem;
+      margin-bottom: 2rem;
+      color: var(--dark-color);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    h2 i {
+      color: var(--primary-color);
+      font-size: 2rem;
+    }
+
+    h3 {
+      font-size: 1.5rem;
+      margin: 2rem 0 1.5rem;
+      color: var(--dark-color);
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    h3 i {
+      color: var(--primary-color);
+    }
+
+    h4 {
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+      color: #555;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Sección Dólar */
+    .section-dolar {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 2rem;
+      box-shadow: var(--box-shadow);
+      margin-bottom: 2rem;
+    }
+
+    .dolar-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .dolar-header-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.8rem;
+    }
+
+    .dolar-header-text h3 {
+      margin: 0;
+      color: var(--dark-color);
+    }
+
+    .dolar-header-text p {
+      color: #666;
+      margin-top: 0.3rem;
+    }
+
+    .dolar-actual {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: var(--border-radius);
+      padding: 2rem;
+      color: white;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dolar-actual-info h4 {
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .dolar-actual-valor {
+      font-size: 3rem;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 0.5rem;
+    }
+
+    .dolar-actual-fecha {
+      color: rgba(255,255,255,0.8);
+      font-size: 0.9rem;
+    }
+
+    .dolar-actual-equivalente {
+      text-align: right;
+    }
+
+    .dolar-actual-equivalente div:first-child {
+      font-size: 1.2rem;
+      opacity: 0.9;
+    }
+
+    .dolar-actual-equivalente div:nth-child(2) {
+      font-size: 2.5rem;
+      font-weight: 700;
+    }
+
+    .form-dolar {
+      background: var(--light-bg);
+      border-radius: var(--border-radius);
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: end;
+      margin-bottom: 1rem;
+    }
+
+    .input-group {
+      display: flex;
+      align-items: center;
+      background: white;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      overflow: hidden;
+      transition: var(--transition);
+    }
+
+    .input-group:focus-within {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    .input-group span {
+      padding: 0.8rem 1rem;
+      background: #f5f5f5;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .input-group input {
+      flex: 1;
+      padding: 0.8rem;
+      border: none;
+      outline: none;
+      font-size: 1rem;
+    }
+
+    /* Tablas */
+    .table-container {
+      overflow-x: auto;
+      border-radius: var(--border-radius);
+      background: white;
+      box-shadow: var(--box-shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      background: var(--light-bg);
+      color: var(--dark-color);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.85rem;
+      letter-spacing: 0.5px;
+      padding: 1rem;
+    }
+
+    td {
+      padding: 1rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: rgba(67, 97, 238, 0.02);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .badge-success {
+      background: rgba(46, 204, 113, 0.1);
+      color: #27ae60;
+    }
+
+    .badge-warning {
+      background: rgba(243, 156, 18, 0.1);
+      color: #f39c12;
+    }
+
+    .btn {
+      padding: 0.8rem 1.5rem;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #3651d4;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(67, 97, 238, 0.3);
+    }
+
+    .btn-success {
+      background: var(--success-color);
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #27ae60;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(46, 204, 113, 0.3);
+    }
+
+    .btn-warning {
+      background: var(--warning-color);
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #e67e22;
+      transform: translateY(-2px);
+    }
+
+    .btn-info {
+      background: #3498db;
+      color: white;
+    }
+
+    .btn-info:hover {
+      background: #2980b9;
+    }
+
+    .btn-danger {
+      background: var(--danger-color);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c0392b;
+    }
+
+    .btn-sm {
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    /* Cards */
+    .card {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 1.5rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--dark-color);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Grid */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    /* Formularios */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #555;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.8rem;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 1rem;
+      transition: var(--transition);
+    }
+
+    .form-control:focus {
+      border-color: var(--primary-color);
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    select.form-control {
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 1rem center;
+      background-size: 1em;
+    }
+
+    /* Alert */
+    .alert {
+      position: fixed;
+      top: 2rem;
+      right: 2rem;
+      padding: 1rem 2rem;
+      border-radius: 10px;
+      background: white;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      display: none;
+      z-index: 2000;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .alert-success {
+      background: #d4edda;
+      color: #155724;
+      border-left: 4px solid #28a745;
+    }
+
+    .alert-error {
+      background: #f8d7da;
+      color: #721c24;
+      border-left: 4px solid #dc3545;
+    }
+
+    /* Loading Spinner */
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(0,0,0,0.1);
+      border-radius: 50%;
+      border-top-color: var(--primary-color);
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-row td {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: #999;
+    }
+
+    .empty-state i {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      color: #ddd;
+    }
+
+    /* Historial Section */
+    .historial-section {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 2rem;
+      box-shadow: var(--box-shadow);
+    }
+
+    .historial-filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      align-items: flex-end;
+    }
+
+    .historial-filters .form-group {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .container {
+        padding: 1rem;
+        margin: 1rem;
+      }
+
+      .navbar-menu {
+        display: none;
+      }
+
+      .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .dolar-actual {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+      }
+
+      .dolar-actual-equivalente {
+        text-align: center;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .historial-filters {
+        flex-direction: column;
+      }
+    }
+  </style>
 </head>
 <body>
 
-<h2>Gestión de Precios</h2>
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">
+    <i class="fas fa-bolt"></i> TRANSFORMADORES ERP
+  </a>
+  <div class="navbar-menu">
+    <button onclick="window.location.href='dashboard.html'"><i class="fas fa-home"></i> Dashboard</button>
+    <button onclick="window.location.href='ficha.html'"><i class="fas fa-file-alt"></i> Fichas</button>
+    <button onclick="window.location.href='oc.html'"><i class="fas fa-shopping-cart"></i> OC</button>
+    <button onclick="window.location.href='ventas.html'"><i class="fas fa-chart-line"></i> Ventas</button>
+    <button onclick="window.location.href='clientes.html'"><i class="fas fa-users"></i> Clientes</button>
+    <button onclick="window.location.href='proveedores.html'"><i class="fas fa-truck"></i> Proveedores</button>
+    <button onclick="window.location.href='pagos.html'"><i class="fas fa-credit-card"></i> Pagos</button>
+    <button onclick="window.location.href='reportes.html'"><i class="fas fa-chart-bar"></i> Reportes</button>
+    <button onclick="window.location.href='produccion.html'"><i class="fas fa-cogs"></i> Producción</button>
+    <button onclick="window.location.href='usuarios.html'"><i class="fas fa-user-cog"></i> Usuarios</button>
+    <button class="active" onclick="window.location.href='precios.html'"><i class="fas fa-dollar-sign"></i> Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">
+    <i class="fas fa-sign-out-alt"></i> Salir
+  </button>
+</div>
 
-<h3>Aumento por Modelo (%)</h3>
+<div class="container">
+  <h2>
+    <i class="fas fa-dollar-sign"></i>
+    Gestión de Precios y Tipo de Cambio
+  </h2>
 
-<select id="modeloSelect"></select>
-<input type="number" id="porcentaje" placeholder="% aumento" />
-<input type="text" id="observaciones" placeholder="Observaciones" />
-<button id="btnAumentar">Aplicar aumento</button>
+  <!-- ==================================== -->
+  <!-- SECCIÓN 1: GESTIÓN DE DÓLAR -->
+  <!-- ==================================== -->
+  <div class="section-dolar">
+    <div class="dolar-header">
+      <div class="dolar-header-icon">
+        <i class="fas fa-money-bill-wave"></i>
+      </div>
+      <div class="dolar-header-text">
+        <h3>Dólar Banco Nación</h3>
+        <p>Cotización utilizada para conversión USD → ARS en entregas</p>
+      </div>
+    </div>
 
+    <!-- Cotización Actual -->
+    <div class="dolar-actual">
+      <div class="dolar-actual-info">
+        <h4><i class="fas fa-chart-line"></i> COTIZACIÓN ACTUAL</h4>
+        <div class="dolar-actual-valor" id="dolarActual">
+          <i class="fas fa-spinner fa-spin"></i> Cargando...
+        </div>
+        <div class="dolar-actual-fecha" id="dolarFecha">
+          <i class="far fa-clock"></i> Cargando...
+        </div>
+      </div>
+      <div class="dolar-actual-equivalente">
+        <div><i class="fas fa-dollar-sign"></i> 1 USD =</div>
+        <div><span id="dolarValor">-</span> <small>ARS</small></div>
+      </div>
+    </div>
 
-<hr>
-<br>
+    <!-- Formulario de Actualización -->
+    <div class="form-dolar">
+      <h4><i class="fas fa-pen"></i> Actualizar Cotización</h4>
+      
+      <div class="form-grid">
+        <div class="form-group">
+          <label><i class="fas fa-dollar-sign"></i> Nuevo valor del dólar (ARS)</label>
+          <div class="input-group">
+            <span>$</span>
+            <input type="number" id="nuevoDolar" placeholder="1415.00" step="0.01" min="1">
+          </div>
+        </div>
+        
+        <div>
+          <button class="btn btn-success" onclick="actualizarDolar()">
+            <i class="fas fa-save"></i> Actualizar Dólar
+          </button>
+        </div>
+      </div>
 
-<table border="1">
-  <thead>
-    <tr>
-      <th>Modelo</th>
-      <th>Precio USD</th>
-      <th>Fecha desde</th>
-      <th>Acción</th>
-    </tr>
-  </thead>
-  <tbody id="tablaPrecios"></tbody>
-</table>
+      <div class="alert alert-info" style="margin-top: 1rem; padding: 1rem; background: #e3f2fd; border-radius: 8px;">
+        <i class="fas fa-info-circle"></i>
+        <strong>Importante:</strong> Esta cotización se usará como valor por defecto en nuevas entregas.
+        El operador podrá modificarla si es necesario.
+      </div>
+    </div>
 
-<br>
-<hr>
+    <!-- Historial de cambios -->
+    <div class="historial-section">
+      <h4><i class="fas fa-history"></i> Historial de Cotizaciones</h4>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th><i class="far fa-calendar-alt"></i> Fecha</th>
+              <th><i class="fas fa-dollar-sign"></i> Cotización</th>
+              <th><i class="fas fa-user"></i> Usuario</th>
+            </tr>
+          </thead>
+          <tbody id="historialDolar">
+            <tr class="loading-row">
+              <td colspan="3">
+                <div class="loading-spinner"></div> Cargando historial...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-<h3>Historial de Precios</h3>
+  <!-- ==================================== -->
+  <!-- SECCIÓN 2: PRECIOS DE MODELOS -->
+  <!-- ==================================== -->
+  <h3><i class="fas fa-tags"></i> Precios de Modelos (USD)</h3>
+  
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Modelo</th>
+          <th>Precio USD</th>
+          <th>Fecha desde</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tablaPrecios">
+        <tr class="loading-row">
+          <td colspan="4">
+            <div class="loading-spinner"></div> Cargando precios...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-<table border="1">
-  <thead>
-    <tr>
-      <th>Precio USD</th>
-      <th>Fecha</th>
-      <th>Observaciones</th>
-    </tr>
-  </thead>
-  <tbody id="tablaHistorial"></tbody>
-</table>
+  <!-- ==================================== -->
+  <!-- SECCIÓN 3: AUMENTO POR MODELO -->
+  <!-- ==================================== -->
+  <div class="card" style="margin: 2rem 0;">
+    <h3 class="card-title">
+      <i class="fas fa-chart-line"></i>
+      Aplicar Aumento por Modelo
+    </h3>
+    
+    <div class="grid-3">
+      <div class="form-group">
+        <label><i class="fas fa-cube"></i> Modelo</label>
+        <select id="modeloSelect" class="form-control">
+          <option value="">-- Seleccionar Modelo --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label><i class="fas fa-percent"></i> Porcentaje %</label>
+        <input type="number" id="porcentaje" class="form-control" placeholder="Ej: 10" min="0.1" step="0.1">
+      </div>
+      <div class="form-group">
+        <label><i class="fas fa-comment"></i> Observaciones</label>
+        <input type="text" id="observaciones" class="form-control" placeholder="Ej: Aumento general">
+      </div>
+    </div>
+    
+    <button class="btn btn-primary" onclick="aplicarAumento()">
+      <i class="fas fa-arrow-up"></i> Aplicar Aumento
+    </button>
+  </div>
 
+  <!-- ==================================== -->
+  <!-- SECCIÓN 4: HISTORIAL DE PRECIOS POR MODELO -->
+  <!-- ==================================== -->
+  <div class="historial-section" style="margin: 2rem 0;">
+    <h3><i class="fas fa-history"></i> Historial de Precios por Modelo</h3>
 
-<hr>
+    <div class="historial-filters">
+      <div class="form-group">
+        <label><i class="fas fa-cube"></i> Seleccionar Modelo</label>
+        <select id="historialModeloSelect" class="form-control">
+          <option value="">-- Seleccionar Modelo --</option>
+        </select>
+      </div>
+      <div>
+        <button class="btn btn-info" onclick="cargarHistorialPrecios()">
+          <i class="fas fa-search"></i> Ver Historial
+        </button>
+      </div>
+    </div>
 
-<br>
-<button onclick="window.location.href='dashboard.html'">Volver</button>
+    <div class="table-container">
+      <table id="tablaHistorialPrecios">
+        <thead>
+          <tr>
+            <th><i class="far fa-calendar-alt"></i> Fecha</th>
+            <th><i class="fas fa-dollar-sign"></i> Precio USD</th>
+            <th><i class="fas fa-comment"></i> Observaciones</th>
+          </tr>
+        </thead>
+        <tbody id="tablaHistorialPreciosBody">
+          <tr>
+            <td colspan="3" class="empty-state">
+              <i class="fas fa-chart-line"></i>
+              <p>Seleccione un modelo para ver su historial</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
+  <!-- ==================================== -->
+  <!-- SECCIÓN 5: HISTORIAL GENERAL DE PRECIOS -->
+  <!-- ==================================== -->
+  <div class="historial-section">
+    <h3><i class="fas fa-globe"></i> Historial General de Precios</h3>
+    
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th><i class="fas fa-dollar-sign"></i> Precio USD</th>
+            <th><i class="far fa-calendar-alt"></i> Fecha</th>
+            <th><i class="fas fa-comment"></i> Observaciones</th>
+          </tr>
+        </thead>
+        <tbody id="tablaHistorial">
+          <tr>
+            <td colspan="3" class="empty-state">
+              <i class="fas fa-chart-line"></i>
+              <p>Seleccione un modelo para ver su historial</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Botón Volver -->
+  <div style="margin-top: 2rem; text-align: right;">
+    <button class="btn btn-warning" onclick="window.location.href='dashboard.html'">
+      <i class="fas fa-arrow-left"></i> Volver al Dashboard
+    </button>
+  </div>
+
+  <!-- Alerta -->
+  <div id="alert" class="alert"></div>
+</div>
+
+<!-- Scripts -->
 <script src="js/api.js"></script>
 <script src="js/precios.js"></script>
-
+<script src="js/auth.js"></script>
+<script src="js/dashboard.js"></script>
 </body>
 </html>

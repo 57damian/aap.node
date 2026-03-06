@@ -1,46 +1,79 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Ventas / Entregas</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ventas / Entregas - Transformadores</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
-<h2>🚚 Ventas / Entregas</h2>
-
-<div>
-  <label>Cliente:</label>
-  <select id="filtroCliente">
-    <option value="">Todos</option>
-  </select>
-
-  <button onclick="cargarVentas()">Filtrar</button>
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Técnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Órdenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
 </div>
 
-<hr>
+<div class="container">
+  <div class="header">
+    <h2>🚚 Ventas / Entregas</h2>
+    <button class="btn btn-primary" onclick="window.location.href='dashboard.html'">
+      ← Volver al Dashboard
+    </button>
+  </div>
 
-<table border="1" width="100%">
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Fecha</th>
-      <th>Cliente</th>
-      <th>OC</th>
-      <th>Factura</th>
-      <th>Estado</th>
-      <th>Acción</th>
-    </tr>
-  </thead>
-  <tbody id="tablaVentas"></tbody>
-</table>
+  <div class="filtros">
+    <div class="filtro-group">
+      <label for="filtroCliente">Cliente:</label>
+      <select id="filtroCliente" class="form-control">
+        <option value="">Todos los clientes</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="cargarVentas()">
+      Filtrar
+    </button>
+  </div>
 
-<br>
-<button onclick="window.location.href='dashboard.html'">
-  Volver
-</button>
+  <hr>
+
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Fecha</th>
+          <th>Cliente</th>
+          <th>OC</th>
+          <th>Factura</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tablaVentas">
+        <tr>
+          <td colspan="7" style="text-align:center; padding: 40px;">
+            <div class="loading">Cargando ventas...</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 
 <script src="js/api.js"></script>
 <script src="js/ventas.js"></script>
-
+<script src="js/auth.js"></script>
 </body>
 </html>

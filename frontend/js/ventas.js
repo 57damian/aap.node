@@ -1,25 +1,107 @@
-document.addEventListener('DOMContentLoaded', () => {
-  cargarClientes();
-  cargarVentas();
-});
+const tablaVentas = document.getElementById('tablaVentas');
+const filtroCliente = document.getElementById('filtroCliente');
+
+// =====================
+// VERIFICAR AUTENTICACION
+// =====================
+const usuario = (() => {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('usuario');
+
+  if (!token || !userStr) {
+    window.location.href = 'index.html';
+    return null;
+  }
+
+  try {
+    return JSON.parse(userStr);
+  } catch {
+    window.location.href = 'index.html';
+    return null;
+  }
+})();
+
+if (!usuario) {
+  throw new Error('No autenticado');
+}
+
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  let notificacion = document.querySelector('.notificacion');
+
+  if (!notificacion) {
+    notificacion = document.createElement('div');
+    notificacion.className = 'notificacion';
+    document.body.appendChild(notificacion);
+  }
+
+  notificacion.className = `notificacion notificacion-${tipo}`;
+  notificacion.textContent = mensaje;
+  notificacion.style.display = 'block';
+
+  setTimeout(() => {
+    notificacion.style.display = 'none';
+  }, 3000);
+}
+
+function formatFecha(fecha) {
+  if (!fecha) return '-';
+  const date = new Date(fecha);
+  if (Number.isNaN(date.getTime())) return fecha;
+  return date.toLocaleDateString('es-AR');
+}
+
+function renderLoadingTabla() {
+  if (!tablaVentas) return;
+  tablaVentas.innerHTML = `
+    <tr>
+      <td colspan="7" style="text-align:center; padding: 32px;">
+        <div class="loading">Cargando ventas...</div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderEmptyTabla() {
+  if (!tablaVentas) return;
+  tablaVentas.innerHTML = `
+    <tr>
+      <td colspan="7" class="empty-state">
+        No hay ventas para los filtros seleccionados
+      </td>
+    </tr>
+  `;
+}
+
+function renderErrorTabla(mensaje) {
+  if (!tablaVentas) return;
+  tablaVentas.innerHTML = `
+    <tr>
+      <td colspan="7" class="error-state">
+        Error cargando ventas: ${mensaje}
+      </td>
+    </tr>
+  `;
+}
 
 /* =====================
    CARGAR CLIENTES
 ===================== */
 async function cargarClientes() {
-  try {
-    const clientes = await apiFetch('/clientes');
-    const select = document.getElementById('filtroCliente');
+  if (!filtroCliente) return;
 
-    clientes.forEach(cliente => {
+  try {
+    const clientes = await apiFetch('/api/clientes');
+
+    filtroCliente.innerHTML = '<option value="">Todos los clientes</option>';
+    clientes.forEach((cliente) => {
       const option = document.createElement('option');
       option.value = cliente.id;
       option.textContent = cliente.nombre;
-      select.appendChild(option);
+      filtroCliente.appendChild(option);
     });
-
   } catch (err) {
-    alert('Error cargando clientes');
+    console.error('Error cargando clientes:', err);
+    mostrarNotificacion('Error cargando clientes', 'error');
   }
 }
 
@@ -27,59 +109,49 @@ async function cargarClientes() {
    CARGAR VENTAS
 ===================== */
 async function cargarVentas() {
-  try {
-    const clienteId = document.getElementById('filtroCliente').value;
+  if (!tablaVentas) return;
 
-    let endpoint = '/ventas';
+  try {
+    renderLoadingTabla();
+
+    const clienteId = filtroCliente ? filtroCliente.value : '';
+    let endpoint = '/api/ventas';
     if (clienteId) endpoint += `?cliente_id=${clienteId}`;
 
     const ventas = await apiFetch(endpoint);
+    tablaVentas.innerHTML = '';
 
-    const tbody = document.getElementById('tablaVentas');
-    tbody.innerHTML = '';
-
-    if (!ventas.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="7" style="text-align:center;">
-            No hay ventas
-          </td>
-        </tr>
-      `;
+    if (!ventas || ventas.length === 0) {
+      renderEmptyTabla();
       return;
     }
 
-    ventas.forEach(v => {
-      const estado = v.numero_factura
-        ? 'Facturada'
-        : 'Pendiente facturar';
+    ventas.forEach((venta) => {
+      const facturada = Boolean(venta.numero_factura);
+      const estadoHtml = facturada
+        ? '<span class="badge success">Facturada</span>'
+        : '<span class="badge warning">Pendiente</span>';
 
       const tr = document.createElement('tr');
-
       tr.innerHTML = `
-        <td>${v.id}</td>
-        <td>${v.fecha || '-'}</td>
-        <td>${v.cliente || '-'}</td>
-        <td>${v.numero_oc || '-'}</td>
-        <td>${v.numero_factura || '-'}</td>
-        <td>${estado}</td>
+        <td>${venta.id}</td>
+        <td>${formatFecha(venta.fecha)}</td>
+        <td>${venta.cliente || '-'}</td>
+        <td>${venta.numero_oc || '-'}</td>
+        <td>${venta.numero_factura || '-'}</td>
+        <td>${estadoHtml}</td>
         <td>
-          <button onclick="verVenta(${v.id})">
-            Ver
-          </button>
-          ${!v.numero_factura ? `
-            <button onclick="facturarVenta(${v.id})">
-              Facturar
-            </button>
-          ` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="verVenta(${venta.id})">Ver</button>
+          ${!facturada ? `<button class="btn btn-success btn-sm" onclick="facturarVenta(${venta.id})">Facturar</button>` : ''}
         </td>
       `;
 
-      tbody.appendChild(tr);
+      tablaVentas.appendChild(tr);
     });
-
   } catch (err) {
-    alert(err.error || 'Error cargando ventas');
+    console.error('Error cargando ventas:', err);
+    renderErrorTabla(err.error || err.message || 'Error desconocido');
+    mostrarNotificacion(err.error || err.message || 'Error cargando ventas', 'error');
   }
 }
 
@@ -97,17 +169,20 @@ async function facturarVenta(id) {
   if (!confirm('¿Facturar esta venta?')) return;
 
   try {
-    await apiFetch('/facturas', {
+    await apiFetch('/api/facturas', {
       method: 'POST',
-      body: JSON.stringify({
-        venta_id: id
-      })
+      body: JSON.stringify({ venta_id: id })
     });
 
-    alert('Factura generada');
+    mostrarNotificacion('Factura generada correctamente', 'success');
     cargarVentas();
-
   } catch (err) {
-    alert(err.error || 'Error al facturar');
+    console.error('Error facturando venta:', err);
+    mostrarNotificacion(err.error || err.message || 'Error al facturar', 'error');
   }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  cargarClientes();
+  cargarVentas();
+});
