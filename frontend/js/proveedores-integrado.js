@@ -1,536 +1,535 @@
-// Variables globales
-let proveedoresCache = [];
-let facturasCache = [];
-let comprasCache = [];
-let pagosCache = [];
+// ===================== PROVEEDORES-INTEGRADO.JS =====================
+// Este archivo maneja SOLO el ABM de proveedores
+// VERIFICAR AUTENTICACIÓN
+const usuario = (() => {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('usuario');
 
-// Funciones de utilidad
+  if (!token || !userStr) {
+    window.location.href = 'login.html';
+    return null;
+  }
+
+  try {
+    return JSON.parse(userStr);
+  } catch {
+    window.location.href = 'login.html';
+    return null;
+  }
+})();
+
+if (!usuario) {
+  throw new Error('No autenticado');
+}
+
+// ===================== ESTADO LOCAL =====================
+let proveedoresCache = [];
+let proveedorActual = null;
+
+// ===================== INICIALIZACIÓN =====================
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Inicializando módulo de proveedores...');
+  
+  // Verificar que estamos en la página correcta
+  if (!document.getElementById('proveedoresTableBody')) {
+    console.warn('No se encontró la tabla de proveedores');
+    return;
+  }
+
+  // Event listeners para búsquedas
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') cargarProveedores();
+    });
+  }
+
+  const filtroEstado = document.getElementById('filtroEstado');
+  if (filtroEstado) {
+    filtroEstado.addEventListener('change', () => cargarProveedores());
+  }
+
+  // Inicializar tooltips de Bootstrap
+  if (typeof bootstrap !== 'undefined') {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+  }
+
+  // Cargar datos iniciales
+  cargarProveedores();
+  actualizarEstadisticasIniciales();
+
+  // Configurar fecha actual en inputs de fecha
+  const hoy = new Date().toISOString().split('T')[0];
+  document.querySelectorAll('input[type="date"]').forEach(input => {
+    if (!input.value) input.value = hoy;
+  });
+});
+
+// ===================== FUNCIONES DE UTILIDAD =====================
 function formatearMoneda(valor) {
-    return new Intl.NumberFormat('es-AR', {
-        style: 'currency',
-        currency: 'ARS'
-    }).format(valor || 0);
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 2
+  }).format(valor || 0);
 }
 
 function formatearFecha(fecha) {
-    if (!fecha) return '-';
-    const date = new Date(fecha);
-    return date.toLocaleDateString('es-AR');
+  if (!fecha) return '-';
+  return new Date(fecha).toLocaleDateString('es-AR');
 }
 
-function verificarRol(rolesPermitidos) {
-    const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
-    return rolesPermitidos.includes(usuario.rol);
+function getBadgeEstado(estado) {
+  const badges = {
+    'PENDIENTE': '<span class="badge bg-warning">PENDIENTE</span>',
+    'PAGADA': '<span class="badge bg-success">PAGADA</span>',
+    'ANULADA': '<span class="badge bg-danger">ANULADA</span>',
+    'ACTIVO': '<span class="badge bg-success">ACTIVO</span>',
+    'INACTIVO': '<span class="badge bg-secondary">INACTIVO</span>'
+  };
+  return badges[estado] || '<span class="badge bg-secondary">' + estado + '</span>';
 }
 
-// ==================== TAB PROVEEDORES ===================
+function mostrarNotificacion(mensaje, tipo = 'success') {
+  const iconos = {
+    success: '✅',
+    error: '❌',
+    warning: '⚠️',
+    info: 'ℹ️'
+  };
+  alert(iconos[tipo] + ' ' + mensaje);
+}
 
-// Cargar proveedores
+function actualizarEstadisticasIniciales() {
+  // Valores por defecto mientras se cargan los datos
+  document.getElementById('totalProveedores').textContent = '0';
+  document.getElementById('proveedoresActivos').textContent = '0';
+  document.getElementById('deudaTotal').textContent = '$0';
+  document.getElementById('comprasMes').textContent = '0';
+}
+
+// ===================== CARGAR PROVEEDORES =====================
 async function cargarProveedores() {
-    try {
-        const proveedores = await apiFetch('/api/proveedores');
-        proveedoresCache = proveedores;
-        renderizarTablaProveedores(proveedores);
-        actualizarEstadisticasProveedores(proveedores);
-    } catch (error) {
-        console.error('Error cargando proveedores:', error);
-        document.getElementById('proveedoresTableBody').innerHTML = 
-            '<tr><td colspan="6" class="text-center text-danger">Error al cargar proveedores</td></tr>';
-    }
-}
+  const tbody = document.getElementById('proveedoresTableBody');
+  if (!tbody) return;
 
-// Renderizar tabla de proveedores
-function renderizarTablaProveedores(proveedores) {
-    const tbody = document.getElementById('proveedoresTableBody');
+  try {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="text-center">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Cargando...</span>
+          </div>
+        </td>
+      </tr>
+    `;
+
+    const search = document.getElementById('searchInput')?.value || '';
+    const estado = document.getElementById('filtroEstado')?.value || 'activos';
+
+    const params = new URLSearchParams();
+    if (search.trim() !== '') params.append('search', search.trim());
+    if (estado && estado !== 'todos') params.append('estado', estado);
+
+    const endpoint = `/api/proveedores${params.toString() ? `?${params.toString()}` : ''}`;
+    console.log('Cargando proveedores desde:', endpoint);
     
-    if (!proveedores || proveedores.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No se encontraron proveedores</td></tr>';
-        return;
-    }
+    const proveedores = await apiFetch(endpoint);
+    console.log('Proveedores cargados:', proveedores);
     
-    tbody.innerHTML = proveedores.map(p => `
+    proveedoresCache = Array.isArray(proveedores) ? proveedores : [];
+    actualizarEstadisticasProveedores(proveedoresCache);
+
+    tbody.innerHTML = '';
+
+    if (!proveedoresCache.length) {
+      tbody.innerHTML = `
         <tr>
-            <td>
-                <div class="fw-bold">${p.nombre}</div>
-                <small class="text-muted">CUIT: ${p.cuit || '-'}</small>
-            </td>
-            <td>
-                <div><i class="fas fa-phone"></i> ${p.telefono || '-'}</div>
-                <div><i class="fas fa-envelope"></i> ${p.email || '-'}</div>
-                <div><i class="fas fa-user"></i> ${p.contacto || '-'}</div>
-            </td>
-            <td>
-                <div class="text-center">${p.total_compras || 0}</div>
-            </td>
-            <td>
-                <div class="fw-bold text-end">${formatearMoneda(p.deuda_actual || 0)}</div>
-            </td>
-            <td>
-                <span class="badge bg-${p.activo ? 'success' : 'danger'}">
-                    ${p.activo ? 'Activo' : 'Inactivo'}
-                </span>
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button class="btn btn-sm btn-outline-primary" onclick="verDetalleProveedor(${p.id})">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-warning" onclick="abrirModalProveedor(${p.id})">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-success" onclick="abrirModalCompra(${p.id})">
-                        <i class="fas fa-shopping-cart"></i>
-                    </button>
-                </div>
-            </td>
+          <td colspan="6" class="text-center py-3">
+            No se encontraron proveedores
+          </td>
         </tr>
-    `).join('');
+      `;
+      return;
+    }
+
+    proveedoresCache.forEach((p) => {
+      const tr = document.createElement('tr');
+      const deuda = Number(p.deuda_pendiente || 0);
+      
+      tr.innerHTML = `
+        <td>
+          <strong>${p.nombre || '-'}</strong><br>
+          <small class="text-muted">${p.cuit || ''}</small>
+        </td>
+        <td>
+          ${p.contacto ? '<strong>Contacto:</strong> ' + p.contacto + '<br>' : ''}
+          ${p.telefono ? '📞 ' + p.telefono + '<br>' : ''}
+          ${p.email ? '✉️ ' + p.email : ''}
+        </td>
+        <td class="text-center">
+          <strong>${p.total_compras || 0}</strong><br>
+          <small class="text-muted">compras</small>
+        </td>
+        <td class="text-end">
+          <strong class="${deuda > 0 ? 'text-danger' : 'text-success'}">
+            ${formatearMoneda(deuda)}
+          </strong>
+        </td>
+        <td class="text-center">
+          <span class="badge ${p.activo ? 'bg-success' : 'bg-secondary'}">
+            ${p.activo ? 'Activo' : 'Inactivo'}
+          </span>
+        </td>
+        <td class="text-center">
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-primary" onclick="verDetalleProveedor(${p.id})" 
+                    data-bs-toggle="tooltip" title="Ver detalle">
+              <i class="fas fa-eye"></i>
+            </button>
+            <button class="btn btn-outline-secondary" onclick="editarProveedor(${p.id})"
+                    data-bs-toggle="tooltip" title="Editar">
+              <i class="fas fa-edit"></i>
+            </button>
+            ${usuario.rol === 'admin' ? `
+              <button class="btn btn-outline-danger" onclick="confirmarEliminarProveedor(${p.id}, '${(p.nombre || '').replace(/'/g, "\\'")}')"
+                      data-bs-toggle="tooltip" title="Eliminar/Desactivar">
+                <i class="fas fa-trash"></i>
+              </button>
+            ` : ''}
+          </div>
+        </td>
+      `;
+
+      tbody.appendChild(tr);
+    });
+
+    // Reactivar tooltips
+    if (typeof bootstrap !== 'undefined') {
+      const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+      });
+    }
+
+  } catch (err) {
+    console.error('Error cargando proveedores:', err);
+    mostrarNotificacion(err.error || err.message || 'Error cargando proveedores', 'error');
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="text-center text-danger py-3">
+          Error al cargar proveedores: ${err.message || 'Error de conexión'}
+        </td>
+      </tr>
+    `;
+  }
 }
 
-// Actualizar estadísticas de proveedores
 function actualizarEstadisticasProveedores(proveedores) {
+  try {
     const total = proveedores.length;
     const activos = proveedores.filter(p => p.activo).length;
-    const deudaTotal = proveedores.reduce((sum, p) => sum + (p.deuda_actual || 0), 0);
-    const comprasMes = proveedores.reduce((sum, p) => sum + (p.compras_mes || 0), 0);
+    const deudaTotal = proveedores.reduce((sum, p) => sum + Number(p.deuda_pendiente || 0), 0);
+    const comprasMes = proveedores.reduce((sum, p) => sum + Number(p.compras_mes || 0), 0);
+
+    const totalEl = document.getElementById('totalProveedores');
+    const activosEl = document.getElementById('proveedoresActivos');
+    const deudaEl = document.getElementById('deudaTotal');
+    const comprasEl = document.getElementById('comprasMes');
+
+    if (totalEl) totalEl.textContent = total;
+    if (activosEl) activosEl.textContent = activos;
+    if (deudaEl) deudaEl.textContent = formatearMoneda(deudaTotal);
+    if (comprasEl) comprasEl.textContent = comprasMes;
+  } catch (err) {
+    console.error('Error actualizando estadísticas:', err);
+  }
+}
+
+// ===================== FUNCIONES DEL MODAL PROVEEDOR =====================
+function abrirModalProveedor() {
+  const form = document.getElementById('proveedorForm');
+  if (form) form.reset();
+
+  document.getElementById('proveedorId').value = '';
+  document.getElementById('modalTitle').textContent = 'Nuevo Proveedor';
+  
+  const estadoField = document.getElementById('estadoField');
+  if (estadoField) estadoField.style.display = 'none';
+
+  const modalEl = document.getElementById('proveedorModal');
+  if (!modalEl) return;
+
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+}
+
+async function editarProveedor(id) {
+  try {
+    console.log('Editando proveedor ID:', id);
     
-    document.getElementById('totalProveedores').textContent = total;
-    document.getElementById('proveedoresActivos').textContent = activos;
-    document.getElementById('deudaTotal').textContent = formatearMoneda(deudaTotal);
-    document.getElementById('comprasMes').textContent = comprasMes;
-}
+    const proveedor = await apiFetch(`/api/proveedores/${id}`);
+    console.log('Datos del proveedor:', proveedor);
 
-// Limpiar filtros de proveedores
-function limpiarFiltros() {
-    document.getElementById('searchInput').value = '';
-    document.getElementById('filtroEstado').value = 'todos';
-    document.getElementById('filtroDeuda').value = 'todos';
-    cargarProveedores();
-}
+    document.getElementById('proveedorId').value = proveedor.id;
+    document.getElementById('nombre').value = proveedor.nombre || '';
+    document.getElementById('cuit').value = proveedor.cuit || '';
+    document.getElementById('telefono').value = proveedor.telefono || '';
+    document.getElementById('email').value = proveedor.email || '';
+    document.getElementById('direccion').value = proveedor.direccion || '';
+    document.getElementById('contacto').value = proveedor.contacto || '';
+    document.getElementById('condicion_iva').value = proveedor.condicion_iva || 'RESPONSABLE INSCRIPTO';
+    document.getElementById('observaciones').value = proveedor.observaciones || '';
 
-// ==================== TAB FACTURAS ===================
-
-// Cargar facturas
-async function cargarFacturas() {
-    try {
-        const facturas = await apiFetch('/api/facturas-compra');
-        facturasCache = facturas;
-        renderizarTablaFacturas(facturas);
-        actualizarEstadisticasFacturas(facturas);
-    } catch (error) {
-        console.error('Error cargando facturas:', error);
-        document.getElementById('facturasTableBody').innerHTML = 
-            '<tr><td colspan="8" class="text-center text-danger">Error al cargar facturas</td></tr>';
+    const estadoField = document.getElementById('estadoField');
+    const activoSelect = document.getElementById('activo');
+    if (estadoField && activoSelect) {
+      estadoField.style.display = 'block';
+      activoSelect.value = proveedor.activo ? 'true' : 'false';
     }
-}
 
-// Renderizar tabla de facturas
-function renderizarTablaFacturas(facturas) {
-    const tbody = document.getElementById('facturasTableBody');
-    
-    if (!facturas || facturas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No se encontraron facturas</td></tr>';
-        return;
-    }
-    
-    tbody.innerHTML = facturas.map(f => `
-        <tr>
-            <td>
-                <div class="fw-bold">${f.tipo_factura} ${f.punto_venta || '0001'}-${f.numero_factura}</div>
-            </td>
-            <td>${f.proveedor_nombre || '-'}</td>
-            <td>${formatearFecha(f.fecha_emision)}</td>
-            <td>${formatearFecha(f.fecha_vencimiento)}</td>
-            <td class="fw-bold text-end">${formatearMoneda(f.total || 0)}</td>
-            <td class="fw-bold text-end">${formatearMoneda((f.total || 0) - (f.pagado || 0))}</td>
-            <td>
-                <span class="badge bg-${f.estado === 'PAGADA' ? 'success' : f.estado === 'ANULADA' ? 'danger' : 'warning'}">
-                    ${f.estado}
-                </span>
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button class="btn btn-sm btn-outline-primary" onclick="verDetalleFactura(${f.id})">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-success" onclick="abrirModalPagoFactura(${f.id})" ${f.estado !== 'PENDIENTE' ? 'disabled' : ''}>
-                        <i class="fas fa-money-bill"></i>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-}
+    document.getElementById('modalTitle').textContent = `Editar Proveedor: ${proveedor.nombre}`;
 
-// Actualizar estadísticas de facturas
-function actualizarEstadisticasFacturas(facturas) {
-    const total = facturas.length;
-    const pendientes = facturas.filter(f => f.estado === 'PENDIENTE').length;
-    const pagadas = facturas.filter(f => f.estado === 'PAGADA').length;
-    const deudaTotal = facturas
-        .filter(f => f.estado === 'PENDIENTE')
-        .reduce((sum, f) => sum + ((f.total || 0) - (f.pagado || 0)), 0);
-    
-    document.getElementById('totalFacturas').textContent = total;
-    document.getElementById('facturasPendientes').textContent = pendientes;
-    document.getElementById('facturasPagadas').textContent = pagadas;
-    document.getElementById('deudaTotalFacturas').textContent = formatearMoneda(deudaTotal);
-}
-
-// Limpiar filtros de facturas
-function limpiarFiltrosFacturas() {
-    document.getElementById('facturaSearch').value = '';
-    document.getElementById('facturaEstado').value = 'todos';
-    document.getElementById('facturaFechaDesde').value = '';
-    document.getElementById('facturaFechaHasta').value = '';
-    cargarFacturas();
-}
-
-// ==================== TAB COMPRAS ===================
-
-// Cargar compras
-async function cargarCompras() {
-    try {
-        const compras = await apiFetch('/api/compras');
-        comprasCache = compras;
-        renderizarTablaCompras(compras);
-        actualizarEstadisticasCompras(compras);
-    } catch (error) {
-        console.error('Error cargando compras:', error);
-        document.getElementById('comprasTableBody').innerHTML = 
-            '<tr><td colspan="7" class="text-center text-danger">Error al cargar compras</td></tr>';
-    }
-}
-
-// Renderizar tabla de compras
-function renderizarTablaCompras(compras) {
-    const tbody = document.getElementById('comprasTableBody');
-    
-    if (!compras || compras.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No se encontraron compras</td></tr>';
-        return;
-    }
-    
-    tbody.innerHTML = compras.map(c => `
-        <tr>
-            <td>
-                <div class="fw-bold">${c.numero_comprobante || '-'}</div>
-            </td>
-            <td>${c.proveedor_nombre || '-'}</td>
-            <td>${formatearFecha(c.fecha_compra)}</td>
-            <td>${c.items_count || 0} items</td>
-            <td class="fw-bold text-end">${formatearMoneda(c.total || 0)}</td>
-            <td>
-                <span class="badge bg-${c.estado === 'RECIBIDA' ? 'success' : 'warning'}">
-                    ${c.estado || 'PENDIENTE'}
-                </span>
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button class="btn btn-sm btn-outline-primary" onclick="verDetalleCompra(${c.id})">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-success" onclick="generarFacturaDesdeCompra(${c.id})">
-                        <i class="fas fa-file-invoice"></i>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-}
-
-// Actualizar estadísticas de compras
-function actualizarEstadisticasCompras(compras) {
-    const total = compras.length;
-    const comprasMes = compras.filter(c => {
-        const fecha = new Date(c.fecha_compra);
-        const ahora = new Date();
-        return fecha.getMonth() === ahora.getMonth() && fecha.getFullYear() === ahora.getFullYear();
-    }).length;
-    const totalMes = compras
-        .filter(c => {
-            const fecha = new Date(c.fecha_compra);
-            const ahora = new Date();
-            return fecha.getMonth() === ahora.getMonth() && fecha.getFullYear() === ahora.getFullYear();
-        })
-        .reduce((sum, c) => sum + (c.total || 0), 0);
-    const materiasPrimas = new Set(compras.flatMap(c => c.items || [])).size;
-    
-    document.getElementById('totalCompras').textContent = total;
-    document.getElementById('comprasMes').textContent = comprasMes;
-    document.getElementById('comprasTotal').textContent = formatearMoneda(totalMes);
-    document.getElementById('materiasPrimas').textContent = materiasPrimas;
-}
-
-// Limpiar filtros de compras
-function limpiarFiltrosCompras() {
-    document.getElementById('compraSearch').value = '';
-    document.getElementById('compraFechaDesde').value = '';
-    document.getElementById('compraFechaHasta').value = '';
-    cargarCompras();
-}
-
-// ==================== TAB PAGOS ===================
-
-// Cargar pagos
-async function cargarPagos() {
-    try {
-        const pagos = await apiFetch('/api/pagos-proveedores');
-        pagosCache = pagos;
-        renderizarTablaPagos(pagos);
-        actualizarEstadisticasPagos(pagos);
-    } catch (error) {
-        console.error('Error cargando pagos:', error);
-        document.getElementById('pagosTableBody').innerHTML = 
-            '<tr><td colspan="7" class="text-center text-danger">Error al cargar pagos</td></tr>';
-    }
-}
-
-// Renderizar tabla de pagos
-function renderizarTablaPagos(pagos) {
-    const tbody = document.getElementById('pagosTableBody');
-    
-    if (!pagos || pagos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No se encontraron pagos</td></tr>';
-        return;
-    }
-    
-    tbody.innerHTML = pagos.map(p => `
-        <tr>
-            <td>${formatearFecha(p.fecha_pago)}</td>
-            <td>${p.proveedor_nombre || '-'}</td>
-            <td>${p.factura_numero || '-'}</td>
-            <td>
-                <span class="badge bg-info">${p.forma_pago}</span>
-            </td>
-            <td class="fw-bold text-end">${formatearMoneda(p.monto || 0)}</td>
-            <td>${p.referencia || '-'}</td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button class="btn btn-sm btn-outline-primary" onclick="verDetallePago(${p.id})">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="anularPago(${p.id})" data-roles="admin">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-}
-
-// Actualizar estadísticas de pagos
-function actualizarEstadisticasPagos(pagos) {
-    const total = pagos.length;
-    const pagosMes = pagos.filter(p => {
-        const fecha = new Date(p.fecha_pago);
-        const ahora = new Date();
-        return fecha.getMonth() === ahora.getMonth() && fecha.getFullYear() === ahora.getFullYear();
-    }).length;
-    const totalMes = pagos
-        .filter(p => {
-            const fecha = new Date(p.fecha_pago);
-            const ahora = new Date();
-            return fecha.getMonth() === ahora.getMonth() && fecha.getFullYear() === ahora.getFullYear();
-        })
-        .reduce((sum, p) => sum + (p.monto || 0), 0);
-    
-    // Calcular próximos vencimientos (facturas pendientes próximas a vencer en 30 días)
-    const proximosVencimientos = facturasCache
-        .filter(f => f.estado === 'PENDIENTE')
-        .filter(f => {
-            const vencimiento = new Date(f.fecha_vencimiento);
-            const ahora = new Date();
-            const dias30 = new Date();
-            dias30.setDate(dias30.getDate() + 30);
-            return vencimiento <= dias30 && vencimiento > ahora;
-        }).length;
-    
-    document.getElementById('totalPagos').textContent = total;
-    document.getElementById('pagosMes').textContent = pagosMes;
-    document.getElementById('pagosTotal').textContent = formatearMoneda(totalMes);
-    document.getElementById('proximosVencimientos').textContent = proximosVencimientos;
-}
-
-// Limpiar filtros de pagos
-function limpiarFiltrosPagos() {
-    document.getElementById('pagoSearch').value = '';
-    document.getElementById('pagoForma').value = 'todos';
-    document.getElementById('pagoFechaDesde').value = '';
-    document.getElementById('pagoFechaHasta').value = '';
-    cargarPagos();
-}
-
-// ==================== MODALES ===================
-
-// Abrir modal de proveedor
-function abrirModalProveedor(proveedorId = null) {
-    const modal = new bootstrap.Modal(document.getElementById('proveedorModal'));
-    
-    if (proveedorId) {
-        const proveedor = proveedoresCache.find(p => p.id === proveedorId);
-        if (proveedor) {
-            document.getElementById('modalTitle').textContent = 'Editar Proveedor';
-            document.getElementById('proveedorId').value = proveedor.id;
-            document.getElementById('nombre').value = proveedor.nombre;
-            document.getElementById('cuit').value = proveedor.cuit || '';
-            document.getElementById('telefono').value = proveedor.telefono || '';
-            document.getElementById('email').value = proveedor.email || '';
-            document.getElementById('direccion').value = proveedor.direccion || '';
-            document.getElementById('contacto').value = proveedor.contacto || '';
-            document.getElementById('condicion_iva').value = proveedor.condicion_iva || 'RESPONSABLE INSCRIPTO';
-            document.getElementById('observaciones').value = proveedor.observaciones || '';
-            document.getElementById('activo').value = proveedor.activo ? 'true' : 'false';
-        }
-    } else {
-        document.getElementById('modalTitle').textContent = 'Nuevo Proveedor';
-        document.getElementById('proveedorForm').reset();
-        document.getElementById('proveedorId').value = '';
-    }
-    
+    const modalEl = document.getElementById('proveedorModal');
+    const modal = new bootstrap.Modal(modalEl);
     modal.show();
+  } catch (err) {
+    console.error('Error editando proveedor:', err);
+    mostrarNotificacion(err.error || err.message || 'Error al cargar proveedor', 'error');
+  }
 }
 
-// Guardar proveedor
 async function guardarProveedor() {
-    try {
-        const proveedorId = document.getElementById('proveedorId').value;
-        const payload = {
-            nombre: document.getElementById('nombre').value,
-            cuit: document.getElementById('cuit').value,
-            telefono: document.getElementById('telefono').value,
-            email: document.getElementById('email').value,
-            direccion: document.getElementById('direccion').value,
-            contacto: document.getElementById('contacto').value,
-            condicion_iva: document.getElementById('condicion_iva').value,
-            observaciones: document.getElementById('observaciones').value,
-            activo: document.getElementById('activo').value === 'true'
-        };
-        
-        if (proveedorId) {
-            await apiFetch(`/api/proveedores/${proveedorId}`, {
-                method: 'PUT',
-                body: JSON.stringify(payload)
-            });
-        } else {
-            await apiFetch('/api/proveedores', {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-        }
-        
-        bootstrap.Modal.getInstance(document.getElementById('proveedorModal')).hide();
-        cargarProveedores();
-        
-    } catch (error) {
-        console.error('Error guardando proveedor:', error);
-        alert('Error al guardar el proveedor');
+  const id = document.getElementById('proveedorId').value;
+
+  // Validación básica de CUIT (opcional)
+  const cuit = document.getElementById('cuit').value.trim();
+  if (cuit && !/^\d{2}-\d{8}-\d{1}$/.test(cuit)) {
+    if (!confirm('El formato del CUIT no es válido (debe ser XX-XXXXXXXX-X). ¿Desea continuar de todas formas?')) {
+      return;
     }
-}
+  }
 
-// Ver detalle de proveedor
-async function verDetalleProveedor(proveedorId) {
-    try {
-        const proveedor = await apiFetch(`/api/proveedores/${proveedorId}`);
-        
-        const html = `
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Información General</h6>
-                    <p><strong>Nombre:</strong> ${proveedor.nombre}</p>
-                    <p><strong>CUIT:</strong> ${proveedor.cuit || '-'}</p>
-                    <p><strong>Teléfono:</strong> ${proveedor.telefono || '-'}</p>
-                    <p><strong>Email:</strong> ${proveedor.email || '-'}</p>
-                </div>
-                <div class="col-md-6">
-                    <h6>Información Comercial</h6>
-                    <p><strong>Contacto:</strong> ${proveedor.contacto || '-'}</p>
-                    <p><strong>Dirección:</strong> ${proveedor.direccion || '-'}</p>
-                    <p><strong>Condición IVA:</strong> ${proveedor.condicion_iva || '-'}</p>
-                    <p><strong>Estado:</strong> <span class="badge bg-${proveedor.activo ? 'success' : 'danger'}">${proveedor.activo ? 'Activo' : 'Inactivo'}</span></p>
-                </div>
-            </div>
-            <div class="row mt-3">
-                <div class="col-12">
-                    <h6>Estadísticas</h6>
-                    <div class="row">
-                        <div class="col-md-3">
-                            <p><strong>Total Compras:</strong> ${proveedor.total_compras || 0}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p><strong>Deuda Actual:</strong> ${formatearMoneda(proveedor.deuda_actual || 0)}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p><strong>Compras Mes:</strong> ${proveedor.compras_mes || 0}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p><strong>Última Compra:</strong> ${formatearFecha(proveedor.ultima_compra)}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            ${proveedor.observaciones ? `<div class="mt-3"><h6>Observaciones</h6><p>${proveedor.observaciones}</p></div>` : ''}
-        `;
-        
-        document.getElementById('detalleContent').innerHTML = html;
-        const modal = new bootstrap.Modal(document.getElementById('detalleModal'));
-        modal.show();
-        
-    } catch (error) {
-        console.error('Error cargando detalle:', error);
-        alert('Error al cargar el detalle del proveedor');
+  const data = {
+    nombre: document.getElementById('nombre').value.trim(),
+    cuit: cuit || null,
+    telefono: document.getElementById('telefono').value.trim() || null,
+    email: document.getElementById('email').value.trim() || null,
+    direccion: document.getElementById('direccion').value.trim() || null,
+    contacto: document.getElementById('contacto').value.trim() || null,
+    condicion_iva: document.getElementById('condicion_iva').value || null,
+    observaciones: document.getElementById('observaciones').value.trim() || null
+  };
+
+  if (!data.nombre) {
+    mostrarNotificacion('El nombre es obligatorio', 'error');
+    return;
+  }
+
+  // Estado sólo si se está editando
+  if (id) {
+    const activoSelect = document.getElementById('activo');
+    if (activoSelect) {
+      data.activo = activoSelect.value === 'true';
     }
-}
+  }
 
-// Funciones placeholder para los otros módulos
-function abrirModalFactura() {
-    alert('Función de nueva factura será implementada');
-}
-
-function abrirModalCompra(proveedorId = null) {
-    alert('Función de nueva compra será implementada');
-}
-
-function abrirModalPago() {
-    alert('Función de nuevo pago será implementada');
-}
-
-function verDetalleFactura(facturaId) {
-    alert('Función de detalle de factura será implementada');
-}
-
-function verDetalleCompra(compraId) {
-    alert('Función de detalle de compra será implementada');
-}
-
-function verDetallePago(pagoId) {
-    alert('Función de detalle de pago será implementada');
-}
-
-function abrirModalPagoFactura(facturaId) {
-    alert('Función de pago de factura será implementada');
-}
-
-function generarFacturaDesdeCompra(compraId) {
-    alert('Función de generar factura desde compra será implementada');
-}
-
-function anularPago(pagoId) {
-    if (confirm('¿Está seguro de anular este pago?')) {
-        alert('Función de anular pago será implementada');
-    }
-}
-
-// Inicialización
-document.addEventListener('DOMContentLoaded', function() {
-    verificarAuth();
-    cargarProveedores();
+  try {
+    console.log('Guardando proveedor:', id ? 'EDITANDO' : 'NUEVO', data);
     
-    // Aplicar filtro por roles
-    document.querySelectorAll('[data-roles]').forEach(elemento => {
-        const rolesPermitidos = elemento.getAttribute('data-roles').split(',');
-        if (!verificarRol(rolesPermitidos)) {
-            elemento.classList.add('d-none');
-        }
+    const options = {
+      method: id ? 'PUT' : 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    };
+
+    const endpoint = id ? `/api/proveedores/${id}` : '/api/proveedores';
+    await apiFetch(endpoint, options);
+
+    mostrarNotificacion(id ? '✅ Proveedor actualizado correctamente' : '✅ Proveedor creado correctamente');
+
+    const modalEl = document.getElementById('proveedorModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+
+    cargarProveedores();
+  } catch (err) {
+    console.error('Error guardando proveedor:', err);
+    mostrarNotificacion(err.error || err.message || 'Error al guardar proveedor', 'error');
+  }
+}
+
+function confirmarEliminarProveedor(id, nombre) {
+  const mensaje = `¿Está seguro de eliminar/desactivar al proveedor "${nombre}"?\n\n` +
+                  `• Si tiene compras asociadas se DESACTIVARÁ\n` +
+                  `• Si NO tiene compras se ELIMINARÁ permanentemente`;
+  
+  if (confirm(mensaje)) {
+    eliminarProveedor(id);
+  }
+}
+
+async function eliminarProveedor(id) {
+  try {
+    console.log('Eliminando/desactivando proveedor ID:', id);
+    
+    await apiFetch(`/api/proveedores/${id}`, { 
+      method: 'DELETE' 
     });
-});
+    
+    mostrarNotificacion('Operación realizada correctamente');
+    cargarProveedores();
+  } catch (err) {
+    console.error('Error eliminando proveedor:', err);
+    mostrarNotificacion(err.error || err.message || 'Error al eliminar proveedor', 'error');
+  }
+}
+
+// ===================== VER DETALLE PROVEEDOR =====================
+async function verDetalleProveedor(id) {
+  const detalleContent = document.getElementById('detalleContent');
+  if (!detalleContent) return;
+
+  detalleContent.innerHTML = `
+    <div class="text-center py-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Cargando...</span>
+      </div>
+    </div>
+  `;
+
+  try {
+    console.log('Cargando detalle del proveedor ID:', id);
+    
+    const proveedor = proveedoresCache.find(p => p.id === id) || await apiFetch(`/api/proveedores/${id}`);
+    
+    // Intentar cargar datos adicionales
+    let compras = [];
+    let resumen = {};
+    
+    try {
+      compras = await apiFetch(`/api/proveedores/${id}/compras`);
+    } catch (err) {
+      console.warn('No se pudieron cargar compras del proveedor:', err);
+    }
+    
+    try {
+      resumen = await apiFetch(`/api/proveedores/${id}/resumen`);
+    } catch (err) {
+      console.warn('No se pudo cargar resumen del proveedor:', err);
+    }
+
+    const deuda = Number(proveedor.deuda_pendiente || resumen.deuda_pendiente || 0);
+
+    // Últimas 5 compras
+    const ultimasCompras = (compras || []).slice(0, 5);
+    let comprasHtml = '';
+    if (!ultimasCompras.length) {
+      comprasHtml = '<p class="text-muted mb-0">Sin compras registradas</p>';
+    } else {
+      comprasHtml = `
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Comprobante</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ultimasCompras.map(c => `
+                <tr>
+                  <td>${formatearFecha(c.fecha_compra)}</td>
+                  <td>${c.numero_comprobante || '-'}</td>
+                  <td class="text-end">${formatearMoneda(c.total)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    detalleContent.innerHTML = `
+      <div class="row">
+        <div class="col-md-5">
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="mb-0">${proveedor.nombre}</h6>
+            </div>
+            <div class="card-body">
+              <p><strong>CUIT:</strong> ${proveedor.cuit || '-'}</p>
+              <p><strong>Dirección:</strong> ${proveedor.direccion || '-'}</p>
+              <p><strong>Teléfono:</strong> ${proveedor.telefono || '-'}</p>
+              <p><strong>Email:</strong> ${proveedor.email || '-'}</p>
+              <p><strong>Contacto:</strong> ${proveedor.contacto || '-'}</p>
+              <p><strong>Condición IVA:</strong> ${proveedor.condicion_iva || '-'}</p>
+              <p><strong>Observaciones:</strong> ${proveedor.observaciones || '-'}</p>
+              <p>
+                <strong>Estado:</strong> 
+                <span class="badge ${proveedor.activo ? 'bg-success' : 'bg-secondary'}">
+                  ${proveedor.activo ? 'Activo' : 'Inactivo'}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header bg-info text-white">
+              <h6 class="mb-0">Resumen Financiero</h6>
+            </div>
+            <div class="card-body">
+              <p><strong>Total compras:</strong> ${resumen.total_compras || proveedor.total_compras || 0}</p>
+              <p><strong>Monto total compras:</strong> ${formatearMoneda(resumen.monto_total_compras || 0)}</p>
+              <p><strong>Deuda actual:</strong> <span class="text-danger fw-bold">${formatearMoneda(deuda)}</span></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-7">
+          <h6 class="mb-3">📦 Últimas compras</h6>
+          ${comprasHtml}
+        </div>
+      </div>
+    `;
+
+    const modalEl = document.getElementById('detalleModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+
+  } catch (err) {
+    console.error('Error cargando detalle:', err);
+    mostrarNotificacion(err.error || err.message || 'Error al cargar detalle del proveedor', 'error');
+  }
+}
+
+// ===================== FUNCIONES DE FILTROS PRINCIPALES =====================
+function limpiarFiltros() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filtroEstado').value = 'activos';
+  cargarProveedores();
+}
+
+// ===================== FUNCIONES DE NAVEGACIÓN =====================
+function logout() {
+  localStorage.clear();
+  window.location.href = 'login.html';
+}
+
+// ===================== EXPORTAR FUNCIONES GLOBALES =====================
+// Hacer disponibles las funciones globalmente
+window.abrirModalProveedor = abrirModalProveedor;
+window.editarProveedor = editarProveedor;
+window.guardarProveedor = guardarProveedor;
+window.confirmarEliminarProveedor = confirmarEliminarProveedor;
+window.eliminarProveedor = eliminarProveedor;
+window.verDetalleProveedor = verDetalleProveedor;
+window.limpiarFiltros = limpiarFiltros;
+window.cargarProveedores = cargarProveedores;
+window.logout = logout;
