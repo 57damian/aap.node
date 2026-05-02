@@ -1,0 +1,834 @@
+# Esquema de Base de Datos - Proyecto
+
+Generado automáticamente el 2025-04-08.
+
+## Tablas
+
+- [aplicacion_pagos](#aplicacion_pagos)
+- [cadena_endosos](#cadena_endosos)
+- [cheques](#cheques)
+- [clientes](#clientes)
+- [compra_documentos](#compra_documentos)
+- [compra_items](#compra_items)
+- [compras](#compras)
+- [cuenta_corriente](#cuenta_corriente)
+- [endosos_cheques](#endosos_cheques)
+- [etiquetas_modelo](#etiquetas_modelo)
+- [factura_items](#factura_items)
+- [facturas](#facturas)
+- [facturas_compra](#facturas_compra)
+- [facturas_proveedor](#facturas_proveedor)
+- [ficha_transformador](#ficha_transformador)
+- [historial_dolar](#historial_dolar)
+- [historial_precios_materias](#historial_precios_materias)
+- [materias_primas](#materias_primas)
+- [modelos_transformador](#modelos_transformador)
+- [notas_credito](#notas_credito)
+- [orden_compra_items](#orden_compra_items)
+- [ordenes_compra](#ordenes_compra)
+- [pago_items](#pago_items)
+- [pagos](#pagos)
+- [pagos_clientes](#pagos_clientes)
+- [pagos_proveedor_cheques](#pagos_proveedor_cheques)
+- [pagos_proveedores](#pagos_proveedores)
+- [parametros](#parametros)
+- [precios_cliente](#precios_cliente)
+- [precios_materia_prima](#precios_materia_prima)
+- [precios_modelo](#precios_modelo)
+- [produccion](#produccion)
+- [productos_stock](#productos_stock)
+- [proveedores](#proveedores)
+- [recibos](#recibos)
+- [roles](#roles)
+- [saldos_favor](#saldos_favor)
+- [stock_actual](#stock_actual)
+- [stock_materias_primas](#stock_materias_primas)
+- [stock_movimientos](#stock_movimientos)
+- [stock_produccion](#stock_produccion)
+- [stock_produccion_ajustes](#stock_produccion_ajustes)
+- [talonarios_recibo](#talonarios_recibo)
+- [usuarios](#usuarios)
+- [venta_items](#venta_items)
+- [ventas](#ventas)
+- [vista_facturas_vencimiento](#vista_facturas_vencimiento)
+- [vw_cheques_detalle](#vw_cheques_detalle)
+- [vw_cheques_disponibles_endoso](#vw_cheques_disponibles_endoso)
+- [vw_endosos_realizados](#vw_endosos_realizados)
+
+---
+
+## Detalle de tablas
+
+### aplicacion_pagos
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('aplicacion_pagos_id_seq'::regclass) |
+| pago_id | integer | YES |  |
+| factura_id | integer | YES |  |
+| monto_aplicado | numeric | NO |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### cadena_endosos
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('cadena_endosos_id_seq'::regclass) |
+| endoso_anterior_id | integer | YES |  |
+| endoso_actual_id | integer | NO |  |
+| pago_item_id | integer | NO |  |
+| proveedor_origen_id | integer | YES |  |
+| proveedor_destino_id | integer | NO |  |
+| fecha_endoso | date | NO |  |
+| monto | numeric | NO |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### cheques
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('cheques_id_seq'::regclass) |
+| numero_cheque | character varying | NO |  |
+| banco | character varying | NO |  |
+| titular | character varying | NO |  |
+| monto | numeric | NO |  |
+| fecha_emision | date | NO |  |
+| fecha_pago | date | NO |  |
+| fecha_cobro | date | YES |  |
+| tipo_cheque | character varying | NO |  |
+| estado | character varying | NO | 'EMITIDO'::character varying |
+| beneficiario_id | integer | YES |  |
+| cliente_id | integer | YES |  |
+| ruta_imagen | text | YES |  |
+| observaciones | text | YES |  |
+| created_by | integer | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+| updated_at | timestamp without time zone | YES | now() |
+
+### clientes
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('clientes_id_seq'::regclass) |
+| nombre | character varying | NO |  |
+| telefono | character varying | YES |  |
+| observaciones | text | YES |  |
+| cuit | character varying | YES |  |
+| correo | character varying | YES |  |
+| direccion | character varying | YES |  |
+| forma_pago | character varying | YES |  |
+| dias_max_pago | integer | YES |  |
+
+### compra_documentos
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('compra_documentos_id_seq'::regclass) |
+| compra_id | integer | YES |  |
+| tipo_documento | character varying | NO |  |
+| nombre_archivo | character varying | NO |  |
+| ruta_archivo | text | NO |  |
+| tamaño_bytes | bigint | YES |  |
+| mime_type | character varying | YES |  |
+| fecha_subida | timestamp without time zone | YES | now() |
+| usuario_id | integer | YES |  |
+| observaciones | text | YES |  |
+
+### compra_items
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('compra_items_id_seq'::regclass) |
+| compra_id | integer | YES |  |
+| producto | character varying | YES |  |
+| cantidad | numeric | YES |  |
+| unidad | character varying | YES |  |
+| precio_unitario | numeric | YES |  |
+| materia_prima_id | integer | YES |  |
+| descripcion | text | YES |  |
+| subtotal | numeric | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### compras
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('compras_id_seq'::regclass) |
+| proveedor_id | integer | YES |  |
+| fecha_compra_old | date | NO | CURRENT_DATE |
+| fecha_compra | date | YES |  |
+| numero_oc | character varying | YES |  |
+| condicion_pago | character varying | YES |  |
+| subtotal | numeric | YES | 0 |
+| iva | numeric | YES | 0 |
+| total | numeric | YES | 0 |
+| estado | character varying | YES | 'PENDIENTE'::character varying |
+| observaciones | text | YES |  |
+| created_by | integer | YES |  |
+| updated_at | timestamp without time zone | YES | now() |
+| numero_comprobante | character varying | YES |  |
+| moneda | character varying | YES | 'ARS'::character varying |
+
+### cuenta_corriente
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| cliente_id | integer | YES |  |
+| cliente_nombre | character varying | YES |  |
+| total_facturado | numeric | YES |  |
+| total_pagado | numeric | YES |  |
+| saldo_favor | numeric | YES |  |
+| saldo_pendiente | numeric | YES |  |
+
+### endosos_cheques
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('endosos_cheques_id_seq'::regclass) |
+| pago_item_id | integer | YES |  |
+| proveedor_id | integer | YES |  |
+| fecha_endoso | date | NO |  |
+| monto_endosado | numeric | NO |  |
+| estado | character varying | YES | 'PENDIENTE'::character varying |
+| fecha_aceptacion | date | YES |  |
+| fecha_rechazo | date | YES |  |
+| motivo_rechazo | text | YES |  |
+| observaciones | text | YES |  |
+| created_by | integer | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### etiquetas_modelo
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('etiquetas_modelo_id_seq'::regclass) |
+| modelo_id | integer | YES |  |
+| imagen_archivo | character varying | YES |  |
+| descripcion | character varying | YES |  |
+
+### factura_items
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('factura_items_nueva_id_seq'::regclass) |
+| factura_id | integer | NO |  |
+| materia_prima_id | integer | NO |  |
+| descripcion | text | YES |  |
+| cantidad | numeric | NO |  |
+| precio_unitario | numeric | NO |  |
+| iva_porcentaje | numeric | YES | 21.00 |
+| subtotal | numeric | NO |  |
+| iva | numeric | NO |  |
+| total | numeric | NO |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+| venta_item_id | integer | YES |  |
+| ficha_id | integer | YES |  |
+| precio_unitario_sin_iva | numeric | YES |  |
+
+### facturas
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('facturas_id_seq'::regclass) |
+| cliente_id | integer | NO |  |
+| numero_factura | character varying | NO |  |
+| tipo_factura | character varying | NO |  |
+| fecha | date | NO |  |
+| dias_credito | integer | YES | 0 |
+| subtotal_sin_iva | numeric | NO |  |
+| iva_21 | numeric | NO |  |
+| total | numeric | NO |  |
+| estado | character varying | YES | 'emitida'::character varying |
+| created_at | timestamp without time zone | YES | now() |
+| punto_venta | integer | YES |  |
+| cae | text | YES |  |
+| cae_vencimiento | date | YES |  |
+| estado_afip | text | YES | 'pendiente'::text |
+
+### facturas_compra
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('facturas_compra_id_seq'::regclass) |
+| proveedor_id | integer | NO |  |
+| fecha_emision | date | NO |  |
+| fecha_recepcion | date | YES |  |
+| tipo_factura | character varying | NO |  |
+| punto_venta | character varying | YES |  |
+| numero_factura | character varying | NO |  |
+| numero_comprobante | character varying | YES |  |
+| subtotal | numeric | YES | 0 |
+| iva | numeric | YES | 0 |
+| percepciones | numeric | YES | 0 |
+| retenciones | numeric | YES | 0 |
+| total | numeric | NO |  |
+| neto_pagado | numeric | YES | 0 |
+| condicion_pago | character varying | YES | 'CONTADO'::character varying |
+| observaciones | text | YES |  |
+| estado | character varying | YES | 'PENDIENTE'::character varying |
+| created_by | integer | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+| updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### facturas_proveedor
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('facturas_proveedor_id_seq'::regclass) |
+| proveedor_id | integer | YES |  |
+| compra_id | integer | YES |  |
+| numero_factura | character varying | NO |  |
+| tipo | character varying | YES |  |
+| fecha_emision | date | NO |  |
+| fecha_vto | date | YES |  |
+| subtotal | numeric | YES | 0 |
+| iva | numeric | YES | 0 |
+| total | numeric | YES | 0 |
+| pagado | numeric | YES | 0 |
+| saldo_pendiente | numeric | YES |  |
+| estado | character varying | YES | 'PENDIENTE'::character varying |
+| pdf_path | text | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### ficha_transformador
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('ficha_transformador_id_seq'::regclass) |
+| modelo | character varying | NO |  |
+| tipo_carretel | character varying | YES |  |
+| foto_modelo | character varying | YES |  |
+| voltaje_entrada | numeric | YES |  |
+| voltaje_salida | numeric | YES |  |
+| amperaje_entrada | numeric | YES |  |
+| amperaje_salida | numeric | YES |  |
+| alambre_primario | character varying | YES |  |
+| diametro_primario_mm | numeric | YES |  |
+| espiras_primario | integer | YES |  |
+| pines_primario | character varying | YES |  |
+| peso_primario_kg | numeric | YES |  |
+| alambre_secundario | character varying | YES |  |
+| diametro_secundario_mm | numeric | YES |  |
+| espiras_secundario | integer | YES |  |
+| pines_secundario | character varying | YES |  |
+| peso_secundario_kg | numeric | YES |  |
+| laminacion | character varying | YES |  |
+| peso_laminacion_kg | numeric | YES |  |
+| observaciones | text | YES |  |
+| cliente_id | integer | YES |  |
+| deleted_at | timestamp without time zone | YES |  |
+
+### historial_dolar
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('historial_dolar_id_seq'::regclass) |
+| dolar | numeric | NO |  |
+| usuario_id | integer | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### historial_precios_materias
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('historial_precios_materias_id_seq'::regclass) |
+| materia_prima_id | integer | NO |  |
+| proveedor_id | integer | NO |  |
+| precio_anterior | numeric | YES |  |
+| precio_nuevo | numeric | NO |  |
+| variacion_porcentaje | numeric | YES |  |
+| factura_id | integer | YES |  |
+| fecha_cambio | date | NO |  |
+| created_by | integer | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### materias_primas
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('materias_primas_id_seq'::regclass) |
+| codigo | character varying | YES |  |
+| nombre | character varying | NO |  |
+| descripcion | text | YES |  |
+| unidad_medida | character varying | NO | 'UNI'::character varying |
+| stock_actual | numeric | YES | 0 |
+| stock_minimo | numeric | YES | 0 |
+| ubicacion | character varying | YES |  |
+| activo | boolean | YES | true |
+| ultimo_precio | numeric | YES |  |
+| fecha_ultima_compra | date | YES |  |
+| creado_en | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+| actualizado_en | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### modelos_transformador
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('modelos_transformador_id_seq'::regclass) |
+| nombre_modelo | character varying | NO |  |
+| tipo_carretel | character varying | YES |  |
+| foto_modelo | character varying | YES |  |
+| voltaje_entrada | numeric | YES |  |
+| voltaje_salida | numeric | YES |  |
+| amperaje_entrada | numeric | YES |  |
+| amperaje_salida | numeric | YES |  |
+| alambre_primario | character varying | YES |  |
+| diametro_primario_mm | numeric | YES |  |
+| espiras_primario | integer | YES |  |
+| pines_primario | character varying | YES |  |
+| peso_primario_kg | numeric | YES |  |
+| alambre_secundario | character varying | YES |  |
+| diametro_secundario_mm | numeric | YES |  |
+| espiras_secundario | integer | YES |  |
+| pines_secundario | character varying | YES |  |
+| peso_secundario_kg | numeric | YES |  |
+| laminacion | character varying | YES |  |
+| peso_laminacion_kg | numeric | YES |  |
+| observaciones | text | YES |  |
+
+### notas_credito
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('notas_credito_id_seq'::regclass) |
+| factura_id | integer | NO |  |
+| numero_nota | character varying | NO |  |
+| fecha | date | NO |  |
+| subtotal | numeric | NO |  |
+| iva_21 | numeric | NO |  |
+| total | numeric | NO |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### orden_compra_items
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('orden_compra_items_id_seq'::regclass) |
+| orden_compra_id | integer | NO |  |
+| ficha_id | integer | NO |  |
+| cantidad_pedida | integer | NO |  |
+
+### ordenes_compra
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('ordenes_compra_id_seq'::regclass) |
+| cliente_id | integer | NO |  |
+| numero_oc | character varying | NO |  |
+| fecha_oc | date | NO |  |
+| foto_oc | character varying | YES |  |
+| observaciones | text | YES |  |
+| estado | character varying | YES | 'abierta'::character varying |
+
+### pago_items
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('pago_items_id_seq'::regclass) |
+| pago_id | integer | YES |  |
+| tipo | character varying | NO |  |
+| monto | numeric | NO |  |
+| observaciones | text | YES |  |
+| cheque_numero | character varying | YES |  |
+| cheque_banco | character varying | YES |  |
+| cheque_fecha_emision | date | YES |  |
+| cheque_fecha_cobro | date | YES |  |
+| cheque_fecha_depositado | date | YES |  |
+| cheque_estado | character varying | YES | 'pendiente'::character varying |
+| cheque_motivo_rechazo | text | YES |  |
+| cheque_gasto_comision | numeric | YES | 0 |
+| cheque_reemplazo_id | integer | YES |  |
+| transferencia_banco_origen | character varying | YES |  |
+| transferencia_banco_destino | character varying | YES |  |
+| transferencia_numero_operacion | character varying | YES |  |
+| transferencia_cbu_origen | character varying | YES |  |
+| transferencia_cbu_destino | character varying | YES |  |
+| transferencia_fecha | date | YES |  |
+| transferencia_comprobante_url | text | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+| updated_at | timestamp without time zone | YES | now() |
+| endosado | boolean | YES | false |
+| endosado_a_proveedor_id | integer | YES |  |
+| fecha_endoso | date | YES |  |
+
+### pagos
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('pagos_id_seq'::regclass) |
+| cliente_id | integer | NO |  |
+| fecha_recepcion | date | NO |  |
+| monto_total | numeric | NO |  |
+| observaciones | text | YES |  |
+| estado | character varying | YES | 'pendiente'::character varying |
+| created_at | timestamp without time zone | YES | now() |
+| updated_at | timestamp without time zone | YES | now() |
+
+### pagos_clientes
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('pagos_clientes_id_seq'::regclass) |
+| cliente_id | integer | YES |  |
+| venta_id | integer | YES |  |
+| fecha | date | NO | CURRENT_DATE |
+| monto | numeric | NO |  |
+| metodo | character varying | YES |  |
+| observaciones | text | YES |  |
+
+### pagos_proveedor_cheques
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('pagos_proveedor_cheques_id_seq'::regclass) |
+| endoso_id | integer | YES |  |
+| proveedor_id | integer | YES |  |
+| fecha_pago | date | NO |  |
+| monto_utilizado | numeric | NO |  |
+| observaciones | text | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### pagos_proveedores
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('pagos_proveedores_id_seq'::regclass) |
+| proveedor_id | integer | YES |  |
+| compra_id | integer | YES |  |
+| fecha | date | NO | CURRENT_DATE |
+| monto | numeric | NO |  |
+| metodo | character varying | YES |  |
+| observaciones | text | YES |  |
+| factura_id | integer | YES |  |
+| referencia | character varying | YES |  |
+| forma_pago | character varying | YES |  |
+| estado | character varying | YES | 'CONFIRMADO'::character varying |
+| created_by | integer | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+| updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### parametros
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('parametros_id_seq'::regclass) |
+| clave | character varying | NO |  |
+| valor | character varying | NO |  |
+| descripcion | text | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+| updated_at | timestamp without time zone | YES | now() |
+| updated_by | integer | YES |  |
+
+### precios_cliente
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('precios_cliente_id_seq'::regclass) |
+| cliente_id | integer | NO |  |
+| ficha_id | integer | NO |  |
+| precio | numeric | NO |  |
+| fecha_desde | date | NO | CURRENT_DATE |
+| observaciones | text | YES |  |
+
+### precios_materia_prima
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('precios_materia_prima_id_seq'::regclass) |
+| materia_prima_id | integer | NO |  |
+| fecha_desde | date | NO |  |
+| precio_unitario | numeric | NO |  |
+| proveedor_id | integer | YES |  |
+| moneda | character varying | YES | 'ARS'::character varying |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### precios_modelo
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('precios_modelo_id_seq'::regclass) |
+| ficha_id | integer | NO |  |
+| precio | numeric | NO |  |
+| fecha_desde | date | NO | CURRENT_DATE |
+| es_aumento | boolean | YES | false |
+| observaciones | text | YES |  |
+
+### produccion
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('produccion_id_seq'::regclass) |
+| ficha_id | integer | NO |  |
+| cantidad | integer | NO |  |
+| fecha_produccion | date | NO | CURRENT_DATE |
+| usuario_id | integer | YES |  |
+| observaciones | text | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### productos_stock
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('productos_stock_id_seq'::regclass) |
+| materia_prima_id | integer | YES |  |
+| proveedor_id | integer | YES |  |
+| stock_actual | numeric | YES | 0 |
+| stock_minimo | numeric | YES | 0 |
+| punto_pedido | numeric | YES | 0 |
+| ubicacion | character varying | YES |  |
+| ultima_compra_id | integer | YES |  |
+| ultimo_precio | numeric | YES |  |
+| fecha_ultima_actualizacion | timestamp without time zone | YES | now() |
+| created_at | timestamp without time zone | YES | now() |
+
+### proveedores
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('proveedores_id_seq'::regclass) |
+| nombre | character varying | NO |  |
+| telefono | character varying | YES |  |
+| observaciones | text | YES |  |
+| cuit | character varying | YES |  |
+| direccion | text | YES |  |
+| email | character varying | YES |  |
+| contacto | character varying | YES |  |
+| condicion_iva | character varying | YES | 'RESPONSABLE INSCRIPTO'::character varying |
+| activo | boolean | YES | true |
+| total_compras | decimal(10,2) | YES | 0 |
+| ultima_compra | date | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+| updated_at | timestamp without time zone | YES | now() |
+| dias_credito | integer | YES | 0 |
+| forma_pago_habitual | character varying | YES | 'TRANSFERENCIA'::character varying |
+
+### recibos
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('recibos_id_seq'::regclass) |
+| numero_recibo | character varying | NO |  |
+| talonario_id | integer | YES |  |
+| cliente_id | integer | NO |  |
+| fecha_emision | date | NO | CURRENT_DATE |
+| pago_ids | ARRAY | YES |  |
+| total_efectivo | numeric | YES | 0 |
+| total_cheques | numeric | YES | 0 |
+| total_transferencias | numeric | YES | 0 |
+| total_retenciones | numeric | YES | 0 |
+| total_pagado | numeric | YES | 0 |
+| observaciones | text | YES |  |
+| usuario_id | integer | YES |  |
+| pdf_generado | boolean | YES | false |
+| pdf_url | text | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+
+### roles
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('roles_id_seq'::regclass) |
+| nombre | character varying | NO |  |
+
+### saldos_favor
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('saldos_favor_id_seq'::regclass) |
+| cliente_id | integer | NO |  |
+| pago_id | integer | NO |  |
+| monto_original | numeric | NO |  |
+| monto_utilizado | numeric | YES | 0 |
+| monto_disponible | numeric | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+| updated_at | timestamp without time zone | YES | now() |
+
+### stock_actual
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| ficha_id | integer | YES |  |
+| modelo | character varying | YES |  |
+| cliente_id | integer | YES |  |
+| producido_total | bigint | YES |  |
+| entregado_total | bigint | YES |  |
+| stock_actual | bigint | YES |  |
+
+### stock_materias_primas
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| materia_prima_id | integer | YES |  |
+| codigo | character varying | YES |  |
+| nombre | character varying | YES |  |
+| unidad_medida | character varying | YES |  |
+| stock_actual | numeric | YES |  |
+| stock_minimo | numeric | YES |  |
+| ubicacion | character varying | YES |  |
+| activo | boolean | YES |  |
+| ultimo_precio | numeric | YES |  |
+| fecha_ultima_compra | date | YES |  |
+
+### stock_movimientos
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('stock_movimientos_id_seq'::regclass) |
+| materia_prima_id | integer | NO |  |
+| fecha_movimiento | date | NO |  |
+| tipo_movimiento | character varying | NO |  |
+| cantidad | numeric | NO |  |
+| unidad | character varying | NO |  |
+| compra_item_id | integer | YES |  |
+| observaciones | text | YES |  |
+| usuario_id | integer | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+| factura_id | integer | YES |  |
+| stock_anterior | numeric | YES |  |
+| stock_nuevo | numeric | YES |  |
+
+### stock_produccion
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| ficha_id | integer | YES |  |
+| modelo | character varying | YES |  |
+| cliente_id | integer | YES |  |
+| producido_total | bigint | YES |  |
+| entregado_total | bigint | YES |  |
+| stock_actual | bigint | YES |  |
+
+### stock_produccion_ajustes
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('stock_produccion_ajustes_id_seq'::regclass) |
+| ficha_id | integer | NO |  |
+| fecha_ajuste | date | NO | CURRENT_DATE |
+| tipo_ajuste | character varying | NO |  |
+| cantidad | integer | NO |  |
+| motivo | text | YES |  |
+| usuario_id | integer | YES |  |
+| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### talonarios_recibo
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('talonarios_recibo_id_seq'::regclass) |
+| numero_talonario | character varying | NO |  |
+| fecha_asignacion | date | NO |  |
+| usuario_asignado_id | integer | YES |  |
+| activo | boolean | YES | true |
+| created_at | timestamp without time zone | YES | now() |
+
+### usuarios
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('usuarios_id_seq'::regclass) |
+| nombre_usuario | character varying | NO |  |
+| password_hash | character varying | NO |  |
+| rol | character varying | NO |  |
+| activo | boolean | YES | true |
+| ultimo_acceso | timestamp without time zone | YES |  |
+| created_at | timestamp without time zone | YES | now() |
+| email | character varying | YES |  |
+| nombre_completo | character varying | YES |  |
+| telefono | character varying | YES |  |
+| observaciones | text | YES |  |
+| updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
+
+### venta_items
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('venta_items_id_seq'::regclass) |
+| venta_id | integer | YES |  |
+| cantidad | integer | NO |  |
+| ficha_id | integer | YES |  |
+| precio_unitario_usd | numeric | YES |  |
+| precio_unitario_pesos | numeric | YES |  |
+
+### ventas
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | NO | nextval('ventas_id_seq'::regclass) |
+| cliente_id | integer | YES |  |
+| fecha | date | NO | CURRENT_DATE |
+| orden_compra_id | integer | YES |  |
+| numero_factura | character varying | YES |  |
+| fecha_factura | date | YES |  |
+| tipo_factura | character varying | YES |  |
+| tipo_cambio | numeric | YES |  |
+| fecha_entrega | date | YES | CURRENT_DATE |
+| remito_numero | text | YES |  |
+| remito_fecha | date | YES |  |
+| remito_observaciones | text | YES |  |
+
+### vista_facturas_vencimiento
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| id | integer | YES |  |
+| numero_factura | character varying | YES |  |
+| fecha | date | YES |  |
+| dias_credito | integer | YES |  |
+| fecha_vencimiento | date | YES |  |
+| dias_desde_factura | integer | YES |  |
+| dias_vencida | integer | YES |  |
+
+### vw_cheques_detalle
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| pago_item_id | integer | YES |  |
+| cheque_numero | character varying | YES |  |
+| cheque_banco | character varying | YES |  |
+| monto | numeric | YES |  |
+| cheque_fecha_emision | date | YES |  |
+| fecha_vencimiento | date | YES |  |
+| cheque_fecha_depositado | date | YES |  |
+| cheque_estado | character varying | YES |  |
+| cheque_motivo_rechazo | text | YES |  |
+| cheque_gasto_comision | numeric | YES |  |
+| endosado | boolean | YES |  |
+| endosado_a_proveedor_id | integer | YES |  |
+| fecha_endoso | date | YES |  |
+| pago_id | integer | YES |  |
+| fecha_recepcion | date | YES |  |
+| cliente_id | integer | YES |  |
+| cliente_nombre | character varying | YES |  |
+| estado_descripcion | character varying | YES |  |
+| dias_para_vencer | integer | YES |  |
+
+### vw_cheques_disponibles_endoso
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| pago_item_id | integer | YES |  |
+| cheque_numero | character varying | YES |  |
+| cheque_banco | character varying | YES |  |
+| monto | numeric | YES |  |
+| fecha_vencimiento | date | YES |  |
+| cliente_nombre | character varying | YES |  |
+| cliente_id | integer | YES |  |
+| dias_para_vencer | integer | YES |  |
+
+### vw_endosos_realizados
+
+| Columna | Tipo | Nulo | Defecto |
+|---------|------|------|---------|
+| endoso_id | integer | YES |  |
+| fecha_endoso | date | YES |  |
+| monto_endosado | numeric | YES |  |
+| estado | character varying | YES |  |
+| fecha_aceptacion | date | YES |  |
+| cheque_numero | character varying | YES |  |
+| cheque_banco | character varying | YES |  |
+| monto_cheque_original | numeric | YES |  |
+| cliente_origen | character varying | YES |  |
+| proveedor_destino | character varying | YES |  |
+| proveedor_cuit | character varying | YES |  |
+| color_estado | text | YES |  |

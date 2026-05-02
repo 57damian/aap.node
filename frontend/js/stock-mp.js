@@ -1,321 +1,298 @@
-// Variables globales
-let materiales = [];
-let proveedores = [];
+// stock-mp.js - ABM de Materias Primas
+let materiasPrimasCache = [];
 
+// Formatear moneda
+function formatearMoneda(valor) {
+    return new Intl.NumberFormat('es-AR', {
+        style: 'currency',
+        currency: 'ARS'
+    }).format(valor);
+}
+
+// Inicializar página
 document.addEventListener('DOMContentLoaded', () => {
-  cargarEstadisticas();
-  cargarCatalogo();
-  cargarSelectMateriales();
-  cargarSelectProveedores();
+    verificarAuth();
+    cargarMateriasPrimas();
 });
 
-// ================== CATÁLOGO ==================
-async function cargarCatalogo() {
-  const search = document.getElementById('search-catalogo')?.value || '';
-  const proveedor_id = document.getElementById('proveedor-filtro')?.value || '';
-  const stockFiltro = document.getElementById('stock-filtro')?.value || '';
-
-  let url = '/api/materias-primas?activo=true';
-  if (search) url += `&search=${encodeURIComponent(search)}`;
-  if (proveedor_id) url += `&proveedor_id=${proveedor_id}`;
-
-  try {
-    const response = await apiFetch(url);
-    materiales = response;
-
-    // Filtrar por estado de stock si se seleccionó
-    let filtrados = materiales;
-    if (stockFiltro === 'con_stock') {
-      filtrados = materiales.filter(m => m.stock_actual > 0);
-    } else if (stockFiltro === 'bajo') {
-      filtrados = materiales.filter(m => m.estado_stock === 'BAJO');
-    } else if (stockFiltro === 'critico') {
-      filtrados = materiales.filter(m => m.estado_stock === 'CRITICO');
+// Cargar materias primas
+async function cargarMateriasPrimas() {
+    try {
+        const materiasPrimas = await apiFetch('/api/materias-primas');
+        materiasPrimasCache = materiasPrimas;
+        renderizarTablaMateriasPrimas(materiasPrimas);
+    } catch (err) {
+        console.error('Error cargando materias primas:', err);
+        alert(err.error || 'Error al cargar materias primas');
     }
-
-    renderizarCatalogo(filtrados);
-  } catch (err) {
-    console.error('Error cargando catálogo:', err);
-    mostrarNotificacion('Error al cargar materiales', 'error');
-  }
 }
 
-function renderizarCatalogo(materiales) {
-  const tbody = document.getElementById('catalogo-body');
-  if (!materiales || materiales.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">No hay materiales</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = materiales.map(m => {
-    const estadoClass = m.estado_stock === 'NORMAL' ? 'normal' : m.estado_stock === 'BAJO' ? 'bajo' : 'critico';
-    return `
-      <tr>
-        <td>${m.codigo || '-'}</td>
-        <td><strong>${m.nombre}</strong><br><small>${m.descripcion || ''}</small></td>
-        <td>${m.unidad_medida}</td>
-        <td>${m.stock_actual} ${m.unidad_medida}</td>
-        <td>${m.stock_minimo} ${m.unidad_medida}</td>
-        <td><span class="badge ${estadoClass}">${m.estado_stock}</span></td>
-        <td>$${m.ultimo_precio ? m.ultimo_precio.toFixed(2) : '0.00'}</td>
-        <td>$${m.valor_total ? m.valor_total.toFixed(2) : '0.00'}</td>
-        <td>
-          <button class="btn btn-sm btn-primary" onclick="editarMaterial(${m.id})">Editar</button>
-          <button class="btn btn-sm btn-warning" onclick="abrirModalAjuste(${m.id})">Ajustar</button>
-          <button class="btn btn-sm btn-info" onclick="verHistorial(${m.id})">Historial</button>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-// ================== ESTADÍSTICAS ==================
-async function cargarEstadisticas() {
-  try {
-    const res = await apiFetch('/api/stock/resumen');
-    document.getElementById('total-materiales').textContent = res.total_materiales || 0;
-    document.getElementById('valor-total').textContent = '$' + (res.valor_total_stock || 0).toFixed(2);
-    document.getElementById('stock-bajo').textContent = res.materiales_stock_bajo || 0;
-    document.getElementById('sin-stock').textContent = res.materiales_sin_stock || 0;
-  } catch (err) {
-    console.error('Error cargando estadísticas:', err);
-  }
-}
-
-// ================== MOVIMIENTOS ==================
-async function cargarMovimientos() {
-  const material_id = document.getElementById('filtro-material')?.value || '';
-  const desde = document.getElementById('filtro-desde')?.value || '';
-  const hasta = document.getElementById('filtro-hasta')?.value || '';
-
-  let url = '/api/stock/movimientos';
-  const params = [];
-  if (material_id) params.push(`materia_prima_id=${material_id}`);
-  if (desde) params.push(`desde=${desde}`);
-  if (hasta) params.push(`hasta=${hasta}`);
-  if (params.length) url += '?' + params.join('&');
-
-  try {
-    const movimientos = await apiFetch(url);
-    renderizarMovimientos(movimientos);
-  } catch (err) {
-    console.error('Error cargando movimientos:', err);
-    mostrarNotificacion('Error al cargar movimientos', 'error');
-  }
-}
-
-function renderizarMovimientos(movimientos) {
-  const tbody = document.getElementById('movimientos-body');
-  if (!movimientos || movimientos.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">No hay movimientos</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = movimientos.map(m => {
-    const origen = m.compra_id ? `Factura/Compra #${m.compra_id}` : 'Manual';
-    const fecha = new Date(m.fecha_movimiento).toLocaleDateString('es-AR');
-    return `
-      <tr>
-        <td>${fecha}</td>
-        <td>${m.materia_prima_id} (ID)</td>
-        <td>${m.tipo_movimiento}</td>
-        <td>${m.cantidad}</td>
-        <td>${m.stock_anterior}</td>
-        <td>${m.stock_nuevo}</td>
-        <td>${origen}</td>
-        <td>${m.usuario_nombre || 'Sistema'}</td>
-        <td>${m.observaciones || '-'}</td>
-      </tr>
-    `;
-  }).join('');
-}
-
-// ================== SELECTS ==================
-async function cargarSelectMateriales() {
-  try {
-    const materiales = await apiFetch('/api/materias-primas?activo=true');
-    const selectMaterial = document.getElementById('filtro-material');
-    const selectAjuste = document.getElementById('ajuste-material');
-    selectMaterial.innerHTML = '<option value="">Todos</option>';
-    selectAjuste.innerHTML = '<option value="">-- Seleccionar --</option>';
-
-    materiales.forEach(m => {
-      const option = `<option value="${m.id}">${m.nombre} (${m.codigo || 'sin código'})</option>`;
-      selectMaterial.innerHTML += option;
-      selectAjuste.innerHTML += option;
-    });
-  } catch (err) {
-    console.error('Error cargando materiales para selects:', err);
-  }
-}
-
-async function cargarSelectProveedores() {
-  try {
-    const proveedores = await apiFetch('/api/proveedores?activo=true');
-    const select = document.getElementById('proveedor-filtro');
-    select.innerHTML = '<option value="">Todos</option>';
-    proveedores.forEach(p => {
-      select.innerHTML += `<option value="${p.id}">${p.nombre}</option>`;
-    });
-  } catch (err) {
-    console.error('Error cargando proveedores:', err);
-  }
-}
-
-// ================== CRUD MATERIALES ==================
-function abrirModalNuevoMaterial() {
-  document.getElementById('modal-material-title').textContent = 'Nuevo Material';
-  document.getElementById('form-material').reset();
-  document.getElementById('material-id').value = '';
-  document.getElementById('material-activo-group').style.display = 'none';
-  document.getElementById('modal-material').style.display = 'block';
-}
-
-function editarMaterial(id) {
-  const material = materiales.find(m => m.id === id);
-  if (!material) return;
-
-  document.getElementById('modal-material-title').textContent = 'Editar Material';
-  document.getElementById('material-id').value = material.id;
-  document.getElementById('material-codigo').value = material.codigo || '';
-  document.getElementById('material-nombre').value = material.nombre;
-  document.getElementById('material-descripcion').value = material.descripcion || '';
-  document.getElementById('material-unidad').value = material.unidad_medida;
-  document.getElementById('material-stock-minimo').value = material.stock_minimo;
-  document.getElementById('material-ubicacion').value = material.ubicacion || '';
-  document.getElementById('material-activo').value = material.activo ? 'true' : 'false';
-  document.getElementById('material-activo-group').style.display = 'block';
-
-  document.getElementById('modal-material').style.display = 'block';
-}
-
-function cerrarModalMaterial() {
-  document.getElementById('modal-material').style.display = 'none';
-}
-
-async function guardarMaterial() {
-  const id = document.getElementById('material-id').value;
-  const data = {
-    codigo: document.getElementById('material-codigo').value || null,
-    nombre: document.getElementById('material-nombre').value,
-    descripcion: document.getElementById('material-descripcion').value || null,
-    unidad_medida: document.getElementById('material-unidad').value,
-    stock_minimo: parseFloat(document.getElementById('material-stock-minimo').value) || 0,
-    ubicacion: document.getElementById('material-ubicacion').value || null
-  };
-  if (id) {
-    data.activo = document.getElementById('material-activo').value === 'true';
-  }
-
-  try {
-    if (id) {
-      await apiFetch(`/api/materias-primas/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data)
-      });
-      mostrarNotificacion('Material actualizado', 'success');
-    } else {
-      await apiFetch('/api/materias-primas', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-      mostrarNotificacion('Material creado', 'success');
+// Renderizar tabla de materias primas
+function renderizarTablaMateriasPrimas(materiasPrimas) {
+    const tbody = document.getElementById('materiasPrimasTableBody');
+    
+    if (!materiasPrimas || materiasPrimas.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No hay materias primas registradas</td></tr>';
+        return;
     }
-    cerrarModalMaterial();
-    cargarCatalogo();
-    cargarEstadisticas();
-    cargarSelectMateriales();
-  } catch (err) {
-    console.error('Error guardando material:', err);
-    mostrarNotificacion(err.error || 'Error al guardar', 'error');
-  }
+    
+    tbody.innerHTML = materiasPrimas.map(mp => {
+        let estadoBadge = mp.activo 
+            ? '<span class="badge bg-success">ACTIVO</span>' 
+            : '<span class="badge bg-secondary">INACTIVO</span>';
+        
+        let stockClass = '';
+        if (mp.stock_actual === 0) {
+            stockClass = 'text-danger';
+        } else if (mp.stock_actual <= mp.stock_minimo) {
+            stockClass = 'text-warning';
+        }
+        
+        return `
+            <tr>
+                <td>${mp.codigo || '-'}</td>
+                <td>${mp.nombre}</td>
+                <td>${mp.unidad_medida || 'UNI'}</td>
+                <td class="${stockClass}">${mp.stock_actual || 0}</td>
+                <td>${mp.stock_minimo || 0}</td>
+                <td>${mp.ubicacion || '-'}</td>
+                <td>${estadoBadge}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="abrirModalEditar(${mp.id})">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="verHistorialPrecios(${mp.id})">
+                        <i class="fas fa-chart-line"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="eliminarMateriaPrima(${mp.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
-// ================== AJUSTE MANUAL ==================
-function abrirModalAjuste(materialId = null) {
-  document.getElementById('form-ajuste').reset();
-  if (materialId) {
-    document.getElementById('ajuste-material').value = materialId;
-  }
-  const hoy = new Date().toISOString().split('T')[0];
-  document.getElementById('ajuste-fecha').value = hoy;
-  document.getElementById('modal-ajuste').style.display = 'block';
+// Abrir modal para crear nueva materia prima
+function abrirModalCrear() {
+    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box"></i> Nueva Materia Prima';
+    document.getElementById('materia_prima_id').value = '';
+    document.getElementById('codigo').value = '';
+    document.getElementById('nombre').value = '';
+    document.getElementById('descripcion').value = '';
+    document.getElementById('unidad_medida').value = '';
+    document.getElementById('ubicacion').value = '';
+    document.getElementById('stock_actual').value = '0';
+    document.getElementById('stock_minimo').value = '0';
+    document.getElementById('precio_referencia').value = '';
+    document.getElementById('activo').checked = true;
+    
+    const modal = new bootstrap.Modal(document.getElementById('materiaPrimaModal'));
+    modal.show();
 }
 
-function cerrarModalAjuste() {
-  document.getElementById('modal-ajuste').style.display = 'none';
-}
-
-async function guardarAjuste() {
-  const data = {
-    materia_prima_id: parseInt(document.getElementById('ajuste-material').value),
-    cantidad: parseFloat(document.getElementById('ajuste-cantidad').value),
-    tipo_movimiento: document.getElementById('ajuste-tipo').value,
-    observaciones: document.getElementById('ajuste-observaciones').value || null,
-    fecha_movimiento: document.getElementById('ajuste-fecha').value || null
-  };
-
-  if (!data.materia_prima_id || isNaN(data.cantidad) || !data.tipo_movimiento) {
-    mostrarNotificacion('Complete todos los campos', 'error');
-    return;
-  }
-
-  try {
-    await apiFetch('/api/stock/ajuste', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-    mostrarNotificacion('Ajuste registrado', 'success');
-    cerrarModalAjuste();
-    cargarCatalogo();
-    cargarEstadisticas();
-    cargarMovimientos();
-  } catch (err) {
-    console.error('Error en ajuste:', err);
-    mostrarNotificacion(err.error || 'Error al ajustar', 'error');
-  }
-}
-
-// ================== HISTORIAL (popup simple) ==================
-async function verHistorial(id) {
-  try {
-    const movimientos = await apiFetch(`/api/stock/materia-prima/${id}/movimientos`);
-    if (movimientos.length === 0) {
-      alert('No hay movimientos para este material');
-      return;
+// Abrir modal para editar materia prima
+async function abrirModalEditar(id) {
+    try {
+        const materiaPrima = await apiFetch(`/api/materias-primas/${id}`);
+        
+        document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box"></i> Editar Materia Prima';
+        document.getElementById('materia_prima_id').value = materiaPrima.id;
+        document.getElementById('codigo').value = materiaPrima.codigo || '';
+        document.getElementById('nombre').value = materiaPrima.nombre || '';
+        document.getElementById('descripcion').value = materiaPrima.descripcion || '';
+        document.getElementById('unidad_medida').value = materiaPrima.unidad_medida || '';
+        document.getElementById('ubicacion').value = materiaPrima.ubicacion || '';
+        document.getElementById('stock_actual').value = materiaPrima.stock_actual || 0;
+        document.getElementById('stock_minimo').value = materiaPrima.stock_minimo || 0;
+        document.getElementById('precio_referencia').value = materiaPrima.precio_referencia || '';
+        document.getElementById('activo').checked = materiaPrima.activo !== false;
+        
+        const modal = new bootstrap.Modal(document.getElementById('materiaPrimaModal'));
+        modal.show();
+    } catch (err) {
+        console.error('Error cargando materia prima:', err);
+        alert('Error al cargar materia prima');
     }
-    // Mostrar en una ventana emergente simple (puedes mejorarlo con un modal)
-    let mensaje = 'Historial de movimientos:\n';
-    movimientos.forEach(m => {
-      mensaje += `${m.fecha_movimiento} - ${m.tipo_movimiento}: ${m.cantidad} (stock: ${m.stock_anterior}->${m.stock_nuevo}) ${m.observaciones ? '- ' + m.observaciones : ''}\n`;
-    });
-    alert(mensaje);
-  } catch (err) {
-    console.error('Error cargando historial:', err);
-    mostrarNotificacion('Error al cargar historial', 'error');
-  }
 }
 
-// ================== UTILIDADES ==================
-function showTab(tabName) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  if (tabName === 'catalogo') {
-    document.querySelector('.tab').classList.add('active');
-    document.getElementById('tab-catalogo').classList.add('active');
-  } else {
-    document.querySelectorAll('.tab')[1].classList.add('active');
-    document.getElementById('tab-movimientos').classList.add('active');
-    cargarMovimientos();
-  }
+// Guardar materia prima (crear o actualizar)
+async function guardarMateriaPrima() {
+    try {
+        const id = document.getElementById('materia_prima_id').value;
+        const codigo = document.getElementById('codigo').value.trim();
+        const nombre = document.getElementById('nombre').value.trim();
+        const descripcion = document.getElementById('descripcion').value.trim();
+        const unidad_medida = document.getElementById('unidad_medida').value;
+        const ubicacion = document.getElementById('ubicacion').value.trim();
+        const stock_actual = parseFloat(document.getElementById('stock_actual').value) || 0;
+        const stock_minimo = parseFloat(document.getElementById('stock_minimo').value) || 0;
+        const precio_referencia = document.getElementById('precio_referencia').value ? parseFloat(document.getElementById('precio_referencia').value) : null;
+        const activo = document.getElementById('activo').checked;
+        
+        // Validaciones
+        if (!codigo) {
+            alert('El código es obligatorio');
+            return;
+        }
+        if (!nombre) {
+            alert('El nombre es obligatorio');
+            return;
+        }
+        if (!unidad_medida) {
+            alert('La unidad de medida es obligatoria');
+            return;
+        }
+        if (stock_minimo < 0) {
+            alert('El stock mínimo no puede ser negativo');
+            return;
+        }
+        
+        const payload = {
+            codigo,
+            nombre,
+            descripcion,
+            unidad_medida,
+            ubicacion,
+            stock_actual,
+            stock_minimo,
+            activo
+        };
+        
+        // Si hay precio referencia, lo agregamos
+        if (precio_referencia !== null && precio_referencia > 0) {
+            payload.precio_referencia = precio_referencia;
+        }
+        
+        let endpoint = '/api/materias-primas';
+        let method = 'POST';
+        
+        if (id) {
+            endpoint = `/api/materias-primas/${id}`;
+            method = 'PUT';
+        }
+        
+        await apiFetch(endpoint, {
+            method: method,
+            body: JSON.stringify(payload)
+        });
+        
+        alert(id ? 'Materia prima actualizada correctamente' : 'Materia prima creada correctamente');
+        bootstrap.Modal.getInstance(document.getElementById('materiaPrimaModal')).hide();
+        cargarMateriasPrimas();
+        
+    } catch (err) {
+        console.error('Error guardando materia prima:', err);
+        alert(err.error || 'Error al guardar materia prima');
+    }
 }
 
-function mostrarNotificacion(mensaje, tipo) {
-  // Simple alert por ahora, puedes usar una mejor
-  alert(`${tipo.toUpperCase()}: ${mensaje}`);
+// Eliminar materia prima
+async function eliminarMateriaPrima(id) {
+    if (!confirm('¿Está seguro de eliminar esta materia prima?')) {
+        return;
+    }
+    
+    try {
+        await apiFetch(`/api/materias-primas/${id}`, {
+            method: 'DELETE'
+        });
+        
+        alert('Materia prima eliminada correctamente');
+        cargarMateriasPrimas();
+    } catch (err) {
+        console.error('Error eliminando materia prima:', err);
+        alert(err.error || 'Error al eliminar materia prima');
+    }
 }
 
-function logout() {
-  localStorage.clear();
-  window.location.href = 'index.html';
+// Ver historial de precios desde la tabla
+async function verHistorialPrecios(id) {
+    try {
+        const historial = await apiFetch(`/api/materias-primas/${id}/historial-precios`);
+        
+        const tbody = document.getElementById('historialPreciosBody');
+        if (!historial || historial.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
+        } else {
+            tbody.innerHTML = historial.map(p => `
+                <tr>
+                    <td>${p.fecha_cambio || '-'}</td>
+                    <td>${formatearMoneda(p.precio_anterior || 0)}</td>
+                    <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
+                    <td class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">
+                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
+                    </td>
+                    <td>${p.factura_numero || '-'}</td>
+                    <td>${p.usuario_nombre || '-'}</td>
+                </tr>
+            `).join('');
+        }
+        
+        const modal = new bootstrap.Modal(document.getElementById('historialPreciosModal'));
+        modal.show();
+        
+    } catch (err) {
+        console.error('Error cargando historial de precios:', err);
+        alert('Error al cargar historial de precios');
+    }
+}
+
+// Ver historial de precios desde el modal de edición
+async function verHistorialPreciosModal() {
+    const materiaPrimaId = document.getElementById('materia_prima_id').value;
+    
+    if (!materiaPrimaId) {
+        alert('Primero debe guardar la materia prima para ver su historial de precios');
+        return;
+    }
+    
+    try {
+        const historial = await apiFetch(`/api/materias-primas/${materiaPrimaId}/historial-precios`);
+        
+        const tbody = document.getElementById('historialPreciosBody');
+        if (!historial || historial.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
+        } else {
+            tbody.innerHTML = historial.map(p => `
+                <tr>
+                    <td>${p.fecha_cambio || '-'}</td>
+                    <td>${formatearMoneda(p.precio_anterior || 0)}</td>
+                    <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
+                    <td class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">
+                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
+                    </td>
+                    <td>${p.factura_numero || '-'}</td>
+                    <td>${p.usuario_nombre || '-'}</td>
+                </tr>
+            `).join('');
+        }
+        
+        // Cerrar el modal de edición y abrir el de historial
+        bootstrap.Modal.getInstance(document.getElementById('materiaPrimaModal')).hide();
+        const modal = new bootstrap.Modal(document.getElementById('historialPreciosModal'));
+        modal.show();
+        
+    } catch (err) {
+        console.error('Error cargando historial de precios:', err);
+        alert('Error al cargar historial de precios');
+    }
+}
+
+// Buscar materias primas
+function buscarMateriasPrimas() {
+    const searchTerm = document.getElementById('searchInput')?.value.toLowerCase();
+    
+    if (!searchTerm) {
+        renderizarTablaMateriasPrimas(materiasPrimasCache);
+        return;
+    }
+    
+    const filtradas = materiasPrimasCache.filter(mp => 
+        (mp.codigo && mp.codigo.toLowerCase().includes(searchTerm)) ||
+        (mp.nombre && mp.nombre.toLowerCase().includes(searchTerm)) ||
+        (mp.descripcion && mp.descripcion.toLowerCase().includes(searchTerm))
+    );
+    
+    renderizarTablaMateriasPrimas(filtradas);
 }

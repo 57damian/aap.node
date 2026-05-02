@@ -17,7 +17,7 @@
     <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
     <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
     <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='facturas-compras.html'">Facturas</button>
+    <button data-roles="admin,control" onclick="window.location.href='facturas-compra.html'">Facturas</button>
     <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">Pagos</button>
     <button data-roles="admin,control" onclick="window.location.href='stock.html'" class="active">Stock</button>
     <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
@@ -31,8 +31,18 @@
 <div class="container main-container">
     <!-- Header Principal -->
     <div class="proveedores-header">
-        <h1><i class="fas fa-boxes"></i> Control de Stock</h1>
-        <p>Gestione el inventario de artículos y controle niveles de stock</p>
+        <h1><i class="fas fa-industry"></i> Stock de Producción</h1>
+        <p class="text-warning"><strong>MODELOS PRODUCIDOS - Stock disponible para ventas</strong></p>
+        <p>Gestión de modelos terminados producidos en fábrica</p>
+        <div class="d-flex align-items-center mt-2">
+            <span class="badge bg-warning me-2" id="dolarActual">Dólar: ARS 0.00</span>
+            <button class="btn btn-sm btn-outline-warning" onclick="window.location.href='stock-mp.html'">
+                <i class="fas fa-box"></i> Ir a Stock de Materias Primas
+            </button>
+            <button class="btn btn-sm btn-outline-success ms-2" onclick="window.location.href='produccion.html'">
+                <i class="fas fa-cogs"></i> Registrar Producción
+            </button>
+        </div>
     </div>
 
     <!-- Estadísticas Principales -->
@@ -49,7 +59,8 @@
                 <i class="fas fa-dollar-sign"></i>
             </div>
             <div class="stat-value" id="stockValorizado">$0</div>
-            <div class="stat-label">Stock Valorizado</div>
+            <div class="stat-label">Stock Valorizado (ARS)</div>
+            <div class="stat-subvalue" id="stockValorizadoUSD">$0 USD</div>
         </div>
         <div class="stat-card warning">
             <div class="stat-icon warning">

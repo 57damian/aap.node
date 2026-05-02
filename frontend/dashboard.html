@@ -16,8 +16,11 @@
       <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
       <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
       <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-      <button data-roles="admin,control" onclick="window.location.href='facturas-compras.html'">Facturas</button>
-      <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+      <button data-roles="admin,control" onclick="window.location.href='facturas-compra.html'">Facturas Compra</button>
+      <button data-roles="admin,control" onclick="window.location.href='pagos-clientes.html'">Pagos Clientes</button>
+      <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">Pagos Proveedores</button>
+      <button data-roles="admin,control" onclick="window.location.href='alertas-pagos.html'">Alertas</button>
+      <button data-roles="admin,control" onclick="window.location.href='trazabilidad-pagos.html'">Trazabilidad</button>
       <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
       <button data-roles="admin,control,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
       <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
@@ -62,143 +65,101 @@
       </div>
     </div>
 
-    <div class="dashboard-grid">
-      <div>
-        <section class="widget">
-          <div class="widget-header">
-            <h5 class="widget-title"><i class="fas fa-rocket"></i> Accesos Rápidos</h5>
+    <div class="dashboard-simple">
+      <!-- Sección de Alertas Urgentes -->
+      <section class="widget alertas-urgentes">
+        <div class="widget-header">
+          <h5 class="widget-title"><i class="fas fa-exclamation-triangle"></i> Alertas Urgentes</h5>
+          <span class="badge" id="alertasCount">0</span>
+        </div>
+        <div class="widget-body">
+          <div id="alertasList" class="alerts-list-simple">
+            <div class="empty-state">Cargando alertas...</div>
           </div>
-          <div class="widget-body">
-            <div class="quick-actions">
-              <a href="ficha.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-file-alt"></i></div>
-                <div class="quick-action-title">Fichas Técnicas</div>
-                <div class="quick-action-description">Especificaciones técnicas</div>
-              </a>
-              <a href="proveedores.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-truck"></i></div>
-                <div class="quick-action-title">Proveedores</div>
-                <div class="quick-action-description">Compras y proveedores</div>
-              </a>
-              <a href="oc.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-clipboard-list"></i></div>
-                <div class="quick-action-title">Órdenes de Compra</div>
-                <div class="quick-action-description">Gestión de compras</div>
-              </a>
-              <a href="clientes.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-users"></i></div>
-                <div class="quick-action-title">Clientes</div>
-                <div class="quick-action-description">ABM de clientes</div>
-              </a>
-              <a href="ventas.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-shopping-cart"></i></div>
-                <div class="quick-action-title">Ventas</div>
-                <div class="quick-action-description">Entregas y facturación</div>
-              </a>
-              <a href="produccion.html" class="quick-action" data-roles="admin,control,operario,empleado">
-                <div class="quick-action-icon"><i class="fas fa-industry"></i></div>
-                <div class="quick-action-title">Producción</div>
-                <div class="quick-action-description">Control de planta</div>
-              </a>
-              <a href="facturas-compras.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-file-invoice"></i></div>
-                <div class="quick-action-title">Facturas</div>
-                <div class="quick-action-description">Facturas de compra</div>
-              </a>
-              <a href="pagos.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-money-bill-wave"></i></div>
-                <div class="quick-action-title">Pagos</div>
-                <div class="quick-action-description">Pagos y cobranzas</div>
-              </a>
-              <a href="reportes.html" class="quick-action" data-roles="admin,control">
-                <div class="quick-action-icon"><i class="fas fa-file-pdf"></i></div>
-                <div class="quick-action-title">Reportes</div>
-                <div class="quick-action-description">Informes y estadísticas</div>
-              </a>
-              <a href="precios.html" class="quick-action" data-roles="admin">
-                <div class="quick-action-icon"><i class="fas fa-users-cog"></i></div>
-                <div class="quick-action-title">Precios</div>
-                <div class="quick-action-description">Gestión de precios</div>
-              </a>
-              <a href="usuarios.html" class="quick-action" data-roles="admin">
-                <div class="quick-action-icon"><i class="fas fa-users-cog"></i></div>
-                <div class="quick-action-title">Usuarios</div>
-                <div class="quick-action-description">Gestión de permisos</div>
-              </a>
+        </div>
+      </section>
+
+      <!-- Accesos Rápidos Simplificados -->
+      <section class="widget">
+        <div class="widget-header">
+          <h5 class="widget-title"><i class="fas fa-th-large"></i> Módulos Principales</h5>
+        </div>
+        <div class="widget-body">
+          <div class="quick-grid">
+            <a href="ficha.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-file-alt"></i></div>
+              <div class="quick-module-title">Fichas</div>
+            </a>
+            <a href="proveedores.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-truck"></i></div>
+              <div class="quick-module-title">Proveedores</div>
+            </a>
+            <a href="ventas.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-shopping-cart"></i></div>
+              <div class="quick-module-title">Ventas</div>
+            </a>
+            <a href="clientes.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-users"></i></div>
+              <div class="quick-module-title">Clientes</div>
+            </a>
+            <a href="produccion.html" class="quick-module" data-roles="admin,control,operario,empleado">
+              <div class="quick-module-icon"><i class="fas fa-industry"></i></div>
+              <div class="quick-module-title">Producción</div>
+            </a>
+            <a href="stock.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-boxes"></i></div>
+              <div class="quick-module-title">Stock</div>
+            </a>
+            <a href="facturas-compra.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-file-invoice-dollar"></i></div>
+              <div class="quick-module-title">Facturas</div>
+            </a>
+            <a href="oc.html" class="quick-module" data-roles="admin,control">
+              <div class="quick-module-icon"><i class="fas fa-clipboard-list"></i></div>
+              <div class="quick-module-title">Órdenes</div>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Estado del Sistema Simplificado -->
+      <section class="widget sistema-status">
+        <div class="widget-header">
+          <h5 class="widget-title"><i class="fas fa-server"></i> Estado del Sistema</h5>
+        </div>
+        <div class="widget-body">
+          <div class="status-grid">
+            <div class="status-item">
+              <div class="status-icon success"><i class="fas fa-database"></i></div>
+              <div class="status-info">
+                <div class="status-label">Base de Datos</div>
+                <div class="status-value" id="dbStatus">Conectada</div>
+              </div>
+            </div>
+            <div class="status-item">
+              <div class="status-icon success"><i class="fas fa-server"></i></div>
+              <div class="status-info">
+                <div class="status-label">Servidor API</div>
+                <div class="status-value" id="apiStatus">Activo</div>
+              </div>
+            </div>
+            <div class="status-item">
+              <div class="status-icon info"><i class="fas fa-user-clock"></i></div>
+              <div class="status-info">
+                <div class="status-label">Sesiones Activas</div>
+                <div class="status-value" id="activeSessions">-</div>
+              </div>
+            </div>
+            <div class="status-item">
+              <div class="status-icon info"><i class="fas fa-sync-alt"></i></div>
+              <div class="status-info">
+                <div class="status-label">Última Actualización</div>
+                <div class="status-value" id="lastUpdate">Ahora</div>
+              </div>
             </div>
           </div>
-        </section>
-
-        <section class="widget" data-roles="admin,control">
-          <div class="widget-header">
-            <h5 class="widget-title"><i class="fas fa-clock"></i> Actividad Reciente</h5>
-            <button class="btn btn-sm" onclick="cargarActividad()">Actualizar</button>
-          </div>
-          <div class="widget-body">
-            <div id="actividadReciente" class="activity-feed">
-              <div class="empty-state">Cargando actividad...</div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div>
-        <section class="widget" data-roles="admin,control">
-          <div class="widget-header">
-            <h5 class="widget-title"><i class="fas fa-heartbeat"></i> Estado del Sistema</h5>
-          </div>
-          <div class="widget-body">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Servicio</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Base de Datos</td>
-                  <td>Conectada</td>
-                </tr>
-                <tr>
-                  <td>Servidor API</td>
-                  <td>Activo</td>
-                </tr>
-                <tr>
-                  <td>Último Backup</td>
-                  <td>Hace 2 horas</td>
-                </tr>
-                <tr>
-                  <td>Usuarios Activos</td>
-                  <td id="usuariosActivos">-</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="widget">
-          <div class="widget-header">
-            <h5 class="widget-title"><i class="fas fa-chart-line"></i> Ventas Últimos 30 Días</h5>
-            <button class="btn btn-sm" onclick="exportarVentas()">Exportar</button>
-          </div>
-          <div class="widget-body">
-            <div class="chart-placeholder">Gráfico de ventas próximo a habilitar</div>
-          </div>
-        </section>
-
-        <section class="widget">
-          <div class="widget-header">
-            <h5 class="widget-title"><i class="fas fa-bell"></i> Alertas</h5>
-            <span class="badge" id="alertasCount">0</span>
-          </div>
-          <div class="widget-body">
-            <div id="alertasList" class="alerts-list">
-              <div class="empty-state">Sin alertas activas</div>
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -223,7 +184,7 @@
     }
 
     function setLoadingState(isLoading) {
-      const placeholders = ['totalClientes', 'totalProveedores', 'totalVentas', 'usuariosActivos', 'facturacionMensual'];
+      const placeholders = ['totalClientes', 'totalProveedores', 'totalVentas', 'facturacionMensual', 'activeSessions'];
       if (!isLoading) return;
       placeholders.forEach((id) => {
         const el = document.getElementById(id);
@@ -231,54 +192,39 @@
       });
     }
 
-    // VERSIÓN CORREGIDA - Usa rutas que existen
+    // VERSIÓN SIMPLIFICADA - Datos reales sin complicaciones
     async function cargarDatosDashboard() {
       setLoadingState(true);
       try {
-        // Usar rutas que realmente existen según tus archivos
+        // Cargar datos básicos en paralelo
         const [clientesRes, proveedoresRes, ventasRes] = await Promise.allSettled([
-          // Clientes: usar GET /api/clientes y contar en cliente
-          apiFetch('/api/clientes').catch(() => ({ length: 0 })),
-          
-          // Proveedores: usar GET /api/proveedores y contar en cliente
-          apiFetch('/api/proveedores').catch(() => ({ length: 0 })),
-          
-          // Ventas: usar GET /api/ventas y calcular en cliente
+          apiFetch('/api/clientes').catch(() => []),
+          apiFetch('/api/proveedores').catch(() => []),
           apiFetch('/api/ventas').catch(() => [])
         ]);
 
         // Procesar clientes
-        let totalClientes = 0;
-        if (clientesRes.status === 'fulfilled' && Array.isArray(clientesRes.value)) {
-          totalClientes = clientesRes.value.length;
-        } else if (clientesRes.value && clientesRes.value.length !== undefined) {
-          totalClientes = clientesRes.value.length;
-        }
+        const totalClientes = clientesRes.status === 'fulfilled' && Array.isArray(clientesRes.value) 
+          ? clientesRes.value.length 
+          : 0;
         document.getElementById('totalClientes').textContent = totalClientes;
 
         // Procesar proveedores
-        let totalProveedores = 0;
-        if (proveedoresRes.status === 'fulfilled' && Array.isArray(proveedoresRes.value)) {
-          totalProveedores = proveedoresRes.value.length;
-        } else if (proveedoresRes.value && proveedoresRes.value.length !== undefined) {
-          totalProveedores = proveedoresRes.value.length;
-        }
+        const totalProveedores = proveedoresRes.status === 'fulfilled' && Array.isArray(proveedoresRes.value)
+          ? proveedoresRes.value.length
+          : 0;
         document.getElementById('totalProveedores').textContent = totalProveedores;
 
-        // Procesar ventas
+        // Procesar ventas del mes actual
         let totalVentas = 0;
         let facturacionTotal = 0;
         
-        if (ventasRes.status === 'fulfilled') {
-          const ventas = Array.isArray(ventasRes.value) ? ventasRes.value : [];
-          totalVentas = ventas.length;
-          
-          // Filtrar ventas del mes actual
+        if (ventasRes.status === 'fulfilled' && Array.isArray(ventasRes.value)) {
           const hoy = new Date();
           const mesActual = hoy.getMonth();
           const anioActual = hoy.getFullYear();
           
-          const ventasMes = ventas.filter(v => {
+          const ventasMes = ventasRes.value.filter(v => {
             if (!v.fecha) return false;
             const fechaVenta = new Date(v.fecha);
             return fechaVenta.getMonth() === mesActual && fechaVenta.getFullYear() === anioActual;
@@ -286,95 +232,69 @@
           
           totalVentas = ventasMes.length;
           
-          // Calcular facturación (esto depende de cómo tengas estructuradas tus ventas)
-          // Por ahora usamos un valor de ejemplo
-          facturacionTotal = 1250000; // Ejemplo: $1.250.000
+          // Calcular facturación total del mes
+          // Asumiendo que las ventas tienen un campo 'total' o similar
+          facturacionTotal = ventasMes.reduce((sum, venta) => {
+            return sum + (parseFloat(venta.total) || 0);
+          }, 0);
         }
 
         document.getElementById('totalVentas').textContent = totalVentas;
-        document.getElementById('facturacionMensual').textContent = (window.cssUtils && window.cssUtils.formatCurrency)
-          ? window.cssUtils.formatCurrency(facturacionTotal)
-          : '$' + Number(facturacionTotal || 0).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
         
-        // Usuarios activos - podrías obtenerlos de algún endpoint si existe
-        document.getElementById('usuariosActivos').textContent = '3'; // Valor de ejemplo
+        // Formatear facturación
+        const formattedFacturacion = (window.cssUtils && window.cssUtils.formatCurrency)
+          ? window.cssUtils.formatCurrency(facturacionTotal)
+          : '$' + facturacionTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 });
+        document.getElementById('facturacionMensual').textContent = formattedFacturacion;
+        
+        // Actualizar timestamp
+        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('es-AR', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        });
         
       } catch (error) {
         console.error('Error cargando datos del dashboard:', error);
-        // No mostrar error al usuario, solo valores por defecto
+        // Valores por defecto en caso de error
         document.getElementById('totalClientes').textContent = '0';
         document.getElementById('totalProveedores').textContent = '0';
         document.getElementById('totalVentas').textContent = '0';
         document.getElementById('facturacionMensual').textContent = '$ 0,00';
-        document.getElementById('usuariosActivos').textContent = '0';
+      } finally {
+        setLoadingState(false);
       }
     }
 
-    function getIconoActividad(tipo) {
-      const iconos = {
-        venta: 'fa-shopping-cart',
-        compra: 'fa-truck',
-        cliente: 'fa-user-plus',
-        proveedor: 'fa-user-tie',
-        pago: 'fa-money-bill',
-        produccion: 'fa-industry'
-      };
-      return iconos[tipo] || 'fa-circle';
-    }
-
-    function formatearTiempo(fecha) {
-      const ahora = new Date();
-      const fechaActividad = new Date(fecha);
-      const diffMinutos = Math.floor((ahora - fechaActividad) / (1000 * 60));
-      if (diffMinutos < 1) return 'Ahora';
-      if (diffMinutos < 60) return 'Hace ' + diffMinutos + ' min';
-      if (diffMinutos < 1440) return 'Hace ' + Math.floor(diffMinutos / 60) + ' h';
-      return 'Hace ' + Math.floor(diffMinutos / 1440) + ' d';
-    }
-
-    // VERSIÓN CORREGIDA - Usa datos de ejemplo porque la ruta no existe
-    async function cargarActividad() {
-      const cont = document.getElementById('actividadReciente');
-      
-      // Como la ruta /api/actividad-reciente no existe, mostramos datos de ejemplo
-      const actividadEjemplo = [
-        {
-          tipo: 'proveedor',
-          titulo: 'Nuevo proveedor registrado',
-          descripcion: 'Se registró "Materiales Eléctricos S.A."',
-          fecha: new Date(Date.now() - 2 * 60 * 60 * 1000) // Hace 2 horas
-        },
-        {
-          tipo: 'compra',
-          titulo: 'Compra registrada',
-          descripcion: 'Orden de compra #OC-2024-0012',
-          fecha: new Date(Date.now() - 5 * 60 * 60 * 1000) // Hace 5 horas
-        },
-        {
-          tipo: 'factura',
-          titulo: 'Factura de compra',
-          descripcion: 'Factura A 0001-00012345 de "Cobre SA"',
-          fecha: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // Hace 1 día
+    // Función para verificar estado del sistema
+    async function verificarEstadoSistema() {
+      try {
+        // Verificar conexión a la API
+        const healthRes = await apiFetch('/health').catch(() => null);
+        if (healthRes && healthRes.status === 'ok') {
+          document.getElementById('apiStatus').textContent = 'Activo';
+          document.getElementById('apiStatus').parentElement.classList.add('success');
+        } else {
+          document.getElementById('apiStatus').textContent = 'Inactivo';
+          document.getElementById('apiStatus').parentElement.classList.add('danger');
         }
-      ];
-
-      cont.innerHTML = actividadEjemplo.map(item =>
-        '<div class="activity-item">' +
-          '<div class="activity-icon ' + (item.tipo || '') + '"><i class="fas ' + getIconoActividad(item.tipo) + '"></i></div>' +
-          '<div class="activity-content">' +
-            '<div class="activity-title">' + (item.titulo || 'Actividad') + '</div>' +
-            '<div class="activity-description">' + (item.descripcion || '') + '</div>' +
-            '<div class="activity-time">' + formatearTiempo(item.fecha) + '</div>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-    }
-
-    function exportarVentas() {
-      if (window.cssUtils && window.cssUtils.showNotification) {
-        window.cssUtils.showNotification('Función de exportación próximamente disponible', 'info');
-      } else {
-        alert('Función de exportación próximamente disponible');
+        
+        // Verificar conexión a base de datos (simplificado)
+        const clientesRes = await apiFetch('/api/clientes').catch(() => null);
+        if (clientesRes !== null) {
+          document.getElementById('dbStatus').textContent = 'Conectada';
+          document.getElementById('dbStatus').parentElement.classList.add('success');
+        } else {
+          document.getElementById('dbStatus').textContent = 'Desconectada';
+          document.getElementById('dbStatus').parentElement.classList.add('danger');
+        }
+        
+        // Sesiones activas (simplificado - contar usuarios logueados recientemente)
+        document.getElementById('activeSessions').textContent = '1'; // Por ahora, el usuario actual
+        
+      } catch (error) {
+        console.error('Error verificando estado del sistema:', error);
+        document.getElementById('apiStatus').textContent = 'Error';
+        document.getElementById('dbStatus').textContent = 'Error';
       }
     }
 
@@ -386,14 +306,19 @@
 
       mostrarInfoUsuario();
       cargarDatosDashboard();
-      cargarActividad();
+      verificarEstadoSistema();
+      
       if (typeof verificarPermisosUsuario === 'function') {
         verificarPermisosUsuario();
       }
+      
       applyFadeIn();
 
       // Refrescar datos cada 5 minutos
-      setInterval(cargarDatosDashboard, 5 * 60 * 1000);
+      setInterval(() => {
+        cargarDatosDashboard();
+        verificarEstadoSistema();
+      }, 5 * 60 * 1000);
     });
   </script>
 </body>

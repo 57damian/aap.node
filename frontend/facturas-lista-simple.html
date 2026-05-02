@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista de Facturas | Sistema ERP</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-brand">
+                <i class="fas fa-industry"></i>
+                <span>Sistema ERP</span>
+            </div>
+            <div class="navbar-menu">
+                <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='ficha.html'">
+                    <i class="fas fa-file-alt"></i> Fichas Técnicas
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='oc.html'">
+                    <i class="fas fa-clipboard-list"></i> Órdenes de Compra
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='ventas.html'">
+                    <i class="fas fa-chart-bar"></i> Ventas
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='clientes.html'">
+                    <i class="fas fa-user-tie"></i> Clientes
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">
+                    <i class="fas fa-truck"></i> Proveedores
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='facturas-compra.html'">
+                    <i class="fas fa-file-invoice"></i> Facturas Completo
+                </button>
+                <button data-roles="admin,control" class="active" onclick="window.location.href='facturas-lista-simple.html'">
+                    <i class="fas fa-list"></i> Lista Facturas
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">
+                    <i class="fas fa-money-bill"></i> Pagos
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='stock.html'">
+                    <i class="fas fa-boxes"></i> Stock
+                </button>
+                <button data-roles="admin,control" onclick="window.location.href='reportes.html'">
+                    <i class="fas fa-file-pdf"></i> Reportes
+                </button>
+                <button data-roles="admin,control,operario,empleado" onclick="window.location.href='produccion.html'">
+                    <i class="fas fa-industry"></i> Producción
+                </button>
+                <button data-roles="admin" onclick="window.location.href='usuarios.html'">
+                    <i class="fas fa-users-cog"></i> Usuarios
+                </button>
+                <button data-roles="admin" onclick="window.location.href='precios.html'">
+                    <i class="fas fa-tags"></i> Precios
+                </button>
+            </div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <span id="userName">Usuario</span>
+                    <button onclick="logout()" class="btn-logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container-fluid">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="mb-1">
+                        <i class="fas fa-list text-primary"></i> Lista de Facturas
+                    </h1>
+                    <p class="text-muted">Listado simple de todas las facturas de compra</p>
+                </div>
+                <div>
+                    <button class="btn btn-primary" onclick="cargarFacturas()">
+                        <i class="fas fa-sync-alt"></i> Recargar
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="window.location.href='facturas-compra.html'">
+                        <i class="fas fa-external-link-alt"></i> Ver completo
+                    </button>
+                </div>
+            </div>
+
+            <!-- Contador simple -->
+            <div class="alert alert-info mb-4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fas fa-info-circle"></i>
+                        <span id="contadorFacturas">Cargando facturas...</span>
+                    </div>
+                    <div>
+                        <span class="badge bg-primary" id="totalFacturas">0</span> facturas en total
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla de facturas -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Factura</th>
+                                    <th>Proveedor</th>
+                                    <th>Fecha Emisión</th>
+                                    <th>Total</th>
+                                    <th>Pagado</th>
+                                    <th>Saldo</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaFacturasBody">
+                                <!-- Se llenará dinámicamente -->
+                                <tr>
+                                    <td colspan="8" class="text-center text-muted py-4">
+                                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                            <span class="visually-hidden">Cargando...</span>
+                                        </div>
+                                        <span class="ms-2">Cargando facturas...</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mensaje cuando no hay facturas -->
+            <div id="mensajeNoFacturas" class="alert alert-warning mt-4" style="display: none;">
+                <i class="fas fa-exclamation-triangle"></i>
+                No hay facturas registradas en el sistema.
+            </div>
+
+            <!-- Mensaje de error -->
+            <div id="mensajeError" class="alert alert-danger mt-4" style="display: none;">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="textoError">Error al cargar las facturas</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Detalle Factura -->
+    <div class="modal fade" id="detalleFacturaModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Detalle de Factura</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detalleFacturaContent">
+                    <!-- Se llena con JS -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/facturas-lista-simple.js"></script>
+    <script>
+        // Función para cerrar sesión
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('usuario');
+            window.location.href = 'login.html';
+        }
+
+        // Mostrar nombre de usuario
+        document.addEventListener('DOMContentLoaded', function() {
+            const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+            if (usuario.nombre) {
+                document.getElementById('userName').textContent = usuario.nombre;
+            }
+            
+            // Filtrar navbar por roles
+            if (typeof filtrarNavbarPorRol === 'function') {
+                filtrarNavbarPorRol();
+            }
+        });
+    </script>
+</body>
+</html>

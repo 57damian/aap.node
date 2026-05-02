@@ -542,7 +542,7 @@ async function verDetalleProveedor(id) {
               ${facturasHtml}
               ${facturasPendientes.length > 5 ? `
                 <div class="text-end mt-2">
-                  <small><a href="#" onclick="window.location.href='facturas-compras.html?proveedor=${id}'">Ver todas</a></small>
+                  <small><a href="#" onclick="window.location.href='facturas-compra.html?proveedor=${id}'">Ver todas</a></small>
                 </div>
               ` : ''}
             </div>

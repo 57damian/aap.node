@@ -3,917 +3,1276 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize } = require('../middlewares/auth');
 
+// Aplicar middleware de autenticación a todas las rutas
 router.use(verificarToken);
 
-// ============================================
-// OBTENER CLIENTES (para selects)
-// ============================================
-router.get('/clientes', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT id, nombre FROM clientes ORDER BY nombre'
-        );
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// OBTENER FACTURAS PENDIENTES POR CLIENTE (CORREGIDO)
-// ============================================
-router.get('/facturas-pendientes/:cliente_id', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            `WITH facturas_con_pagos AS (
-                SELECT 
-                    f.id,
-                    f.numero_factura,
-                    f.tipo_factura,
-                    f.fecha,
-                    f.fecha_vencimiento,
-                    f.total,
-                    COALESCE(SUM(ap.monto_aplicado), 0) as total_pagado,
-                    f.total - COALESCE(SUM(ap.monto_aplicado), 0) as saldo
-                FROM facturas f
-                LEFT JOIN aplicacion_pagos ap ON ap.factura_id = f.id
-                WHERE f.cliente_id = $1
-                    AND f.estado != 'anulada'
-                GROUP BY f.id
-                HAVING f.total - COALESCE(SUM(ap.monto_aplicado), 0) > 0.01
-            )
-            SELECT 
-                *,
-                CASE 
-                    WHEN fecha_vencimiento < CURRENT_DATE THEN 'vencida'
-                    ELSE 'pendiente'
-                END as estado_pago,
-                CURRENT_DATE - fecha_vencimiento as dias_vencida
-            FROM facturas_con_pagos
-            ORDER BY fecha_vencimiento ASC, fecha ASC`,
-            [req.params.cliente_id]
-        );
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Error cargando facturas pendientes:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// OBTENER ESTADO DE CUENTA COMPLETO DEL CLIENTE (NUEVO)
-// ============================================
-router.get('/estado-cuenta/:cliente_id', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const facturadoRes = await pool.query(
-            `SELECT COALESCE(SUM(f.total), 0) as total_facturado
-             FROM facturas f
-             WHERE f.cliente_id = $1 AND f.estado != 'anulada'`,
-            [req.params.cliente_id]
-        );
-
-        const pagadoRes = await pool.query(
-            `SELECT COALESCE(SUM(ap.monto_aplicado), 0) as total_pagado
-             FROM aplicacion_pagos ap
-             JOIN facturas f ON f.id = ap.factura_id
-             WHERE f.cliente_id = $1`,
-            [req.params.cliente_id]
-        );
-
-        const vencidaRes = await pool.query(
-            `SELECT COALESCE(SUM(f.total - COALESCE(ap.pagado, 0)), 0) as deuda_vencida
-             FROM facturas f
-             LEFT JOIN (
-                 SELECT factura_id, SUM(monto_aplicado) as pagado
-                 FROM aplicacion_pagos
-                 GROUP BY factura_id
-             ) ap ON ap.factura_id = f.id
-             WHERE f.cliente_id = $1 
-                 AND f.fecha_vencimiento < CURRENT_DATE
-                 AND f.estado != 'anulada'
-                 AND f.total > COALESCE(ap.pagado, 0)`,
-            [req.params.cliente_id]
-        );
-
-        const proximasRes = await pool.query(
-            `SELECT COUNT(*) as cantidad, COALESCE(SUM(f.total - COALESCE(ap.pagado, 0)), 0) as total
-             FROM facturas f
-             LEFT JOIN (
-                 SELECT factura_id, SUM(monto_aplicado) as pagado
-                 FROM aplicacion_pagos
-                 GROUP BY factura_id
-             ) ap ON ap.factura_id = f.id
-             WHERE f.cliente_id = $1 
-                 AND f.fecha_vencimiento BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
-                 AND f.estado != 'anulada'
-                 AND f.total > COALESCE(ap.pagado, 0)`,
-            [req.params.cliente_id]
-        );
-
-        res.json({
-            total_facturado: parseFloat(facturadoRes.rows[0].total_facturado),
-            total_pagado: parseFloat(pagadoRes.rows[0].total_pagado),
-            saldo_actual: parseFloat(facturadoRes.rows[0].total_facturado) - parseFloat(pagadoRes.rows[0].total_pagado),
-            deuda_vencida: parseFloat(vencidaRes.rows[0].deuda_vencida),
-            proximas_a_vencer: {
-                cantidad: parseInt(proximasRes.rows[0].cantidad),
-                total: parseFloat(proximasRes.rows[0].total)
-            }
-        });
-
-    } catch (err) {
-        console.error('Error obteniendo estado de cuenta:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// OBTENER TALONARIOS DISPONIBLES
-// ============================================
-router.get('/talonarios', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT * FROM talonarios_recibo WHERE activo = true ORDER BY numero_talonario'
-        );
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// CREAR PAGO (con múltiples items)
-// ============================================
-router.post('/pagos', authorize(['admin', 'control']), async (req, res) => {
-    const client = await pool.connect();
+// Obtener pagos a proveedores
+router.get('/', async (req, res) => {
+  try {
+    console.log('GET /api/pagos-proveedores - Query params:', req.query);
+    const { proveedor_id, fecha_desde, fecha_hasta, estado, forma_pago, search } = req.query;
     
-    try {
-        await client.query('BEGIN');
-
-        const {
-            cliente_id,
-            fecha_recepcion,
-            observaciones,
-            items // array de items de pago
-        } = req.body;
-
-        // 1️⃣ Validar datos básicos
-        if (!cliente_id || !fecha_recepcion || !items || items.length === 0) {
-            throw new Error('Datos incompletos');
-        }
-
-        // 2️⃣ Calcular monto total
-        const monto_total = items.reduce((sum, item) => sum + item.monto, 0);
-
-        // 3️⃣ Crear el pago
-        const pagoRes = await client.query(
-            `INSERT INTO pagos
-             (cliente_id, fecha_recepcion, monto_total, observaciones, estado)
-             VALUES ($1, $2, $3, $4, 'pendiente')
-             RETURNING *`,
-            [cliente_id, fecha_recepcion, monto_total, observaciones]
-        );
-        const pago = pagoRes.rows[0];
-
-        // 4️⃣ Insertar cada item
-        for (const item of items) {
-            await client.query(
-                `INSERT INTO pago_items
-                 (pago_id, tipo, monto, observaciones,
-                  cheque_numero, cheque_banco, cheque_fecha_emision, cheque_fecha_cobro,
-                  transferencia_banco_origen, transferencia_banco_destino,
-                  transferencia_numero_operacion, transferencia_fecha)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-                [
-                    pago.id,
-                    item.tipo,
-                    item.monto,
-                    item.observaciones || null,
-                    item.cheque_numero || null,
-                    item.cheque_banco || null,
-                    item.cheque_fecha_emision || null,
-                    item.cheque_fecha_cobro || null,
-                    item.transferencia_banco_origen || null,
-                    item.transferencia_banco_destino || null,
-                    item.transferencia_numero_operacion || null,
-                    item.transferencia_fecha || null
-                ]
-            );
-        }
-
-        await client.query('COMMIT');
-
-        res.json({
-            ok: true,
-            pago: pago,
-            message: '✅ Pago registrado correctamente'
-        });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Error creando pago:', err);
-        res.status(400).json({ error: err.message });
-    } finally {
-        client.release();
+    let query = `
+      SELECT p.*, pr.nombre as proveedor_nombre
+      FROM pagos_proveedores p
+      LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+      WHERE 1=1
+    `;
+    const params = [];
+    
+    if (proveedor_id) {
+      query += ` AND p.proveedor_id = $${params.length + 1}`;
+      params.push(proveedor_id);
     }
+    
+    if (fecha_desde) {
+      query += ` AND p.fecha >= $${params.length + 1}`;
+      params.push(fecha_desde);
+    }
+    
+    if (fecha_hasta) {
+      query += ` AND p.fecha <= $${params.length + 1}`;
+      params.push(fecha_hasta);
+    }
+    
+    if (estado) {
+      query += ` AND p.estado = $${params.length + 1}`;
+      params.push(estado);
+    }
+    
+    if (forma_pago) {
+      query += ` AND p.forma_pago = $${params.length + 1}`;
+      params.push(forma_pago);
+    }
+    
+    if (search) {
+      query += ` AND (pr.nombre ILIKE $${params.length + 1} OR p.referencia ILIKE $${params.length + 1})`;
+      params.push(`%${search}%`);
+    }
+    
+    query += ` ORDER BY p.fecha DESC, p.id DESC`;
+    
+    console.log('Query:', query);
+    console.log('Params:', params);
+    
+    const result = await pool.query(query, params);
+    console.log('Result rows:', result.rows.length);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error obteniendo pagos:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
 });
 
-// ============================================
-// APLICAR PAGO A FACTURAS
-// ============================================
-router.post('/pagos/:id/aplicar', authorize(['admin', 'control']), async (req, res) => {
-    const client = await pool.connect();
+// Crear nuevo pago a proveedor
+router.post('/', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
     
-    try {
-        await client.query('BEGIN');
-
-        const { id } = req.params;
-        const { aplicaciones } = req.body; // array de { factura_id, monto_aplicado }
-
-        if (!aplicaciones || aplicaciones.length === 0) {
-            throw new Error('Debe seleccionar al menos una factura');
-        }
-
-        // 1️⃣ Verificar que el pago existe
-        const pagoRes = await client.query(
-            'SELECT * FROM pagos WHERE id = $1 FOR UPDATE',
-            [id]
+    const {
+      proveedor_id,
+      fecha_pago,
+      metodo_pago,
+      numero_comprobante,
+      monto_total,
+      observaciones,
+      items
+    } = req.body;
+    
+    // Insertar pago
+    const pagoResult = await client.query(
+      `INSERT INTO pagos_proveedores 
+       (proveedor_id, fecha, forma_pago, referencia, monto, observaciones, estado)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pendiente')
+       RETURNING *`,
+      [proveedor_id, fecha_pago, metodo_pago, numero_comprobante, monto_total, observaciones]
+    );
+    
+    const pagoId = pagoResult.rows[0].id;
+    
+    // Insertar items del pago
+    if (items && items.length > 0) {
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO pagos_proveedores_items 
+           (pago_id, factura_compra_id, monto_aplicado)
+           VALUES ($1, $2, $3)`,
+          [pagoId, item.factura_compra_id, item.monto_aplicado]
         );
-        if (pagoRes.rows.length === 0) {
-            throw new Error('Pago no encontrado');
-        }
-        const pago = pagoRes.rows[0];
-
-        // 2️⃣ Verificar que no esté ya aplicado
-        if (pago.estado === 'aplicado') {
-            throw new Error('El pago ya está completamente aplicado');
-        }
-
-        // 3️⃣ Calcular total a aplicar
-        const totalAplicar = aplicaciones.reduce((sum, a) => sum + a.monto_aplicado, 0);
-        if (totalAplicar > pago.monto_total) {
-            throw new Error(`El monto a aplicar ($${totalAplicar}) supera el pago ($${pago.monto_total})`);
-        }
-
-        // 4️⃣ Aplicar a cada factura
-        for (const ap of aplicaciones) {
-            // Verificar saldo de factura
-            const facturaRes = await client.query(
-                `SELECT 
-                    f.total,
-                    COALESCE(SUM(ap.monto_aplicado), 0) as ya_aplicado
-                FROM facturas f
-                LEFT JOIN aplicacion_pagos ap ON ap.factura_id = f.id
-                WHERE f.id = $1
-                GROUP BY f.id`,
-                [ap.factura_id]
-            );
-
-            if (facturaRes.rows.length === 0) {
-                throw new Error(`Factura ${ap.factura_id} no encontrada`);
-            }
-
-            const factura = facturaRes.rows[0];
-            const saldo = factura.total - factura.ya_aplicado;
-
-            if (ap.monto_aplicado > saldo) {
-                throw new Error(`Monto ${ap.monto_aplicado} supera saldo ${saldo} de factura`);
-            }
-
-            // Insertar aplicación
-            await client.query(
-                `INSERT INTO aplicacion_pagos (pago_id, factura_id, monto_aplicado)
-                 VALUES ($1, $2, $3)`,
-                [id, ap.factura_id, ap.monto_aplicado]
-            );
-        }
-
-        // 5️⃣ Actualizar estado del pago
-        let nuevoEstado = 'aplicado';
-        if (totalAplicar < pago.monto_total) {
-            nuevoEstado = 'parcial';
-        }
         
+        // Actualizar saldo de la factura
         await client.query(
-            'UPDATE pagos SET estado = $1, updated_at = NOW() WHERE id = $2',
-            [nuevoEstado, id]
+          `UPDATE facturas_compra 
+           SET saldo_pendiente = saldo_pendiente - $1
+           WHERE id = $2`,
+          [item.monto_aplicado, item.factura_compra_id]
         );
-
-        // 6️⃣ Si sobra dinero, crear saldo a favor
-        if (totalAplicar < pago.monto_total) {
-            const saldoFavor = pago.monto_total - totalAplicar;
-            await client.query(
-                `INSERT INTO saldos_favor (cliente_id, pago_id, monto_original, monto_utilizado)
-                 VALUES ($1, $2, $3, 0)`,
-                [pago.cliente_id, id, saldoFavor]
-            );
-        }
-
-        await client.query('COMMIT');
-
-        res.json({
-            ok: true,
-            message: '✅ Pago aplicado correctamente',
-            estado: nuevoEstado
-        });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Error aplicando pago:', err);
-        res.status(400).json({ error: err.message });
-    } finally {
-        client.release();
+      }
     }
-});
-
-// ============================================
-// CREAR RECIBO (agrupa pagos)
-// ============================================
-router.post('/recibos', authorize(['admin', 'control']), async (req, res) => {
-    const client = await pool.connect();
     
-    try {
-        await client.query('BEGIN');
-
-        const {
-            numero_recibo,
-            talonario_numero,
-            cliente_id,
-            fecha_emision,
-            pago_ids, // array de IDs de pagos
-            observaciones
-        } = req.body;
-
-        // 1️⃣ Validar datos básicos
-        if (!numero_recibo || !cliente_id || !pago_ids || pago_ids.length === 0) {
-            throw new Error('Datos incompletos');
-        }
-
-        // 2️⃣ Verificar/crear talonario
-        let talonario_id = null;
-        if (talonario_numero) {
-            const talonarioRes = await client.query(
-                `INSERT INTO talonarios_recibo (numero_talonario, fecha_asignacion, usuario_asignado_id)
-                 VALUES ($1, CURRENT_DATE, $2)
-                 ON CONFLICT (numero_talonario) DO NOTHING
-                 RETURNING id`,
-                [talonario_numero, req.usuario.id]
-            );
-            
-            if (talonarioRes.rows.length > 0) {
-                talonario_id = talonarioRes.rows[0].id;
-            } else {
-                const talonarioExistente = await client.query(
-                    'SELECT id FROM talonarios_recibo WHERE numero_talonario = $1',
-                    [talonario_numero]
-                );
-                talonario_id = talonarioExistente.rows[0].id;
-            }
-        }
-
-        // 3️⃣ Obtener datos de los pagos para calcular totales
-        const pagosData = await client.query(
-            `SELECT 
-                p.*,
-                COALESCE((
-                    SELECT SUM(pi.monto)
-                    FROM pago_items pi
-                    WHERE pi.pago_id = p.id AND pi.tipo = 'EFECTIVO'
-                ), 0) as total_efectivo,
-                COALESCE((
-                    SELECT SUM(pi.monto)
-                    FROM pago_items pi
-                    WHERE pi.pago_id = p.id AND pi.tipo = 'CHEQUE'
-                ), 0) as total_cheques,
-                COALESCE((
-                    SELECT SUM(pi.monto)
-                    FROM pago_items pi
-                    WHERE pi.pago_id = p.id AND pi.tipo = 'TRANSFERENCIA'
-                ), 0) as total_transferencias
-            FROM pagos p
-            WHERE p.id = ANY($1::int[])`,
-            [pago_ids]
-        );
-
-        // 4️⃣ Calcular totales
-        const totales = pagosData.rows.reduce((acc, p) => ({
-            efectivo: acc.efectivo + parseFloat(p.total_efectivo || 0),
-            cheques: acc.cheques + parseFloat(p.total_cheques || 0),
-            transferencias: acc.transferencias + parseFloat(p.total_transferencias || 0),
-            total: acc.total + parseFloat(p.monto_total || 0)
-        }), { efectivo: 0, cheques: 0, transferencias: 0, total: 0 });
-
-        // 5️⃣ Crear recibo
-        const reciboRes = await client.query(
-            `INSERT INTO recibos
-             (numero_recibo, talonario_id, cliente_id, fecha_emision,
-              pago_ids, total_efectivo, total_cheques, total_transferencias,
-              total_pagado, observaciones, usuario_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-             RETURNING *`,
-            [
-                numero_recibo,
-                talonario_id,
-                cliente_id,
-                fecha_emision || new Date(),
-                pago_ids,
-                totales.efectivo,
-                totales.cheques,
-                totales.transferencias,
-                totales.total,
-                observaciones,
-                req.usuario.id
-            ]
-        );
-
-        await client.query('COMMIT');
-
-        res.json({
-            ok: true,
-            recibo: reciboRes.rows[0],
-            message: '✅ Recibo generado correctamente'
-        });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Error creando recibo:', err);
-        res.status(400).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-});
-
-// ============================================
-// LISTAR PAGOS
-// ============================================
-router.get('/pagos', authorize(['admin', 'control']), async (req, res) => {
-    const { cliente_id, desde, hasta, estado } = req.query;
-
-    try {
-        let query = `
-            SELECT 
-                p.*,
-                cl.nombre as cliente_nombre,
-                json_agg(
-                    json_build_object(
-                        'id', pi.id,
-                        'tipo', pi.tipo,
-                        'monto', pi.monto,
-                        'cheque_numero', pi.cheque_numero,
-                        'cheque_banco', pi.cheque_banco,
-                        'cheque_fecha_cobro', pi.cheque_fecha_cobro,
-                        'cheque_estado', pi.cheque_estado
-                    )
-                ) as items
-            FROM pagos p
-            JOIN clientes cl ON cl.id = p.cliente_id
-            LEFT JOIN pago_items pi ON pi.pago_id = p.id
-            WHERE 1=1
-        `;
-
-        const params = [];
-        let paramCounter = 1;
-
-        if (cliente_id) {
-            query += ` AND p.cliente_id = $${paramCounter++}`;
-            params.push(cliente_id);
-        }
-
-        if (desde) {
-            query += ` AND p.fecha_recepcion >= $${paramCounter++}`;
-            params.push(desde);
-        }
-
-        if (hasta) {
-            query += ` AND p.fecha_recepcion <= $${paramCounter++}`;
-            params.push(hasta);
-        }
-
-        if (estado) {
-            query += ` AND p.estado = $${paramCounter++}`;
-            params.push(estado);
-        }
-
-        query += ` GROUP BY p.id, cl.nombre ORDER BY p.fecha_recepcion DESC, p.id DESC`;
-
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// LISTAR RECIBOS
-// ============================================
-router.get('/recibos', authorize(['admin', 'control']), async (req, res) => {
-    const { cliente_id, desde, hasta } = req.query;
-
-    try {
-        let query = `
-            SELECT 
-                r.*,
-                cl.nombre as cliente_nombre,
-                t.numero_talonario
-            FROM recibos r
-            JOIN clientes cl ON cl.id = r.cliente_id
-            LEFT JOIN talonarios_recibo t ON t.id = r.talonario_id
-            WHERE 1=1
-        `;
-
-        const params = [];
-        let paramCounter = 1;
-
-        if (cliente_id) {
-            query += ` AND r.cliente_id = $${paramCounter++}`;
-            params.push(cliente_id);
-        }
-
-        if (desde) {
-            query += ` AND r.fecha_emision >= $${paramCounter++}`;
-            params.push(desde);
-        }
-
-        if (hasta) {
-            query += ` AND r.fecha_emision <= $${paramCounter++}`;
-            params.push(hasta);
-        }
-
-        query += ` ORDER BY r.fecha_emision DESC, r.id DESC`;
-
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// OBTENER DETALLE DE RECIBO
-// ============================================
-router.get('/recibos/:id', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        // Obtener recibo
-        const reciboRes = await pool.query(
-            `SELECT 
-                r.*,
-                cl.nombre as cliente_nombre,
-                cl.cuit,
-                cl.direccion,
-                u.nombre_usuario as usuario_creo,
-                t.numero_talonario
-            FROM recibos r
-            JOIN clientes cl ON cl.id = r.cliente_id
-            LEFT JOIN usuarios u ON u.id = r.usuario_id
-            LEFT JOIN talonarios_recibo t ON t.id = r.talonario_id
-            WHERE r.id = $1`,
-            [req.params.id]
-        );
-
-        if (reciboRes.rows.length === 0) {
-            return res.status(404).json({ error: 'Recibo no encontrado' });
-        }
-
-        const recibo = reciboRes.rows[0];
-
-        // Obtener pagos incluidos en el recibo
-        const pagosRes = await pool.query(
-            `SELECT 
-                p.*,
-                json_agg(
-                    json_build_object(
-                        'id', pi.id,
-                        'tipo', pi.tipo,
-                        'monto', pi.monto,
-                        'cheque_numero', pi.cheque_numero,
-                        'cheque_banco', pi.cheque_banco,
-                        'cheque_fecha_cobro', pi.cheque_fecha_cobro,
-                        'cheque_estado', pi.cheque_estado,
-                        'transferencia_numero_operacion', pi.transferencia_numero_operacion
-                    )
-                ) as items
-            FROM pagos p
-            LEFT JOIN pago_items pi ON pi.pago_id = p.id
-            WHERE p.id = ANY($1::int[])
-            GROUP BY p.id`,
-            [recibo.pago_ids]
-        );
-
-        // Obtener aplicaciones a facturas de estos pagos
-        const aplicacionesRes = await pool.query(
-            `SELECT 
-                ap.*,
-                f.numero_factura,
-                f.tipo_factura,
-                f.fecha as fecha_factura
-            FROM aplicacion_pagos ap
-            JOIN facturas f ON f.id = ap.factura_id
-            WHERE ap.pago_id = ANY($1::int[])
-            ORDER BY ap.id`,
-            [recibo.pago_ids]
-        );
-
-        res.json({
-            ...recibo,
-            pagos: pagosRes.rows,
-            aplicaciones: aplicacionesRes.rows
-        });
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// OBTENER DETALLE DE PAGO
-// ============================================
-router.get('/pagos/:id', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const pagoRes = await pool.query(
-            `SELECT
-                p.*,
-                cl.nombre as cliente_nombre
-             FROM pagos p
-             JOIN clientes cl ON cl.id = p.cliente_id
-             WHERE p.id = $1`,
-            [req.params.id]
-        );
-
-        if (pagoRes.rows.length === 0) {
-            return res.status(404).json({ error: 'Pago no encontrado' });
-        }
-
-        const itemsRes = await pool.query(
-            `SELECT
-                pi.*
-             FROM pago_items pi
-             WHERE pi.pago_id = $1
-             ORDER BY pi.id`,
-            [req.params.id]
-        );
-
-        const pago = pagoRes.rows[0];
-        pago.items = itemsRes.rows;
-
-        res.json(pago);
-    } catch (err) {
-        console.error('Error obteniendo detalle de pago:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ============================================
-// GESTIÓN DE CHEQUES
-// ============================================
-
-// Depositar cheque
-router.post('/cheques/:id/depositar', authorize(['admin', 'control']), async (req, res) => {
-    const { fecha_depositado } = req.body;
-
-    try {
-        const result = await pool.query(
-            `UPDATE pago_items 
-             SET cheque_fecha_depositado = $1, cheque_estado = 'depositado', updated_at = NOW()
-             WHERE id = $2 AND tipo = 'CHEQUE'
-             RETURNING *`,
-            [fecha_depositado || new Date(), req.params.id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Cheque no encontrado' });
-        }
-
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Rechazar cheque
-router.post('/cheques/:id/rechazar', authorize(['admin', 'control']), async (req, res) => {
-    const client = await pool.connect();
+    // Actualizar estado del pago
+    await client.query(
+      `UPDATE pagos_proveedores SET estado = 'aplicado' WHERE id = $1`,
+      [pagoId]
+    );
     
-    try {
-        await client.query('BEGIN');
-
-        const {
-            motivo_rechazo,
-            gasto_comision,
-            nuevo_cheque // datos del cheque de reemplazo
-        } = req.body;
-
-        // Actualizar cheque original
-        await client.query(
-            `UPDATE pago_items 
-             SET cheque_estado = 'rechazado', 
-                 cheque_motivo_rechazo = $1, 
-                 cheque_gasto_comision = $2,
-                 updated_at = NOW()
-             WHERE id = $3 AND tipo = 'CHEQUE'`,
-            [motivo_rechazo, gasto_comision || 0, req.params.id]
-        );
-
-        // Si hay cheque de reemplazo, crearlo
-        let chequeReemplazo = null;
-        if (nuevo_cheque) {
-            const reemplazoRes = await client.query(
-                `INSERT INTO pago_items
-                 (pago_id, tipo, monto, cheque_numero, cheque_banco,
-                  cheque_fecha_emision, cheque_fecha_cobro, cheque_estado,
-                  observaciones, cheque_reemplazo_id)
-                 VALUES ($1, 'CHEQUE', $2, $3, $4, $5, $6, 'pendiente', $7, $8)
-                 RETURNING *`,
-                [
-                    nuevo_cheque.pago_id,
-                    nuevo_cheque.monto,
-                    nuevo_cheque.numero_cheque,
-                    nuevo_cheque.banco,
-                    nuevo_cheque.fecha_emision,
-                    nuevo_cheque.fecha_cobro,
-                    nuevo_cheque.observaciones,
-                    req.params.id
-                ]
-            );
-            chequeReemplazo = reemplazoRes.rows[0];
-        }
-
-        await client.query('COMMIT');
-
-        res.json({
-            ok: true,
-            message: 'Cheque rechazado registrado',
-            cheque_rechazado_id: req.params.id,
-            cheque_reemplazo: chequeReemplazo
-        });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-});
-
-// Acreditar cheque
-router.put('/cheques/:id/acreditar', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            `UPDATE pago_items 
-             SET cheque_estado = 'acreditado', updated_at = NOW()
-             WHERE id = $1 AND tipo = 'CHEQUE'
-             RETURNING *`,
-            [req.params.id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Cheque no encontrado' });
-        }
-
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Listar cheques con filtros
-router.get('/cheques', authorize(['admin', 'control']), async (req, res) => {
-    const { cliente_id, estado, desde, hasta } = req.query;
-
-    try {
-        let query = `
-            SELECT 
-                pi.*,
-                p.cliente_id,
-                cl.nombre as cliente_nombre
-            FROM pago_items pi
-            JOIN pagos p ON p.id = pi.pago_id
-            JOIN clientes cl ON cl.id = p.cliente_id
-            WHERE pi.tipo = 'CHEQUE'
-        `;
-
-        const params = [];
-        let paramCounter = 1;
-
-        if (cliente_id) {
-            query += ` AND p.cliente_id = $${paramCounter++}`;
-            params.push(cliente_id);
-        }
-
-        if (estado) {
-            query += ` AND pi.cheque_estado = $${paramCounter++}`;
-            params.push(estado);
-        }
-
-        if (desde) {
-            query += ` AND pi.cheque_fecha_cobro >= $${paramCounter++}`;
-            params.push(desde);
-        }
-
-        if (hasta) {
-            query += ` AND pi.cheque_fecha_cobro <= $${paramCounter++}`;
-            params.push(hasta);
-        }
-
-        query += ` ORDER BY pi.cheque_fecha_cobro ASC`;
-
-        const result = await pool.query(query, params);
-        res.json(result.rows);
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    await client.query('COMMIT');
+    
+    const pagoCompleto = await client.query(
+      `SELECT p.*, pr.nombre as proveedor_nombre
+       FROM pagos_proveedores p
+       LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+       WHERE p.id = $1`,
+      [pagoId]
+    );
+    
+    res.status(201).json(pagoCompleto.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error creando pago:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
 });
 
 // ============================================
-// OBTENER DETALLE DE CHEQUE
+// RUTAS PARA CHEQUES DE PROVEEDORES
 // ============================================
-router.get('/cheques/:id', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            `SELECT
-                pi.*,
-                p.cliente_id,
-                cl.nombre as cliente_nombre
-             FROM pago_items pi
-             JOIN pagos p ON p.id = pi.pago_id
-             JOIN clientes cl ON cl.id = p.cliente_id
-             WHERE pi.id = $1 AND pi.tipo = 'CHEQUE'`,
-            [req.params.id]
-        );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Cheque no encontrado' });
-        }
-
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error('Error obteniendo cheque:', err);
-        res.status(500).json({ error: err.message });
+// Obtener cheques emitidos a proveedores
+router.get('/cheques', async (req, res) => {
+  try {
+    const { proveedor_id, estado, desde, hasta } = req.query;
+    
+    let query = `
+      SELECT 
+        pi.id,
+        pi.cheque_numero,
+        pi.cheque_banco,
+        pi.monto,
+        pi.cheque_fecha_emision,
+        pi.cheque_fecha_cobro,
+        pi.cheque_fecha_depositado,
+        pi.cheque_estado,
+        pi.cheque_gasto_comision,
+        pi.cheque_motivo_rechazo,
+        p.proveedor_id,
+        pr.nombre as proveedor_nombre,
+        p.fecha as fecha_pago
+      FROM pago_items pi
+      JOIN pagos_proveedores p ON pi.pago_id = p.id
+      JOIN proveedores pr ON p.proveedor_id = pr.id
+      WHERE pi.tipo = 'CHEQUE'
+    `;
+    
+    const params = [];
+    
+    if (proveedor_id) {
+      query += ` AND p.proveedor_id = $${params.length + 1}`;
+      params.push(proveedor_id);
     }
+    
+    if (estado) {
+      query += ` AND pi.cheque_estado = $${params.length + 1}`;
+      params.push(estado);
+    }
+    
+    if (desde) {
+      query += ` AND pi.cheque_fecha_cobro >= $${params.length + 1}`;
+      params.push(desde);
+    }
+    
+    if (hasta) {
+      query += ` AND pi.cheque_fecha_cobro <= $${params.length + 1}`;
+      params.push(hasta);
+    }
+    
+    query += ` ORDER BY pi.cheque_fecha_cobro ASC`;
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error obteniendo cheques:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Obtener cheque específico
+router.get('/cheques/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query(`
+      SELECT 
+        pi.id,
+        pi.cheque_numero,
+        pi.cheque_banco,
+        pi.monto,
+        pi.cheque_fecha_emision,
+        pi.cheque_fecha_cobro,
+        pi.cheque_fecha_depositado,
+        pi.cheque_estado,
+        pi.cheque_gasto_comision,
+        pi.cheque_motivo_rechazo,
+        p.proveedor_id,
+        pr.nombre as proveedor_nombre,
+        p.fecha as fecha_pago,
+        p.id as pago_id
+      FROM pago_items pi
+      JOIN pagos_proveedores p ON pi.pago_id = p.id
+      JOIN proveedores pr ON p.proveedor_id = pr.id
+      WHERE pi.id = $1 AND pi.tipo = 'CHEQUE'
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cheque no encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error obteniendo cheque:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
 });
 
 // Alertas de cheques próximos a vencer
-router.get('/cheques/alertas', authorize(['admin', 'control']), async (req, res) => {
+router.get('/cheques/alertas', async (req, res) => {
+  try {
     const { dias = 3 } = req.query;
+    const diasNum = Number(dias);
+    
+    const result = await pool.query(`
+      SELECT 
+        pi.id,
+        pi.cheque_numero,
+        pi.cheque_banco,
+        pi.monto,
+        pi.cheque_fecha_cobro,
+        p.proveedor_id,
+        pr.nombre as proveedor_nombre,
+        EXTRACT(DAY FROM pi.cheque_fecha_cobro - CURRENT_DATE) as dias_restantes
+      FROM pago_items pi
+      JOIN pagos_proveedores p ON pi.pago_id = p.id
+      JOIN proveedores pr ON p.proveedor_id = pr.id
+      WHERE pi.tipo = 'CHEQUE'
+        AND pi.cheque_estado = 'pendiente'
+        AND pi.cheque_fecha_cobro BETWEEN CURRENT_DATE AND CURRENT_DATE + ($1 * INTERVAL '1 day')
+      ORDER BY pi.cheque_fecha_cobro ASC
+    `, [diasNum]);
+    
+    res.json({
+      total: result.rows.length,
+      cheques: result.rows,
+      dias_alertas: diasNum
+    });
+  } catch (error) {
+    console.error('Error obteniendo alertas de cheques:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
 
-    try {
-        const result = await pool.query(
-            `SELECT 
-                pi.*,
-                p.cliente_id,
-                cl.nombre as cliente_nombre,
-                cl.telefono,
-                cl.correo,
-                (pi.cheque_fecha_cobro - CURRENT_DATE) as dias_restantes
-            FROM pago_items pi
-            JOIN pagos p ON p.id = pi.pago_id
-            JOIN clientes cl ON cl.id = p.cliente_id
-            WHERE pi.tipo = 'CHEQUE'
-                AND pi.cheque_estado = 'pendiente'
-                AND pi.cheque_fecha_cobro BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::integer
-            ORDER BY pi.cheque_fecha_cobro ASC`,
-            [dias]
-        );
-
-        res.json({
-            total: result.rows.length,
-            cheques: result.rows,
-            mensaje: result.rows.length > 0 
-                ? `⚠️ Hay ${result.rows.length} cheque(s) próximo(s) a vencer`
-                : '✅ No hay cheques próximos'
-        });
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+// Depositar cheque
+router.post('/cheques/:id/depositar', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    const { fecha_depositado } = req.body;
+    
+    const result = await client.query(`
+      UPDATE pago_items 
+      SET cheque_fecha_depositado = $1, cheque_estado = 'depositado'
+      WHERE id = $2 AND tipo = 'CHEQUE'
+      RETURNING *
+    `, [fecha_depositado || new Date().toISOString().split('T')[0], id]);
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cheque no encontrado' });
     }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Cheque depositado correctamente', cheque: result.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error depositando cheque:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Rechazar cheque
+router.post('/cheques/:id/rechazar', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    const { motivo_rechazo, gasto_comision = 0, nuevo_cheque } = req.body;
+    
+    // Actualizar cheque rechazado
+    const result = await client.query(`
+      UPDATE pago_items 
+      SET cheque_estado = 'rechazado', 
+          cheque_motivo_rechazo = $1,
+          cheque_gasto_comision = $2
+      WHERE id = $3 AND tipo = 'CHEQUE'
+      RETURNING *
+    `, [motivo_rechazo, gasto_comision, id]);
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cheque no encontrado' });
+    }
+    
+    // Si hay cheque de reemplazo, crearlo
+    if (nuevo_cheque) {
+      const { pago_id, numero_cheque, banco, fecha_emision, fecha_cobro, monto, observaciones } = nuevo_cheque;
+      
+      await client.query(`
+        INSERT INTO pago_items 
+        (pago_id, tipo, monto, cheque_numero, cheque_banco, cheque_fecha_emision, cheque_fecha_cobro, observaciones, cheque_estado)
+        VALUES ($1, 'CHEQUE', $2, $3, $4, $5, $6, $7, 'pendiente')
+      `, [pago_id, monto, numero_cheque, banco, fecha_emision, fecha_cobro, observaciones]);
+    }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Cheque rechazado correctamente', cheque: result.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error rechazando cheque:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Acreditar cheque depositado
+router.put('/cheques/:id/acreditar', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    
+    const result = await client.query(`
+      UPDATE pago_items 
+      SET cheque_estado = 'acreditado'
+      WHERE id = $1 AND tipo = 'CHEQUE' AND cheque_estado = 'depositado'
+      RETURNING *
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cheque no encontrado o no está depositado' });
+    }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Cheque acreditado correctamente', cheque: result.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error acreditando cheque:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
 });
 
 // ============================================
-// CUENTA CORRIENTE
+// RUTAS BÁSICAS DE PAGOS (DESPUÉS DE RUTAS ESPECÍFICAS)
 // ============================================
-router.get('/cuenta-corriente/:cliente_id', authorize(['admin', 'control']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT * FROM cuenta_corriente WHERE cliente_id = $1',
-            [req.params.cliente_id]
-        );
 
-        if (result.rows.length === 0) {
-            return res.json({
-                cliente_id: req.params.cliente_id,
-                total_facturado: 0,
-                total_pagado: 0,
-                saldo_favor: 0,
-                saldo_pendiente: 0
-            });
-        }
-
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+// Obtener pago por ID
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const pagoResult = await pool.query(
+      `SELECT p.*, pr.nombre as proveedor_nombre
+       FROM pagos_proveedores p
+       LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+       WHERE p.id = $1`,
+      [id]
+    );
+    
+    if (pagoResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Pago no encontrado' });
     }
+    
+    const itemsResult = await pool.query(
+      `SELECT pi.*, fc.numero_factura, fc.fecha_factura, fc.total
+       FROM pagos_proveedores_items pi
+       LEFT JOIN facturas_compra fc ON pi.factura_compra_id = fc.id
+       WHERE pi.pago_id = $1`,
+      [id]
+    );
+    
+    const pago = pagoResult.rows[0];
+    pago.items = itemsResult.rows;
+    
+    res.json(pago);
+  } catch (error) {
+    console.error('Error obteniendo pago:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Actualizar pago
+router.put('/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    const {
+      fecha_pago,
+      metodo_pago,
+      numero_comprobante,
+      observaciones
+    } = req.body;
+    
+    const result = await client.query(
+      `UPDATE pagos_proveedores 
+       SET fecha = $1, forma_pago = $2, referencia = $3, observaciones = $4
+       WHERE id = $5
+       RETURNING *`,
+      [fecha_pago, metodo_pago, numero_comprobante, observaciones, id]
+    );
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pago no encontrado' });
+    }
+    
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error actualizando pago:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Eliminar pago
+router.delete('/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    
+    // Obtener items del pago para revertir saldos
+    const itemsResult = await client.query(
+      `SELECT factura_compra_id, monto_aplicado 
+       FROM pagos_proveedores_items 
+       WHERE pago_id = $1`,
+      [id]
+    );
+    
+    // Revertir saldos de facturas
+    for (const item of itemsResult.rows) {
+      await client.query(
+        `UPDATE facturas_compra 
+         SET saldo_pendiente = saldo_pendiente + $1
+         WHERE id = $2`,
+        [item.monto_aplicado, item.factura_compra_id]
+      );
+    }
+    
+    // Eliminar items del pago
+    await client.query('DELETE FROM pagos_proveedores_items WHERE pago_id = $1', [id]);
+    
+    // Eliminar pago
+    const result = await client.query('DELETE FROM pagos_proveedores WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pago no encontrado' });
+    }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Pago eliminado correctamente' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error eliminando pago:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Obtener facturas pendientes de un proveedor
+router.get('/proveedor/:proveedor_id/facturas-pendientes', async (req, res) => {
+  try {
+    const { proveedor_id } = req.params;
+    
+    const result = await pool.query(
+      `SELECT fc.*, 
+              (fc.total - COALESCE(fc.neto_pagado, 0)) as monto_pagado,
+              fc.total - COALESCE(fc.neto_pagado, 0) as saldo_pendiente,
+              EXTRACT(DAY FROM fc.fecha_vencimiento - CURRENT_DATE) as dias_vencido
+       FROM facturas_compra fc
+       WHERE fc.proveedor_id = $1 
+         AND fc.estado = 'PENDIENTE'
+         AND (fc.total - COALESCE(fc.neto_pagado, 0)) > 0
+       ORDER BY fc.fecha_vencimiento ASC`,
+      [proveedor_id]
+    );
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error obteniendo facturas pendientes:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Endpoint para alertas de facturas pendientes
+router.get('/alertas/facturas-pendientes', async (req, res) => {
+  try {
+    const { dias_vencimiento = 7 } = req.query;
+    
+    const result = await pool.query(
+      `SELECT fc.*, pr.nombre as proveedor_nombre,
+              EXTRACT(DAY FROM CURRENT_DATE - fc.fecha_vencimiento) as dias_vencido,
+              CASE 
+                WHEN fc.fecha_vencimiento < CURRENT_DATE THEN 'vencida'
+                WHEN EXTRACT(DAY FROM fc.fecha_vencimiento - CURRENT_DATE) <= $1 THEN 'por_vencer'
+                ELSE 'normal'
+              END as estado_alerta
+       FROM facturas_compra fc
+       LEFT JOIN proveedores pr ON fc.proveedor_id = pr.id
+       WHERE fc.estado = 'PENDIENTE'
+         AND (fc.total - COALESCE(fc.neto_pagado, 0)) > 0
+       ORDER BY fc.fecha_vencimiento ASC`,
+      [dias_vencimiento]
+    );
+    
+    // Agrupar por estado de alerta
+    const alertas = {
+      vencidas: result.rows.filter(f => f.estado_alerta === 'vencida'),
+      por_vencer: result.rows.filter(f => f.estado_alerta === 'por_vencer'),
+      total: result.rows.length,
+      monto_total: result.rows.reduce((sum, f) => sum + parseFloat(f.total) - parseFloat(f.neto_pagado || 0), 0)
+    };
+    
+    res.json(alertas);
+  } catch (error) {
+    console.error('Error obteniendo alertas:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Endpoint para obtener historial de pagos de una factura
+router.get('/factura/:factura_id/historial', async (req, res) => {
+  try {
+    const { factura_id } = req.params;
+    
+    const result = await pool.query(
+      `SELECT 
+        pp.id as pago_id,
+        pp.fecha as fecha_pago,
+        pp.forma_pago as metodo_pago,
+        pp.referencia as numero_comprobante,
+        pp.monto as monto_total,
+        pp.observaciones,
+        pp.estado as estado_pago,
+        pr.nombre as proveedor_nombre,
+        pi.monto_aplicado,
+        pi.fecha_aplicacion
+      FROM pagos_proveedores pp
+      JOIN pagos_proveedores_items pi ON pp.id = pi.pago_id
+      JOIN proveedores pr ON pp.proveedor_id = pr.id
+      WHERE pi.factura_compra_id = $1
+      ORDER BY pp.fecha DESC, pi.fecha_aplicacion DESC`,
+      [factura_id]
+    );
+    
+    // Obtener información de la factura
+    const facturaResult = await pool.query(
+      `SELECT fc.*, pr.nombre as proveedor_nombre
+       FROM facturas_compra fc
+       LEFT JOIN proveedores pr ON fc.proveedor_id = pr.id
+       WHERE fc.id = $1`,
+      [factura_id]
+    );
+    
+    if (facturaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Factura no encontrada' });
+    }
+    
+    const factura = facturaResult.rows[0];
+    const historial = result.rows;
+    
+    // Calcular total pagado
+    const totalPagado = historial.reduce((sum, pago) => sum + parseFloat(pago.monto_aplicado), 0);
+    
+    res.json({
+      factura,
+      historial,
+      total_pagado: totalPagado,
+      saldo_pendiente: parseFloat(factura.total) - totalPagado
+    });
+  } catch (error) {
+    console.error('Error obteniendo historial de pagos:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Endpoint para búsqueda avanzada de pagos
+router.get('/busqueda/avanzada', async (req, res) => {
+  try {
+    const {
+      metodo_pago,
+      fecha_desde,
+      fecha_hasta,
+      proveedor_id,
+      monto_min,
+      monto_max,
+      numero_comprobante
+    } = req.query;
+    
+    let query = `
+      SELECT 
+        pp.*,
+        pr.nombre as proveedor_nombre,
+        COUNT(pi.id) as facturas_pagadas,
+        SUM(pi.monto_aplicado) as monto_total_aplicado
+      FROM pagos_proveedores pp
+      LEFT JOIN proveedores pr ON pp.proveedor_id = pr.id
+      LEFT JOIN pagos_proveedores_items pi ON pp.id = pi.pago_id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    let paramCount = 1;
+    
+    if (metodo_pago) {
+      query += ` AND pp.forma_pago = $${paramCount}`;
+      params.push(metodo_pago);
+      paramCount++;
+    }
+    
+    if (fecha_desde) {
+      query += ` AND pp.fecha >= $${paramCount}`;
+      params.push(fecha_desde);
+      paramCount++;
+    }
+    
+    if (fecha_hasta) {
+      query += ` AND pp.fecha <= $${paramCount}`;
+      params.push(fecha_hasta);
+      paramCount++;
+    }
+    
+    if (proveedor_id) {
+      query += ` AND pp.proveedor_id = $${paramCount}`;
+      params.push(proveedor_id);
+      paramCount++;
+    }
+    
+    if (monto_min) {
+      query += ` AND pp.monto >= $${paramCount}`;
+      params.push(parseFloat(monto_min));
+      paramCount++;
+    }
+    
+    if (monto_max) {
+      query += ` AND pp.monto <= $${paramCount}`;
+      params.push(parseFloat(monto_max));
+      paramCount++;
+    }
+    
+    if (numero_comprobante) {
+      query += ` AND pp.referencia ILIKE $${paramCount}`;
+      params.push(`%${numero_comprobante}%`);
+      paramCount++;
+    }
+    
+    query += ` GROUP BY pp.id, pr.nombre ORDER BY pp.fecha DESC`;
+    
+    const result = await pool.query(query, params);
+    
+    // Obtener estadísticas
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_pagos,
+        SUM(monto) as monto_total,
+        AVG(monto) as promedio_pago,
+        forma_pago as metodo_pago,
+        COUNT(*) as cantidad_por_metodo
+      FROM pagos_proveedores
+      WHERE 1=1
+    `;
+    
+    const statsParams = [];
+    let statsParamCount = 1;
+    
+    if (metodo_pago) {
+      statsQuery += ` AND forma_pago = $${statsParamCount}`;
+      statsParams.push(metodo_pago);
+      statsParamCount++;
+    }
+    
+    if (fecha_desde) {
+      statsQuery += ` AND fecha >= $${statsParamCount}`;
+      statsParams.push(fecha_desde);
+      statsParamCount++;
+    }
+    
+    if (fecha_hasta) {
+      statsQuery += ` AND fecha <= $${statsParamCount}`;
+      statsParams.push(fecha_hasta);
+      statsParamCount++;
+    }
+    
+    if (proveedor_id) {
+      statsQuery += ` AND proveedor_id = $${statsParamCount}`;
+      statsParams.push(proveedor_id);
+      statsParamCount++;
+    }
+    
+    statsQuery += ` GROUP BY forma_pago`;
+    
+    const statsResult = await pool.query(statsQuery, statsParams);
+    
+    res.json({
+      resultados: result.rows,
+      estadisticas: statsResult.rows
+    });
+  } catch (error) {
+    console.error('Error en búsqueda avanzada:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// ============================================
+// RUTAS PARA ÓRDENES DE PAGO
+// ============================================
+
+// Obtener órdenes de pago
+router.get('/ordenes', async (req, res) => {
+  try {
+    const { proveedor_id, fecha_desde, fecha_hasta, estado } = req.query;
+    
+    let query = `
+      SELECT 
+        op.*,
+        pr.nombre as proveedor_nombre,
+        u.nombre_completo as autorizado_por_nombre
+      FROM ordenes_pago_proveedores op
+      LEFT JOIN proveedores pr ON op.proveedor_id = pr.id
+      LEFT JOIN usuarios u ON op.autorizado_por = u.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    if (proveedor_id) {
+      query += ` AND op.proveedor_id = $${params.length + 1}`;
+      params.push(proveedor_id);
+    }
+    
+    if (fecha_desde) {
+      query += ` AND op.fecha >= $${params.length + 1}`;
+      params.push(fecha_desde);
+    }
+    
+    if (fecha_hasta) {
+      query += ` AND op.fecha <= $${params.length + 1}`;
+      params.push(fecha_hasta);
+    }
+    
+    if (estado) {
+      query += ` AND op.estado = $${params.length + 1}`;
+      params.push(estado);
+    }
+    
+    query += ` ORDER BY op.fecha DESC, op.id DESC`;
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error obteniendo órdenes de pago:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Crear orden de pago
+router.post('/ordenes', async (req, res) => {
+  try {
+    const { proveedor_id, fecha, monto, motivo, observaciones } = req.body;
+    
+    const result = await pool.query(`
+      INSERT INTO ordenes_pago_proveedores 
+      (proveedor_id, fecha, monto, motivo, observaciones, estado)
+      VALUES ($1, $2, $3, $4, $5, 'pendiente')
+      RETURNING *
+    `, [proveedor_id, fecha || new Date().toISOString().split('T')[0], monto, motivo, observaciones]);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creando orden de pago:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Obtener orden de pago específica
+router.get('/ordenes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query(`
+      SELECT 
+        op.*,
+        pr.nombre as proveedor_nombre,
+        u.nombre_completo as autorizado_por_nombre
+      FROM ordenes_pago_proveedores op
+      LEFT JOIN proveedores pr ON op.proveedor_id = pr.id
+      LEFT JOIN usuarios u ON op.autorizado_por = u.id
+      WHERE op.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden de pago no encontrada' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error obteniendo orden de pago:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Autorizar orden de pago
+router.put('/ordenes/:id/autorizar', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    const usuario_id = req.usuario?.id;
+    
+    const result = await client.query(`
+      UPDATE ordenes_pago_proveedores 
+      SET estado = 'autorizada',
+          autorizado_por = $1,
+          fecha_autorizacion = CURRENT_DATE
+      WHERE id = $2 AND estado = 'pendiente'
+      RETURNING *
+    `, [usuario_id, id]);
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Orden de pago no encontrada o no está pendiente' });
+    }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Orden de pago autorizada', orden: result.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error autorizando orden de pago:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Cancelar orden de pago
+router.put('/ordenes/:id/cancelar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { motivo } = req.body;
+    
+    const result = await pool.query(`
+      UPDATE ordenes_pago_proveedores 
+      SET estado = 'cancelada',
+          observaciones = COALESCE(observaciones, '') || ' Cancelada: ' || $1
+      WHERE id = $2 AND estado IN ('pendiente', 'autorizada')
+      RETURNING *
+    `, [motivo, id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden de pago no encontrada o no puede ser cancelada' });
+    }
+    
+    res.json({ message: 'Orden de pago cancelada', orden: result.rows[0] });
+  } catch (error) {
+    console.error('Error cancelando orden de pago:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Generar pago desde orden
+router.post('/ordenes/:id/generar-pago', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+    
+    // Obtener orden
+    const ordenResult = await client.query(`
+      SELECT * FROM ordenes_pago_proveedores 
+      WHERE id = $1 AND estado = 'autorizada'
+    `, [id]);
+    
+    if (ordenResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Orden de pago no encontrada o no está autorizada' });
+    }
+    
+    const orden = ordenResult.rows[0];
+    
+    // Crear pago
+    const pagoResult = await client.query(`
+      INSERT INTO pagos_proveedores 
+      (proveedor_id, fecha, forma_pago, referencia, monto, observaciones, estado)
+      VALUES ($1, $2, 'transferencia', 'Desde orden OP-' || $3, $4, $5, 'pendiente')
+      RETURNING *
+    `, [orden.proveedor_id, new Date().toISOString().split('T')[0], orden.id, orden.monto, orden.motivo]);
+    
+    const pagoId = pagoResult.rows[0].id;
+    
+    // Actualizar orden con referencia al pago
+    await client.query(`
+      UPDATE ordenes_pago_proveedores 
+      SET pago_id = $1, estado = 'pagada'
+      WHERE id = $2
+    `, [pagoId, id]);
+    
+    await client.query('COMMIT');
+    
+    res.json({ 
+      message: 'Pago generado desde orden correctamente', 
+      pago: pagoResult.rows[0],
+      orden: { ...orden, pago_id: pagoId, estado: 'pagada' }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error generando pago desde orden:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// RUTAS PARA ESTADO DE CUENTA DE PROVEEDORES
+// ============================================
+
+// Obtener estado de cuenta de un proveedor
+router.get('/estado-cuenta/:proveedor_id', async (req, res) => {
+  try {
+    const { proveedor_id } = req.params;
+    
+    // Obtener información del proveedor
+    const proveedorResult = await pool.query(
+      `SELECT id, nombre, cuit, direccion, telefono, email 
+       FROM proveedores WHERE id = $1`,
+      [proveedor_id]
+    );
+    
+    if (proveedorResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Proveedor no encontrado' });
+    }
+    
+    const proveedor = proveedorResult.rows[0];
+    
+    // Obtener facturas pendientes con saldo
+    const facturasPendientesResult = await pool.query(
+      `SELECT 
+        fc.id,
+        fc.numero_factura,
+        fc.fecha_emision,
+        fc.fecha_vencimiento,
+        fc.total,
+        fc.total - COALESCE(fc.neto_pagado, 0) as saldo_pendiente,
+        EXTRACT(DAY FROM CURRENT_DATE - fc.fecha_vencimiento) as dias_vencido,
+        CASE 
+          WHEN fc.fecha_vencimiento < CURRENT_DATE THEN 'VENCIDA'
+          WHEN EXTRACT(DAY FROM fc.fecha_vencimiento - CURRENT_DATE) <= 7 THEN 'POR VENCER'
+          ELSE 'NORMAL'
+        END as estado_alerta
+       FROM facturas_compra fc
+       WHERE fc.proveedor_id = $1 
+         AND fc.estado = 'PENDIENTE'
+         AND (fc.total - COALESCE(fc.neto_pagado, 0)) > 0
+       ORDER BY fc.fecha_vencimiento ASC`,
+      [proveedor_id]
+    );
+    
+    // Obtener pagos realizados en los últimos 30 días
+    const pagosRecientesResult = await pool.query(
+      `SELECT 
+        pp.id,
+        pp.fecha,
+        pp.forma_pago,
+        pp.referencia,
+        pp.monto,
+        pp.observaciones,
+        COUNT(pi.id) as facturas_pagadas,
+        SUM(pi.monto_aplicado) as monto_total_aplicado
+       FROM pagos_proveedores pp
+       LEFT JOIN pagos_proveedores_items pi ON pp.id = pi.pago_id
+       WHERE pp.proveedor_id = $1 
+         AND pp.fecha >= CURRENT_DATE - INTERVAL '30 days'
+       GROUP BY pp.id
+       ORDER BY pp.fecha DESC`,
+      [proveedor_id]
+    );
+    
+    // Calcular totales
+    const totalFacturasPendientes = facturasPendientesResult.rows.reduce(
+      (sum, f) => sum + parseFloat(f.saldo_pendiente), 0
+    );
+    
+    const totalPagadoUltimos30Dias = pagosRecientesResult.rows.reduce(
+      (sum, p) => sum + parseFloat(p.monto_total_aplicado || p.monto), 0
+    );
+    
+    // Obtener saldo histórico
+    const saldoHistoricoResult = await pool.query(
+      `SELECT 
+        COALESCE(SUM(fc.total), 0) as total_facturado,
+        COALESCE(SUM(fc.total - fc.saldo_pendiente), 0) as total_pagado,
+        COALESCE(SUM(fc.saldo_pendiente), 0) as saldo_pendiente
+       FROM facturas_compra fc
+       WHERE fc.proveedor_id = $1 
+         AND fc.estado = 'pendiente'`,
+      [proveedor_id]
+    );
+    
+    const saldoHistorico = saldoHistoricoResult.rows[0];
+    
+    res.json({
+      proveedor,
+      resumen: {
+        total_facturado: parseFloat(saldoHistorico.total_facturado),
+        total_pagado: parseFloat(saldoHistorico.total_pagado),
+        saldo_pendiente: parseFloat(saldoHistorico.saldo_pendiente),
+        facturas_pendientes: facturasPendientesResult.rows.length,
+        total_facturas_pendientes: totalFacturasPendientes,
+        total_pagado_ultimos_30_dias: totalPagadoUltimos30Dias
+      },
+      facturas_pendientes: facturasPendientesResult.rows,
+      pagos_recientes: pagosRecientesResult.rows,
+      consultado_en: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error obteniendo estado de cuenta:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Obtener estado de cuenta para impresión (formato simplificado)
+router.get('/estado-cuenta/:proveedor_id/imprimir', async (req, res) => {
+  try {
+    const { proveedor_id } = req.params;
+    
+    // Obtener información básica del proveedor
+    const proveedorResult = await pool.query(
+      `SELECT id, nombre, cuit, direccion, telefono, email 
+       FROM proveedores WHERE id = $1`,
+      [proveedor_id]
+    );
+    
+    if (proveedorResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Proveedor no encontrado' });
+    }
+    
+    const proveedor = proveedorResult.rows[0];
+    
+    // Obtener facturas pendientes con detalles para impresión
+    const facturasResult = await pool.query(
+      `SELECT 
+        fc.id,
+        fc.numero_factura,
+        fc.fecha_emision,
+        fc.fecha_vencimiento,
+        fc.total,
+        fc.total - COALESCE(fc.neto_pagado, 0) as saldo_pendiente,
+        (fc.total - (fc.total - COALESCE(fc.neto_pagado, 0))) as monto_pagado,
+        EXTRACT(DAY FROM CURRENT_DATE - fc.fecha_vencimiento) as dias_vencido,
+        fc.observaciones
+       FROM facturas_compra fc
+       WHERE fc.proveedor_id = $1 
+         AND fc.estado = 'PENDIENTE'
+         AND (fc.total - COALESCE(fc.neto_pagado, 0)) > 0
+       ORDER BY fc.fecha_vencimiento ASC`,
+      [proveedor_id]
+    );
+    
+    // Calcular totales
+    const totalSaldoPendiente = facturasResult.rows.reduce(
+      (sum, f) => sum + parseFloat(f.saldo_pendiente), 0
+    );
+    
+    const totalFacturado = facturasResult.rows.reduce(
+      (sum, f) => sum + parseFloat(f.total), 0
+    );
+    
+    const totalPagado = totalFacturado - totalSaldoPendiente;
+    
+    res.json({
+      proveedor,
+      fecha_consulta: new Date().toISOString().split('T')[0],
+      resumen: {
+        total_facturas: facturasResult.rows.length,
+        total_facturado: totalFacturado,
+        total_pagado: totalPagado,
+        saldo_pendiente: totalSaldoPendiente
+      },
+      facturas: facturasResult.rows,
+      // Información de la empresa (puede venir de parámetros)
+      empresa: {
+        nombre: 'Transformadores SA',
+        cuit: '30-12345678-9',
+        direccion: 'Av. Principal 1234',
+        telefono: '(011) 1234-5678'
+      }
+    });
+  } catch (error) {
+    console.error('Error obteniendo estado de cuenta para impresión:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
+});
+
+// Obtener detalle completo de estado de cuenta
+router.get('/estado-cuenta/:proveedor_id/detalle', async (req, res) => {
+  try {
+    const { proveedor_id } = req.params;
+    const { fecha_desde, fecha_hasta, incluir_pagadas = 'false' } = req.query;
+    
+    // Obtener información del proveedor
+    const proveedorResult = await pool.query(
+      `SELECT id, nombre, cuit, direccion, telefono, email 
+       FROM proveedores WHERE id = $1`,
+      [proveedor_id]
+    );
+    
+    if (proveedorResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Proveedor no encontrado' });
+    }
+    
+    const proveedor = proveedorResult.rows[0];
+    
+    // Construir consulta base para movimientos
+    let query = `
+      SELECT 
+        'FACTURA' as tipo_movimiento,
+        fc.id,
+        fc.numero_factura as referencia,
+        fc.fecha_emision as fecha,
+        fc.total as monto,
+        0 as monto_aplicado,
+        fc.total as saldo_original,
+        fc.saldo_pendiente as saldo_actual,
+        fc.observaciones,
+        NULL as pago_id,
+        NULL as forma_pago,
+        'DEBE' as tipo_saldo
+      FROM facturas_compra fc
+      WHERE fc.proveedor_id = $1
+        AND fc.estado = 'pendiente'
+      
+      UNION ALL
+      
+      SELECT 
+        'PAGO' as tipo_movimiento,
+        pp.id,
+        pp.referencia,
+        pp.fecha,
+        pp.monto,
+        COALESCE(SUM(pi.monto_aplicado), pp.monto) as monto_aplicado,
+        pp.monto as saldo_original,
+        0 as saldo_actual,
+        pp.observaciones,
+        pp.id as pago_id,
+        pp.forma_pago,
+        'HABER' as tipo_saldo
+      FROM pagos_proveedores pp
+      LEFT JOIN pagos_proveedores_items pi ON pp.id = pi.pago_id
+      WHERE pp.proveedor_id = $1
+      GROUP BY pp.id, pp.referencia, pp.fecha, pp.monto, pp.observaciones, pp.forma_pago
+      
+      ORDER BY fecha DESC, tipo_movimiento
+    `;
+    
+    const params = [proveedor_id];
+    
+    // Aplicar filtros de fecha si existen
+    if (fecha_desde) {
+      query = query.replace('WHERE fc.proveedor_id = $1', 
+        `WHERE fc.proveedor_id = $1 AND fc.fecha_emision >= $${params.length + 1}`);
+      params.push(fecha_desde);
+    }
+    
+    if (fecha_hasta) {
+      query = query.replace('AND fc.estado = \'pendiente\'', 
+        `AND fc.estado = 'pendiente' AND fc.fecha_emision <= $${params.length + 1}`);
+      params.push(fecha_hasta);
+    }
+    
+    const movimientosResult = await pool.query(query, params);
+    
+    // Calcular saldo acumulado
+    let saldoAcumulado = 0;
+    const movimientosConSaldo = movimientosResult.rows.map(mov => {
+      if (mov.tipo_saldo === 'DEBE') {
+        saldoAcumulado += parseFloat(mov.saldo_actual);
+      } else {
+        saldoAcumulado -= parseFloat(mov.monto_aplicado);
+      }
+      
+      return {
+        ...mov,
+        saldo_acumulado: saldoAcumulado
+      };
+    });
+    
+    // Invertir el orden para mostrar cronológicamente (más antiguo primero)
+    movimientosConSaldo.reverse();
+    
+    res.json({
+      proveedor,
+      filtros: {
+        fecha_desde,
+        fecha_hasta,
+        incluir_pagadas
+      },
+      total_movimientos: movimientosConSaldo.length,
+      saldo_actual: saldoAcumulado,
+      movimientos: movimientosConSaldo,
+      resumen: {
+        total_debe: movimientosConSaldo
+          .filter(m => m.tipo_saldo === 'DEBE')
+          .reduce((sum, m) => sum + parseFloat(m.saldo_actual), 0),
+        total_haber: movimientosConSaldo
+          .filter(m => m.tipo_saldo === 'HABER')
+          .reduce((sum, m) => sum + parseFloat(m.monto_aplicado), 0)
+      }
+    });
+  } catch (error) {
+    console.error('Error obteniendo detalle de estado de cuenta:', error);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
+  }
 });
 
 module.exports = router;
+
+

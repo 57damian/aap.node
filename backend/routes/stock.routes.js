@@ -6,6 +6,83 @@ const { verificarToken, authorize } = require('../middlewares/auth');
 router.use(verificarToken);
 
 /**
+ * GET /api/stock
+ * Devuelve el stock de MATERIAS PRIMAS con filtros (compatible con frontend stock.js)
+ * Query params: proveedor_id, estado, search
+ * NOTA: Este endpoint es solo para materias primas, no para productos terminados
+ */
+router.get('/', async (req, res) => {
+  try {
+    const { proveedor_id, estado, search } = req.query;
+
+    let query = `
+      SELECT 
+        mp.id as articulo_id,
+        mp.codigo,
+        mp.nombre,
+        p.nombre as proveedor_nombre,
+        mp.stock_actual,
+        mp.stock_minimo,
+        mp.ubicacion,
+        mp.unidad_medida,
+        (SELECT precio_unitario FROM precios_materia_prima 
+         WHERE materia_prima_id = mp.id 
+         ORDER BY fecha_desde DESC LIMIT 1) as ultimo_precio,
+        (SELECT MAX(c.fecha_compra) 
+         FROM compras c 
+         JOIN compra_items ci ON c.id = ci.compra_id 
+         WHERE ci.materia_prima_id = mp.id) as fecha_ultima_compra
+      FROM materias_primas mp
+      LEFT JOIN (
+        SELECT DISTINCT ON (ci.materia_prima_id) ci.materia_prima_id, p.nombre
+        FROM compra_items ci
+        JOIN compras c ON ci.compra_id = c.id
+        JOIN proveedores p ON c.proveedor_id = p.id
+        ORDER BY ci.materia_prima_id, c.fecha_compra DESC
+      ) p ON mp.id = p.materia_prima_id
+      WHERE mp.activo = true
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (proveedor_id) {
+      query += ` AND p.materia_prima_id IN (
+        SELECT DISTINCT ci.materia_prima_id 
+        FROM compra_items ci 
+        JOIN compras c ON ci.compra_id = c.id 
+        WHERE c.proveedor_id = $${paramIndex}
+      )`;
+      params.push(proveedor_id);
+      paramIndex++;
+    }
+
+    if (estado) {
+      if (estado === 'CRITICO') {
+        query += ` AND mp.stock_actual = 0`;
+      } else if (estado === 'BAJO') {
+        query += ` AND mp.stock_actual > 0 AND mp.stock_actual <= mp.stock_minimo`;
+      } else if (estado === 'NORMAL') {
+        query += ` AND mp.stock_actual > mp.stock_minimo`;
+      }
+    }
+
+    if (search) {
+      query += ` AND (mp.codigo ILIKE $${paramIndex} OR mp.nombre ILIKE $${paramIndex})`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY mp.nombre`;
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error en GET /stock:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/stock/actual
  * Devuelve el stock actual de todas las materias primas activas
  * (equivalente a GET /materias-primas?activo=true pero más simple)
@@ -156,9 +233,9 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Obtener stock actual (con lock)
+    // Obtener stock actual y unidad (con lock)
     const stockRes = await client.query(
-      'SELECT stock_actual FROM materias_primas WHERE id = $1 FOR UPDATE',
+      'SELECT stock_actual, unidad_medida FROM materias_primas WHERE id = $1 FOR UPDATE',
       [materia_prima_id]
     );
     if (stockRes.rows.length === 0) {
@@ -167,19 +244,21 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
     }
 
     const stockAnterior = parseFloat(stockRes.rows[0].stock_actual);
+    const unidad = stockRes.rows[0].unidad_medida || 'UNI';
     const stockNuevo = Math.max(0, stockAnterior + parseFloat(cantidad));
 
     // Insertar movimiento
     await client.query(`
       INSERT INTO stock_movimientos 
-        (materia_prima_id, fecha_movimiento, tipo_movimiento, cantidad, 
+        (materia_prima_id, fecha_movimiento, tipo_movimiento, cantidad, unidad,
          stock_anterior, stock_nuevo, observaciones, usuario_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     `, [
       materia_prima_id,
       fecha_movimiento || new Date(),
       tipo_movimiento,
       cantidad,
+      unidad,
       stockAnterior,
       stockNuevo,
       observaciones,

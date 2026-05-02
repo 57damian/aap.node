@@ -16,7 +16,16 @@ router.get('/', verificarToken, async (req, res) => {
             SELECT 
                 p.*,
                 (SELECT COUNT(*) FROM compras c WHERE c.proveedor_id = p.id) AS total_compras,
-                (SELECT COALESCE(SUM(total), 0) FROM facturas_proveedor fp WHERE fp.proveedor_id = p.id AND fp.estado = 'PENDIENTE') AS deuda_pendiente
+                (SELECT COALESCE(SUM(fc.total - COALESCE(pp.total_pagado, 0)), 0) 
+                 FROM facturas_compra fc 
+                 LEFT JOIN (
+                     SELECT factura_id, SUM(monto) as total_pagado 
+                     FROM pagos_proveedores 
+                     WHERE estado = 'CONFIRMADO' 
+                     GROUP BY factura_id
+                 ) pp ON fc.id = pp.factura_id
+                 WHERE fc.proveedor_id = p.id AND fc.estado = 'PENDIENTE'
+                ) AS deuda_pendiente
             FROM proveedores p
             WHERE 1=1
         `;
@@ -269,35 +278,43 @@ router.get('/:id/facturas', verificarToken, async (req, res) => {
     try {
         let query = `
             SELECT 
-                fp.*,
+                fc.*,
                 c.numero_oc,
-                c.fecha_compra
-            FROM facturas_proveedor fp
-            LEFT JOIN compras c ON c.id = fp.compra_id
-            WHERE fp.proveedor_id = $1
+                c.fecha_compra,
+                COALESCE(pp.total_pagado, 0) as pagado,
+                (fc.total - COALESCE(pp.total_pagado, 0)) as saldo_pendiente
+            FROM facturas_compra fc
+            LEFT JOIN compras c ON c.id = fc.compra_id
+            LEFT JOIN (
+                SELECT factura_id, SUM(monto) as total_pagado 
+                FROM pagos_proveedores 
+                WHERE estado = 'CONFIRMADO' 
+                GROUP BY factura_id
+            ) pp ON fc.id = pp.factura_id
+            WHERE fc.proveedor_id = $1
         `;
         const params = [req.params.id];
         let paramIndex = 2;
         
         if (estado) {
-            query += ` AND fp.estado = $${paramIndex}`;
+            query += ` AND fc.estado = $${paramIndex}`;
             params.push(estado);
             paramIndex++;
         }
         
         if (desde) {
-            query += ` AND fp.fecha_emision >= $${paramIndex}`;
+            query += ` AND fc.fecha_emision >= $${paramIndex}`;
             params.push(desde);
             paramIndex++;
         }
         
         if (hasta) {
-            query += ` AND fp.fecha_emision <= $${paramIndex}`;
+            query += ` AND fc.fecha_emision <= $${paramIndex}`;
             params.push(hasta);
             paramIndex++;
         }
         
-        query += ` ORDER BY fp.fecha_emision DESC`;
+        query += ` ORDER BY fc.fecha_emision DESC`;
         
         const result = await pool.query(query, params);
         res.json(result.rows);
@@ -311,14 +328,20 @@ router.get('/:id/cuenta-corriente', verificarToken, async (req, res) => {
     const proveedorId = parseInt(req.params.id, 10);
 
     try {
-        // Total facturado al proveedor (facturas proveedor)
+        // Total facturado al proveedor (facturas_compra)
         const facturasRes = await pool.query(
             `
             SELECT 
-                COALESCE(SUM(total), 0) AS total_facturado,
-                COALESCE(SUM(saldo_pendiente), 0) AS saldo_pendiente
-            FROM facturas_proveedor
-            WHERE proveedor_id = $1
+                COALESCE(SUM(fc.total), 0) AS total_facturado,
+                COALESCE(SUM(fc.total - COALESCE(pp.total_pagado, 0)), 0) AS saldo_pendiente
+            FROM facturas_compra fc
+            LEFT JOIN (
+                SELECT factura_id, SUM(monto) as total_pagado 
+                FROM pagos_proveedores 
+                WHERE estado = 'CONFIRMADO' 
+                GROUP BY factura_id
+            ) pp ON fc.id = pp.factura_id
+            WHERE fc.proveedor_id = $1
             `,
             [proveedorId]
         );
@@ -406,16 +429,23 @@ router.get('/:id/resumen', verificarToken, async (req, res) => {
                     WHERE c.proveedor_id = p.id
                 ), 0) as monto_total_compras,
                 COALESCE((
-                    SELECT COUNT(*) FROM facturas_proveedor fp 
-                    WHERE fp.proveedor_id = p.id
+                    SELECT COUNT(*) FROM facturas_compra fc 
+                    WHERE fc.proveedor_id = p.id
                 ), 0) as total_facturas,
                 COALESCE((
-                    SELECT SUM(total) FROM facturas_proveedor fp 
-                    WHERE fp.proveedor_id = p.id
+                    SELECT SUM(fc.total) FROM facturas_compra fc 
+                    WHERE fc.proveedor_id = p.id
                 ), 0) as monto_total_facturas,
                 COALESCE((
-                    SELECT SUM(saldo_pendiente) FROM facturas_proveedor fp 
-                    WHERE fp.proveedor_id = p.id AND fp.estado = 'PENDIENTE'
+                    SELECT SUM(fc.total - COALESCE(pp.total_pagado, 0)) 
+                    FROM facturas_compra fc
+                    LEFT JOIN (
+                        SELECT factura_id, SUM(monto) as total_pagado 
+                        FROM pagos_proveedores 
+                        WHERE estado = 'CONFIRMADO' 
+                        GROUP BY factura_id
+                    ) pp ON fc.id = pp.factura_id
+                    WHERE fc.proveedor_id = p.id AND fc.estado = 'PENDIENTE'
                 ), 0) as deuda_pendiente,
                 COALESCE((
                     SELECT COUNT(*) FROM endosos_cheques e 

@@ -19,9 +19,7 @@ router.get('/', async (req, res) => {
       SELECT 
         mp.id, mp.codigo, mp.nombre, mp.descripcion, mp.unidad_medida,
         mp.stock_actual, mp.stock_minimo, mp.ubicacion, mp.activo,
-        (SELECT precio_unitario FROM precios_materia_prima 
-         WHERE materia_prima_id = mp.id 
-         ORDER BY fecha_desde DESC LIMIT 1) as ultimo_precio
+        mp.precio_referencia as ultimo_precio
       FROM materias_primas mp
       WHERE mp.activo = $1
     `;
@@ -66,109 +64,110 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * GET /api/materias-primas/:id
- * Obtener una materia prima por ID
- */
-router.get('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(`
-      SELECT 
-        mp.*,
-        (SELECT json_agg(pmp ORDER BY pmp.fecha_desde DESC) 
-         FROM precios_materia_prima pmp 
-         WHERE pmp.materia_prima_id = mp.id) as historial_precios
-      FROM materias_primas mp
-      WHERE mp.id = $1
-    `, [id]);
+  /**
+   * GET /api/materias-primas/:id
+   * Obtener una materia prima por ID
+   */
+  router.get('/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(`
+        SELECT 
+          mp.*,
+          (SELECT json_agg(hpm ORDER BY hpm.fecha_cambio DESC) 
+           FROM historial_precios_materias hpm 
+           WHERE hpm.materia_prima_id = mp.id) as historial_precios
+        FROM materias_primas mp
+        WHERE mp.id = $1
+      `, [id]);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Materia prima no encontrada' });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Materia prima no encontrada' });
+      }
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('Error en GET /materias-primas/:id:', err);
+      res.status(500).json({ error: err.message });
     }
+  });
 
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error en GET /materias-primas/:id:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  /**
+   * POST /api/materias-primas
+   * Crear nueva materia prima
+   */
+  router.post('/', authorize(['admin', 'control']), async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const { codigo, nombre, descripcion, unidad_medida, stock_minimo = 0, ubicacion, precio_referencia } = req.body;
 
-/**
- * POST /api/materias-primas
- * Crear nueva materia prima
- */
-router.post('/', authorize(['admin', 'control']), async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { codigo, nombre, descripcion, unidad_medida, stock_minimo = 0, ubicacion } = req.body;
+      if (!nombre || !unidad_medida) {
+        return res.status(400).json({ error: 'Nombre y unidad de medida son obligatorios' });
+      }
 
-    if (!nombre || !unidad_medida) {
-      return res.status(400).json({ error: 'Nombre y unidad de medida son obligatorios' });
+      await client.query('BEGIN');
+
+      const result = await client.query(`
+        INSERT INTO materias_primas 
+          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+        RETURNING *
+      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null, precio_referencia || null]);
+
+      await client.query('COMMIT');
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Error en POST /materias-primas:', err);
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
     }
+  });
 
-    await client.query('BEGIN');
+  /**
+   * PUT /api/materias-primas/:id
+   * Actualizar materia prima
+   */
+  router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const { id } = req.params;
+      const { codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo } = req.body;
 
-    const result = await client.query(`
-      INSERT INTO materias_primas 
-        (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, activo)
-      VALUES ($1, $2, $3, $4, $5, $6, true)
-      RETURNING *
-    `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null]);
+      // Verificar que existe
+      const check = await client.query('SELECT id FROM materias_primas WHERE id = $1', [id]);
+      if (check.rows.length === 0) {
+        return res.status(404).json({ error: 'Materia prima no encontrada' });
+      }
 
-    await client.query('COMMIT');
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error en POST /materias-primas:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
+      await client.query('BEGIN');
 
-/**
- * PUT /api/materias-primas/:id
- * Actualizar materia prima
- */
-router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { id } = req.params;
-    const { codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, activo } = req.body;
+      const result = await client.query(`
+        UPDATE materias_primas SET
+          codigo = COALESCE($1, codigo),
+          nombre = COALESCE($2, nombre),
+          descripcion = COALESCE($3, descripcion),
+          unidad_medida = COALESCE($4, unidad_medida),
+          stock_minimo = COALESCE($5, stock_minimo),
+          ubicacion = COALESCE($6, ubicacion),
+          precio_referencia = COALESCE($7, precio_referencia),
+          activo = COALESCE($8, activo),
+          actualizado_en = NOW()
+        WHERE id = $9
+        RETURNING *
+      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id]);
 
-    // Verificar que existe
-    const check = await client.query('SELECT id FROM materias_primas WHERE id = $1', [id]);
-    if (check.rows.length === 0) {
-      return res.status(404).json({ error: 'Materia prima no encontrada' });
+      await client.query('COMMIT');
+      res.json(result.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Error en PUT /materias-primas/:id:', err);
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
     }
-
-    await client.query('BEGIN');
-
-    const result = await client.query(`
-      UPDATE materias_primas SET
-        codigo = COALESCE($1, codigo),
-        nombre = COALESCE($2, nombre),
-        descripcion = COALESCE($3, descripcion),
-        unidad_medida = COALESCE($4, unidad_medida),
-        stock_minimo = COALESCE($5, stock_minimo),
-        ubicacion = COALESCE($6, ubicacion),
-        activo = COALESCE($7, activo),
-        actualizado_en = NOW()
-      WHERE id = $8
-      RETURNING *
-    `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, activo, id]);
-
-    await client.query('COMMIT');
-    res.json(result.rows[0]);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error en PUT /materias-primas/:id:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
+  });
 
 /**
  * DELETE /api/materias-primas/:id
@@ -184,5 +183,39 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+  /**
+   * GET /api/materias-primas/:id/historial-precios
+   * Obtener historial de precios de una materia prima
+   */
+  router.get('/:id/historial-precios', async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const result = await pool.query(`
+        SELECT 
+          hpm.id,
+          hpm.precio_nuevo,
+          hpm.precio_anterior,
+          hpm.variacion_porcentaje,
+          hpm.fecha_cambio,
+          hpm.observaciones,
+          fc.numero_factura as factura_numero,
+          p.nombre as proveedor_nombre,
+          u.nombre_completo as usuario_nombre
+        FROM historial_precios_materias hpm
+        LEFT JOIN facturas_compra fc ON hpm.factura_id = fc.id
+        LEFT JOIN proveedores p ON hpm.proveedor_id = p.id
+        LEFT JOIN usuarios u ON hpm.created_by = u.id
+        WHERE hpm.materia_prima_id = $1
+        ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC
+      `, [id]);
+
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Error en GET /materias-primas/:id/historial-precios:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
 module.exports = router;

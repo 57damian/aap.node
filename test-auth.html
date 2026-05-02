@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test de Autenticación</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Test de Autenticación</h1>
+    
+    <div id="results"></div>
+    
+    <button onclick="checkLocalStorage()">Verificar localStorage</button>
+    <button onclick="testAPI()">Probar API Materias Primas</button>
+    <button onclick="loginTest()">Probar Login</button>
+    
+    <script>
+        const API_URL = 'http://localhost:3000';
+        
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.prepend(div);
+        }
+        
+        function checkLocalStorage() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            
+            log(`Token: ${token ? 'Presente (' + token.substring(0, 20) + '...)' : 'Ausente'}`, token ? 'success' : 'warning');
+            log(`Usuario: ${user ? JSON.parse(user).nombre : 'No logueado'}`, user ? 'success' : 'warning');
+            
+            // Verificar si estamos en la misma página
+            log(`URL actual: ${window.location.href}`, 'info');
+        }
+        
+        async function testAPI() {
+            const token = localStorage.getItem('token');
+            
+            if (!token) {
+                log('No hay token en localStorage. Primero debe loguearse.', 'error');
+                return;
+            }
+            
+            try {
+                log('Probando API de materias primas...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/materias-primas`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ API exitosa. Se encontraron ${data.length} materias primas`, 'success');
+                    
+                    // Mostrar algunas materias primas
+                    if (data.length > 0) {
+                        log(`Primeras 3 materias primas:`, 'info');
+                        data.slice(0, 3).forEach((mp, i) => {
+                            log(`${i+1}. ${mp.codigo || 'Sin código'} - ${mp.nombre} (Precio: $${mp.ultimo_precio || 0})`, 'info');
+                        });
+                    }
+                } else {
+                    const error = await response.text();
+                    log(`❌ Error API: ${response.status} - ${error}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error de conexión: ${error.message}`, 'error');
+            }
+        }
+        
+        async function loginTest() {
+            // Credenciales de prueba
+            const credentials = {
+                email: 'admin@test.com',
+                password: 'admin123'
+            };
+            
+            try {
+                log('Intentando login...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(credentials)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    log(`✅ Login exitoso. Token guardado. Usuario: ${data.user.nombre}`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`❌ Login fallido: ${error.error || 'Error desconocido'}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error de conexión: ${error.message}`, 'error');
+            }
+        }
+        
+        // Verificar al cargar
+        window.onload = checkLocalStorage;
+    </script>
+</body>
+</html>

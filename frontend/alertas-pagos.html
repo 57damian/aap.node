@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alertas de Pagos Pendientes - Sistema de Transformadores</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <style>
+        .alert-card {
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+        
+        .alert-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .alert-vencida {
+            border-left: 6px solid #ef4444;
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+        }
+        
+        .alert-por-vencer {
+            border-left: 6px solid #f59e0b;
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        }
+        
+        .alert-normal {
+            border-left: 6px solid #10b981;
+            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        }
+        
+        .alert-icon {
+            font-size: 24px;
+            margin-right: 15px;
+        }
+        
+        .alert-vencida .alert-icon {
+            color: #ef4444;
+        }
+        
+        .alert-por-vencer .alert-icon {
+            color: #f59e0b;
+        }
+        
+        .alert-normal .alert-icon {
+            color: #10b981;
+        }
+        
+        .filter-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stats-card {
+            text-align: center;
+            padding: 20px;
+            border-radius: 12px;
+            color: white;
+            margin-bottom: 20px;
+        }
+        
+        .stats-vencidas {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .stats-por-vencer {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        .stats-total {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+        
+        .stats-monto {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }
+        
+        .stats-number {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 10px 0;
+        }
+        
+        .stats-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .badge-alerta {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-vencida {
+            background-color: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .badge-por-vencer {
+            background-color: #fef3c7;
+            color: #d97706;
+        }
+        
+        .badge-normal {
+            background-color: #d1fae5;
+            color: #059669;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn-export {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .btn-export:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        
+        .btn-refresh {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .btn-refresh:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Navbar -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="dashboard.html">
+                    <i class="fas fa-bolt me-2"></i>
+                    Sistema de Transformadores
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav ms-auto">
+                        <li class="nav-item">
+                            <a class="nav-link" href="dashboard.html">
+                                <i class="fas fa-home me-1"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="pagos-proveedores.html">
+                                <i class="fas fa-truck me-1"></i> Pagos a Proveedores
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="pagos-clientes.html">
+                                <i class="fas fa-user me-1"></i> Cobros a Clientes
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="alertas-pagos.html">
+                                <i class="fas fa-bell me-1"></i> Alertas
+                            </a>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-user me-1"></i> Usuario
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" id="logoutBtn"><i class="fas fa-sign-out-alt me-2"></i> Cerrar Sesión</a></li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="container mt-4">
+            <!-- Header -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h1 class="h3 mb-2">
+                                <i class="fas fa-bell text-warning me-2"></i>
+                                Alertas de Pagos Pendientes
+                            </h1>
+                            <p class="text-muted">Monitoreo de facturas pendientes de pago a proveedores</p>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn-refresh" id="refreshBtn">
+                                <i class="fas fa-sync-alt"></i> Actualizar
+                            </button>
+                            <button class="btn-export" id="exportBtn">
+                                <i class="fas fa-file-export"></i> Exportar Reporte
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="stats-card stats-vencidas">
+                        <i class="fas fa-exclamation-triangle fa-2x"></i>
+                        <div class="stats-number" id="vencidasCount">0</div>
+                        <div class="stats-label">Facturas Vencidas</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card stats-por-vencer">
+                        <i class="fas fa-clock fa-2x"></i>
+                        <div class="stats-number" id="porVencerCount">0</div>
+                        <div class="stats-label">Por Vencer (≤ 7 días)</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card stats-total">
+                        <i class="fas fa-file-invoice-dollar fa-2x"></i>
+                        <div class="stats-number" id="totalPendientes">0</div>
+                        <div class="stats-label">Total Pendientes</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card stats-monto">
+                        <i class="fas fa-money-bill-wave fa-2x"></i>
+                        <div class="stats-number" id="totalMonto">$0</div>
+                        <div class="stats-label">Monto Total Pendiente</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filter-section">
+                <h5 class="mb-3"><i class="fas fa-filter me-2"></i> Filtros</h5>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Estado de Alerta</label>
+                            <select class="form-select" id="filterEstado">
+                                <option value="">Todos</option>
+                                <option value="vencida">Vencidas</option>
+                                <option value="por_vencer">Por Vencer</option>
+                                <option value="normal">Normal</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Proveedor</label>
+                            <select class="form-select" id="filterProveedor">
+                                <option value="">Todos los proveedores</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Fecha Desde</label>
+                            <input type="date" class="form-control" id="filterDesde">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Fecha Hasta</label>
+                            <input type="date" class="form-control" id="filterHasta">
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Monto Mínimo</label>
+                            <input type="number" class="form-control" id="filterMontoMin" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Monto Máximo</label>
+                            <input type="number" class="form-control" id="filterMontoMax" placeholder="999999">
+                        </div>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <button class="btn btn-primary w-100" id="applyFilters">
+                            <i class="fas fa-search me-2"></i> Aplicar Filtros
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alerts Table -->
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i> Facturas Pendientes</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="alertasTable">
+                            <thead>
+                                <tr>
+                                    <th>Estado</th>
+                                    <th>Factura</th>
+                                    <th>Proveedor</th>
+                                    <th>Vencimiento</th>
+                                    <th>Días Restantes</th>
+                                    <th>Total</th>
+                                    <th>Saldo Pendiente</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alertasBody">
+                                <!-- Las alertas se cargarán aquí -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert Cards (Mobile View) -->
+            <div class="d-md-none mt-4" id="alertCards">
+                <!-- Las tarjetas de alerta se cargarán aquí -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/alertas-pagos.js"></script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 let stockCache = [];
 let proveedoresCache = [];
 let movimientosCache = [];
+let dolarActual = 0;
 
 // Formatear moneda
 function formatearMoneda(valor) {
@@ -11,12 +12,38 @@ function formatearMoneda(valor) {
     }).format(valor);
 }
 
+// Formatear dólares
+function formatearDolares(valor) {
+    return new Intl.NumberFormat('es-AR', {
+        style: 'currency',
+        currency: 'USD'
+    }).format(valor);
+}
+
 // Inicializar página
 document.addEventListener('DOMContentLoaded', () => {
     verificarAuth();
     cargarProveedores();
+    cargarDolar();
     cargarStock();
 });
+
+// Cargar dólar actual
+async function cargarDolar() {
+    try {
+        const dolarData = await apiFetch('/api/precios/parametros/dolar');
+        dolarActual = dolarData.dolar || 0;
+        
+        // Actualizar indicador de dólar en la interfaz
+        const dolarElement = document.getElementById('dolarActual');
+        if (dolarElement) {
+            dolarElement.textContent = `Dólar: ARS ${dolarActual.toFixed(2)}`;
+        }
+    } catch (err) {
+        console.error('Error cargando dólar:', err);
+        dolarActual = 1415.00; // Valor por defecto
+    }
+}
 
 // Cargar proveedores
 async function cargarProveedores() {
@@ -225,8 +252,12 @@ function actualizarEstadisticas(stock) {
     const bajo = stock.filter(s => s.stock_actual > 0 && s.stock_actual <= s.stock_minimo).length;
     const critico = stock.filter(s => s.stock_actual === 0).length;
     
+    // Calcular valor en dólares
+    const stockValorizadoUSD = dolarActual > 0 ? stockValorizado / dolarActual : 0;
+    
     document.getElementById('totalArticulos').textContent = totalArticulos;
     document.getElementById('stockValorizado').textContent = formatearMoneda(stockValorizado);
+    document.getElementById('stockValorizadoUSD').textContent = formatearDolares(stockValorizadoUSD);
     document.getElementById('articulosStockBajo').textContent = bajo;
     document.getElementById('articulosCriticos').textContent = critico;
 }
@@ -249,6 +280,7 @@ function abrirModalAjuste(articuloId, articuloNombre, stockActual) {
 async function guardarAjuste() {
     try {
         const articuloId = document.getElementById('ajuste_articulo_id').value;
+        const stockActual = parseFloat(document.getElementById('ajuste_stock_actual').value);
         const nuevoStock = parseFloat(document.getElementById('ajuste_nuevo_stock').value);
         const tipo = document.getElementById('ajuste_tipo').value;
         const motivo = document.getElementById('ajuste_motivo').value;
@@ -264,12 +296,15 @@ async function guardarAjuste() {
             return;
         }
         
+        // Calcular la diferencia (cantidad relativa)
+        const cantidad = nuevoStock - stockActual;
+        
         const payload = {
-            articulo_id: parseInt(articuloId),
-            nuevo_stock: nuevoStock,
+            materia_prima_id: parseInt(articuloId),
+            cantidad: cantidad,
             tipo_movimiento: tipo,
-            observacion: motivo,
-            fecha_ajuste: fecha
+            observaciones: motivo,
+            fecha_movimiento: fecha
         };
         
         await apiFetch('/api/stock/ajuste', {
@@ -290,7 +325,7 @@ async function guardarAjuste() {
 // Ver historial
 async function verHistorial(articuloId) {
     try {
-        const movimientos = await apiFetch(`/api/stock/articulo/${articuloId}/movimientos`);
+        const movimientos = await apiFetch(`/api/stock/materia-prima/${articuloId}/movimientos`);
         
         const tbody = document.getElementById('historialBody');
         if (!movimientos || movimientos.length === 0) {
@@ -298,13 +333,13 @@ async function verHistorial(articuloId) {
         } else {
             tbody.innerHTML = movimientos.map(m => `
                 <tr>
-                    <td>${m.fecha || '-'}</td>
+                    <td>${m.fecha_movimiento || '-'}</td>
                     <td>${m.tipo_movimiento || '-'}</td>
                     <td>${m.cantidad || 0}</td>
                     <td>${m.stock_anterior || 0}</td>
                     <td>${m.stock_nuevo || 0}</td>
-                    <td>${m.usuario || '-'}</td>
-                    <td>${m.observacion || '-'}</td>
+                    <td>${m.usuario_nombre || '-'}</td>
+                    <td>${m.observaciones || '-'}</td>
                 </tr>
             `).join('');
         }
@@ -321,7 +356,7 @@ async function verHistorial(articuloId) {
 // Ver precios
 async function verPrecios(articuloId) {
     try {
-        const precios = await apiFetch(`/api/articulos/${articuloId}/historial-precios`);
+        const precios = await apiFetch(`/api/materias-primas/${articuloId}/historial-precios`);
         
         const tbody = document.getElementById('preciosBody');
         if (!precios || precios.length === 0) {
@@ -333,7 +368,7 @@ async function verPrecios(articuloId) {
                     <td>${formatearMoneda(p.precio_anterior || 0)}</td>
                     <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
                     <td class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">
-                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje}%
+                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
                     </td>
                     <td>${p.factura_numero || '-'}</td>
                 </tr>

@@ -111,15 +111,16 @@ router.post('/ajuste', verificarToken, authorize(['admin', 'control']), async (r
       throw new Error('Cantidad debe ser un número positivo');
     }
 
-    // Obtener stock actual con lock
+    // Obtener stock actual y unidad con lock
     const stockRes = await client.query(
-      'SELECT stock_actual FROM materias_primas WHERE id = $1 FOR UPDATE',
+      'SELECT stock_actual, unidad_medida FROM materias_primas WHERE id = $1 FOR UPDATE',
       [materia_prima_id]
     );
     if (stockRes.rows.length === 0) {
       throw new Error('Materia prima no encontrada');
     }
     const stockAnterior = parseFloat(stockRes.rows[0].stock_actual);
+    const unidad = stockRes.rows[0].unidad_medida || 'UNI';
 
     let cantidadReal;
     let tipoMovimiento;
@@ -142,14 +143,15 @@ router.post('/ajuste', verificarToken, authorize(['admin', 'control']), async (r
     // Insertar movimiento
     const movimientoRes = await client.query(
       `INSERT INTO stock_movimientos 
-        (materia_prima_id, fecha_movimiento, tipo_movimiento, cantidad, stock_anterior, stock_nuevo, observaciones, usuario_id, factura_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        (materia_prima_id, fecha_movimiento, tipo_movimiento, cantidad, unidad, stock_anterior, stock_nuevo, observaciones, usuario_id, factura_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         materia_prima_id,
         fecha || new Date(),
         tipoMovimiento,
         cantidadReal,
+        unidad,
         stockAnterior,
         stockNuevo,
         motivo,

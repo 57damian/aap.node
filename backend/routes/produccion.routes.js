@@ -50,9 +50,9 @@ router.post('/', authorize(['admin', 'operario', 'empleado']), async (req, res) 
       ]
     );
 
-    // Obtener stock actualizado
+    // Obtener stock actualizado (usando nueva vista stock_produccion)
     const stockRes = await pool.query(
-      'SELECT * FROM stock_actual WHERE ficha_id = $1',
+      'SELECT * FROM stock_produccion WHERE ficha_id = $1',
       [ficha_id]
     );
 
@@ -127,14 +127,14 @@ router.get('/', authorize(['admin', 'operario', 'control', 'empleado']), async (
 });
 
 /* ============================================
-   OBTENER STOCK ACTUAL
+   OBTENER STOCK ACTUAL DE PRODUCCIÓN
    GET /api/produccion/stock
 ============================================ */
 router.get('/stock', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
   const { con_stock, solo_genericos, cliente_id } = req.query;
 
   try {
-    let query = `SELECT * FROM stock_actual WHERE 1=1`;
+    let query = `SELECT * FROM stock_produccion WHERE 1=1`;
     const params = [];
     let paramCounter = 1;
 
@@ -158,7 +158,7 @@ router.get('/stock', authorize(['admin', 'operario', 'control', 'empleado']), as
     res.json(result.rows);
 
   } catch (err) {
-    console.error('Error obteniendo stock:', err);
+    console.error('Error obteniendo stock de producción:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -170,7 +170,7 @@ router.get('/stock', authorize(['admin', 'operario', 'control', 'empleado']), as
 router.get('/stock/:ficha_id', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM stock_actual WHERE ficha_id = $1',
+      'SELECT * FROM stock_produccion WHERE ficha_id = $1',
       [req.params.ficha_id]
     );
 
@@ -197,7 +197,7 @@ router.get('/stock/:ficha_id', authorize(['admin', 'operario', 'control', 'emple
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.error('Error obteniendo stock:', err);
+    console.error('Error obteniendo stock de producción:', err);
     res.status(500).json({ error: err.message });
   }
 });

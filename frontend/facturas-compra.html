@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facturas de Compra - Sistema de Gestión</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Select2 -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --success-color: #16a34a;
+            --warning-color: #ca8a04;
+            --danger-color: #dc2626;
+            --border-color: #e5e7eb;
+        }
+        
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .page-header {
+            background: linear-gradient(135deg, var(--primary-color), #1d4ed8);
+            color: white;
+            padding: 24px 0;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card-factura {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid var(--border-color);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .card-factura .card-header {
+            background: #f9fafb;
+            border-bottom: 2px solid var(--border-color);
+            padding: 16px 20px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .card-factura .card-body {
+            padding: 20px;
+        }
+        
+        .form-label {
+            font-weight: 500;
+            color: #374151;
+            font-size: 0.875rem;
+            margin-bottom: 6px;
+        }
+        
+        .form-control, .form-select {
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        
+        /* Tabla de Ítems */
+        .table-items {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        .table-items th {
+            background: #f9fafb;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: #6b7280;
+            padding: 12px 8px;
+            border-bottom: 2px solid var(--border-color);
+            letter-spacing: 0.5px;
+        }
+        
+        .table-items td {
+            padding: 10px 8px;
+            vertical-align: middle;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .item-row:hover {
+            background-color: #f9fafb;
+        }
+        
+        .form-control-item {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 0.875rem;
+            transition: border-color 0.2s;
+        }
+        
+        .form-control-item:focus {
+            border-color: var(--primary-color);
+            outline: 0;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+        }
+        
+        .input-numeric {
+            text-align: right;
+        }
+        
+        .col-subtotal, .col-iva, .col-total {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .col-total {
+            color: var(--success-color);
+        }
+        
+        .btn-eliminar-item {
+            background: #fef2f2;
+            color: var(--danger-color);
+            border: none;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-eliminar-item:hover {
+            background: var(--danger-color);
+            color: #fff;
+        }
+        
+        .btn-action {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-action:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Panel de Totales */
+        .totales-panel {
+            background: linear-gradient(135deg, #f9fafb, #f3f4f6);
+            padding: 20px;
+            border-radius: 0 0 12px 12px;
+            border-top: 2px solid var(--border-color);
+        }
+        
+        .total-label {
+            font-size: 0.875rem;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        
+        .total-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-align: right;
+            color: #1f2937;
+        }
+        
+        .total-final {
+            font-size: 1.5rem;
+            color: var(--success-color);
+        }
+        
+        /* Badges */
+        .badge-tipo-factura {
+            background: var(--primary-color);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        /* Alertas */
+        #alert-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            max-width: 400px;
+        }
+        
+        .alert {
+            border-radius: 8px;
+            border: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-bottom: 10px;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .table-items {
+                font-size: 0.8rem;
+            }
+            .table-items th,
+            .table-items td {
+                padding: 6px 4px;
+            }
+            .form-control-item {
+                padding: 4px 6px;
+            }
+        }
+        
+        /* Select2 Custom */
+        .select2-container .select2-selection--single {
+            height: 38px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 4px 10px;
+        }
+        
+        .select2-container--default .select2-selection--single:focus {
+            border-color: var(--primary-color);
+        }
+        
+        /* Info del Proveedor */
+        .proveedor-info {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .proveedor-info .info-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        
+        .proveedor-info .info-item i {
+            width: 20px;
+            color: var(--primary-color);
+        }
+        
+        .proveedor-info .info-item span {
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <!-- Contenedor de Alertas -->
+    <div id="alert-container"></div>
+    
+    <!-- Header -->
+    <div class="page-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="h3 mb-1"><i class="fas fa-file-invoice-dollar me-2"></i>Facturas de Compra</h1>
+                    <p class="mb-0 opacity-75">Gestión de facturas de proveedores y compras de materias primas</p>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <a href="facturas-lista-simple.html" class="btn btn-light btn-action">
+                        <i class="fas fa-list me-2"></i>Ver Lista
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container pb-5">
+        <form id="form-factura">
+            <!-- Proveedor -->
+            <div class="card-factura">
+                <div class="card-header">
+                    <i class="fas fa-truck me-2"></i>Proveedor
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Proveedor</label>
+                            <select id="proveedor" class="form-select" required>
+                                <option value="">Seleccionar proveedor...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="proveedor-info mt-4 mt-md-0">
+                                <div class="info-item">
+                                    <i class="fas fa-id-card"></i>
+                                    <span class="ms-2">CUIT: <strong id="cuit">-</strong></span>
+                                </div>
+                                <div class="info-item">
+                                    <i class="fas fa-phone"></i>
+                                    <span class="ms-2">Tel: <strong id="telefono">-</strong></span>
+                                </div>
+                                <div class="info-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span class="ms-2">Dir: <strong id="direccion">-</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Datos de la Factura -->
+            <div class="card-factura">
+                <div class="card-header">
+                    <i class="fas fa-receipt me-2"></i>Datos de la Factura
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Tipo</label>
+                            <select id="tipo_factura" class="form-select">
+                                <option value="A">A - Responsable Inscripto</option>
+                                <option value="B">B - Consumidor Final</option>
+                                <option value="C">C - Exento</option>
+                                <option value="X">X - Sin Clasificar</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Punto de Venta</label>
+                            <input type="text" id="punto_venta" class="form-control" placeholder="0001" maxlength="4">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Número</label>
+                            <input type="text" id="numero_factura" class="form-control" placeholder="00000000" maxlength="8">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CAE</label>
+                            <input type="text" id="cae" class="form-control" placeholder="CAE número">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Número Completo</label>
+                            <div id="display-numero-completo" class="form-control text-center fw-bold bg-light">0000-00000000</div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Emisión</label>
+                            <input type="date" id="fecha_emision" class="form-control" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Recepción</label>
+                            <input type="date" id="fecha_recepcion" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Condición de Pago</label>
+                            <select id="condicion_pago" class="form-select">
+                                <option value="CONTADO">Contado</option>
+                                <option value="30_DIAS">30 días</option>
+                                <option value="60_DIAS">60 días</option>
+                                <option value="90_DIAS">90 días</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Estado</label>
+                            <select id="estado" class="form-select">
+                                <option value="PENDIENTE">Pendiente</option>
+                                <option value="PAGADA">Pagada</option>
+                                <option value="ANULADA">Anulada</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <label class="form-label">Percepciones ($)</label>
+                            <input type="number" id="percepciones" class="form-control" value="0" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Retenciones ($)</label>
+                            <input type="number" id="retenciones" class="form-control" value="0" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Observaciones</label>
+                            <input type="text" id="observaciones" class="form-control" placeholder="Observaciones opcionales">
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="btn-group">
+                                <button type="button" id="btn-siguiente-numero" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-forward me-1"></i> Siguiente Número
+                                </button>
+                                <button type="button" id="btn-copiar-numero" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-copy me-1"></i> Copiar Número
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Ítems de la Factura -->
+            <div class="card-factura">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-list me-2"></i>Ítems de la Factura</span>
+                    <div class="btn-group">
+                        <button type="button" id="btn-recargar-materias-primas" class="btn btn-outline-secondary btn-sm" title="Recargar Stock">
+                            <i class="fas fa-sync"></i>
+                        </button>
+                        <button type="button" id="btn-agregar-multiple" class="btn btn-outline-primary btn-sm" title="Agregar 5 filas">
+                            <i class="fas fa-plus"></i> 5
+                        </button>
+                        <button type="button" id="btn-validar-items" class="btn btn-outline-warning btn-sm" title="Validar">
+                            <i class="fas fa-check-double"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table-items">
+                            <thead>
+                                <tr>
+                                    <th style="width: 22%">Producto</th>
+                                    <th style="width: 18%">Nombre</th>
+                                    <th style="width: 8%">Unidad</th>
+                                    <th style="width: 8%">Cant.</th>
+                                    <th style="width: 10%">Precio Unit.</th>
+                                    <th style="width: 6%">IVA %</th>
+                                    <th style="width: 8%">Subtotal</th>
+                                    <th style="width: 8%">Total</th>
+                                    <th style="width: 4%"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="items-body">
+                                <!-- Las filas se generan con JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="p-3">
+                        <button type="button" id="agregar-fila" class="btn btn-action btn-outline-primary w-100">
+                            <i class="fas fa-plus me-2"></i>Agregar Ítem
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Panel de Totales -->
+                <div class="totales-panel">
+                    <div class="row align-items-end">
+                        <div class="col-md-3 mb-3 mb-md-0">
+                            <button type="button" id="btn-limpiar" class="btn btn-danger w-100">
+                                <i class="fas fa-trash me-2"></i>Limpiar
+                            </button>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="total-label">Subtotal</div>
+                            <div class="total-value" id="display-subtotal">$0.00</div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="total-label">IVA</div>
+                            <div class="total-value" id="display-iva">$0.00</div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="total-label">Percepciones</div>
+                            <div class="total-value" id="display-percepciones">$0.00</div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="total-label">Total Final</div>
+                            <div class="total-value total-final" id="display-total">$0.00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Campos Ocultos -->
+            <input type="hidden" id="subtotal" value="0.00">
+            <input type="hidden" id="iva" value="0.00">
+            <input type="hidden" id="total" value="0.00">
+            
+            <!-- Botón Guardar -->
+            <div class="d-grid gap-2">
+                <button type="button" id="btn-guardar-factura" class="btn btn-success btn-action btn-lg">
+                    <i class="fas fa-save me-2"></i>Guardar Factura
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/navbar-filter.js"></script>
+    <script src="js/facturas-compra.js"></script>
+</body>
+</html>

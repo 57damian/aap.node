@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pagos a Proveedores - Sistema Transformadores</title>
+  <title>Gestion de Pagos a Proveedores</title>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -17,8 +17,9 @@
     <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
     <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
     <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='facturas-compras.html'">Facturas</button>
-    <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'" class="active">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='facturas-compra.html'">Facturas</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'" class="active">Pagos Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos-clientes.html'">Pagos Clientes</button>
     <button data-roles="admin,control" onclick="window.location.href='stock.html'">Stock</button>
     <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
     <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
@@ -28,269 +29,378 @@
   <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
 </div>
 
-<div class="container main-container">
-    <!-- Header Principal -->
-    <div class="proveedores-header">
-        <h1><i class="fas fa-money-bill"></i> Pagos a Proveedores</h1>
-        <p>Registre y controle los pagos realizados a proveedores</p>
+<div class="container">
+    <div class="header">
+      <h1 class="header-title">Gestion de Pagos a Proveedores</h1>
     </div>
 
-    <!-- Estadísticas Principales -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon primary">
-                <i class="fas fa-money-bill-wave"></i>
-            </div>
-            <div class="stat-value" id="totalPagadoMes">$0</div>
-            <div class="stat-label">Pagado Este Mes</div>
+    <!-- Alertas de cheques proximos -->
+    <div id="alertas-cheques-proveedor" class="alert alert-warning">
+      <div class="alerta-cheques-row">
+        <div>
+          <strong>Cheques proximos a vencer</strong>
+          <span id="alertasChequesCountProveedor"></span>
         </div>
-        <div class="stat-card warning">
-            <div class="stat-icon warning">
-                <i class="fas fa-clock"></i>
-            </div>
-            <div class="stat-value" id="pagosPendientes">0</div>
-            <div class="stat-label">Facturas Pendientes</div>
-        </div>
-        <div class="stat-card info">
-            <div class="stat-icon info">
-                <i class="fas fa-calendar-alt"></i>
-            </div>
-            <div class="stat-value" id="proximosVencimientos">0</div>
-            <div class="stat-label">Próximos Vencimientos</div>
-        </div>
+        <button class="btn btn-info btn-sm" onclick="verAlertasChequesProveedor()">Ver detalles</button>
+      </div>
     </div>
 
-    <!-- Filtros y búsqueda -->
-    <div class="filtros-container">
-        <div class="filtros-row">
-            <div class="filtro-group">
-                <label class="filtro-label">Proveedor</label>
-                <select class="filtro-select" id="filtroProveedor">
-                    <option value="">Todos los proveedores</option>
-                </select>
-            </div>
-            <div class="filtro-group">
-                <label class="filtro-label">Desde</label>
-                <input type="date" class="filtro-input" id="filtroFechaDesde">
-            </div>
-            <div class="filtro-group">
-                <label class="filtro-label">Hasta</label>
-                <input type="date" class="filtro-input" id="filtroFechaHasta">
-            </div>
-            <div class="filtro-group">
-                <label class="filtro-label">Forma de Pago</label>
-                <select class="filtro-select" id="filtroFormaPago">
-                    <option value="">Todas</option>
-                    <option value="EFECTIVO">Efectivo</option>
-                    <option value="TRANSFERENCIA">Transferencia</option>
-                    <option value="CHEQUE">Cheque</option>
-                </select>
-            </div>
-            <div class="filtro-group">
-                <label class="filtro-label">Buscar</label>
-                <input type="text" class="filtro-input" id="searchInput" placeholder="Referencia, comprobante...">
-            </div>
-        </div>
-        <div class="filtros-acciones">
-            <button class="btn btn-secondary" onclick="limpiarFiltros()">
-                <i class="fas fa-times"></i> Limpiar
-            </button>
-            <button class="btn btn-primary" onclick="cargarPagos()">
-                <i class="fas fa-search"></i> Buscar
-            </button>
-        </div>
+    <!-- Tabs principales -->
+    <div class="tabs">
+      <button class="tab active" onclick="showTabProveedor('nuevo-pago-proveedor', event)">Nuevo Pago</button>
+      <button class="tab" onclick="showTabProveedor('pagos-list-proveedor', event)">Lista de Pagos</button>
+      <button class="tab" onclick="showTabProveedor('ordenes-pago-list', event)">Ordenes de Pago</button>
+      <button class="tab" onclick="showTabProveedor('cheques-list-proveedor', event)">Cheques</button>
+      <button class="tab" onclick="showTabProveedor('estado-cuenta-proveedor', event)">Estado de Cuenta</button>
     </div>
 
-    <!-- Tabs de visualización -->
-    <ul class="nav nav-tabs mb-3" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-realizados" data-bs-toggle="tab" data-bs-target="#realizados" type="button" role="tab">
-                <i class="fas fa-check-circle"></i> Pagos Realizados
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-pendientes" data-bs-toggle="tab" data-bs-target="#pendientes" type="button" role="tab">
-                <i class="fas fa-hourglass-half"></i> Pendientes de Pago
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-cheques" data-bs-toggle="tab" data-bs-target="#cheques" type="button" role="tab">
-                <i class="fas fa-file-invoice"></i> Cheques Emitidos
-            </button>
-        </li>
-    </ul>
-
-    <!-- Contenido de tabs -->
-    <div class="tab-content">
-        <!-- Tab: Pagos Realizados -->
-        <div class="tab-pane fade show active" id="realizados" role="tabpanel">
-            <div class="proveedores-table-container">
-                <table class="proveedores-table">
-                    <thead>
-                        <tr>
-                            <th>Fecha Pago</th>
-                            <th>Proveedor</th>
-                            <th>Factura</th>
-                            <th>Monto</th>
-                            <th>Forma de Pago</th>
-                            <th>Comprobante</th>
-                            <th>Usuario</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pagosTableBody">
-                        <tr>
-                            <td colspan="8" class="text-center">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Cargando...</span>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+    <!-- ============================================ -->
+    <!-- TAB NUEVO PAGO -->
+    <!-- ============================================ -->
+    <div id="nuevo-pago-proveedor" class="tab-content active">
+      <div class="form-section">
+        <div class="form-section-title">
+          <span>Datos del Pago</span>
         </div>
-
-        <!-- Tab: Pendientes de Pago -->
-        <div class="tab-pane fade" id="pendientes" role="tabpanel">
-            <div class="proveedores-table-container">
-                <table class="proveedores-table">
-                    <thead>
-                        <tr>
-                            <th>Factura</th>
-                            <th>Proveedor</th>
-                            <th>Vencimiento</th>
-                            <th>Saldo Pendiente</th>
-                            <th>Días Vencida</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pendientesTableBody">
-                        <tr>
-                            <td colspan="6" class="text-center text-muted">No hay facturas pendientes</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Proveedor *</label>
+            <select id="proveedor_id" required>
+              <option value="">-- Seleccionar Proveedor --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Fecha de Pago *</label>
+            <input type="date" id="fecha_pago" required>
+          </div>
+          <div class="form-group">
+            <label>Observaciones</label>
+            <input type="text" id="observaciones_pago_proveedor" placeholder="Observaciones del pago">
+          </div>
         </div>
+      </div>
 
-        <!-- Tab: Cheques Emitidos -->
-        <div class="tab-pane fade" id="cheques" role="tabpanel">
-            <div class="proveedores-table-container">
-                <table class="proveedores-table">
-                    <thead>
-                        <tr>
-                            <th>N° Cheque</th>
-                            <th>Banco</th>
-                            <th>Proveedor</th>
-                            <th>Monto</th>
-                            <th>Fecha Emisión</th>
-                            <th>Fecha Cobro</th>
-                            <th>Estado</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="chequesTableBody">
-                        <tr>
-                            <td colspan="8" class="text-center text-muted">No hay cheques registrados</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+      <!-- Items de pago -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <span>Items de Pago</span>
+          <button type="button" class="btn btn-info btn-sm" onclick="agregarItemPagoProveedor()">+ Agregar Item</button>
         </div>
+        <div id="pago-items-container-proveedor"></div>
+        <div>
+          <strong>TOTAL PAGO: </strong>
+          <span id="total-pago-proveedor">$0.00</span>
+        </div>
+      </div>
+
+      <!-- Facturas pendientes -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <span>Facturas Pendientes</span>
+        </div>
+        <table id="facturas-pendientes-table-proveedor">
+          <thead>
+            <tr>
+              <th>Seleccionar</th>
+              <th>Factura</th>
+              <th>Tipo</th>
+              <th>Fecha</th>
+              <th>Total</th>
+              <th>Saldo</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="facturasPendientesListProveedor">
+            <tr>
+              <td colspan="7">
+                Seleccione un proveedor para ver sus facturas pendientes
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Boton guardar pago -->
+      <div class="pagos-actions">
+        <button class="btn btn-primary" id="btnGuardarPagoProveedor">Guardar Pago</button>
+      </div>
+
+      <!-- Seccion de aplicacion (oculta hasta crear pago) -->
+      <div id="pago-aplicar-section-proveedor" class="hidden-section">
+        <h3>Aplicar Pago #<span id="pago-id-proveedor"></span></h3>
+        <p><strong>Monto disponible:</strong> <span id="monto-pago-proveedor"></span></p>
+
+        <table id="facturas-aplicar-table-proveedor">
+          <thead>
+            <tr>
+              <th>Factura</th>
+              <th>Saldo</th>
+              <th>Monto a aplicar</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="facturasAplicarListProveedor">
+            <tr>
+              <td colspan="4">
+                Seleccione facturas para aplicar
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3"><strong>TOTAL A APLICAR:</strong></td>
+              <td><strong id="total-aplicar-proveedor">$0.00</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div class="pagos-actions">
+          <button class="btn btn-success" id="btnAplicarPagoProveedor">Aplicar Pago</button>
+        </div>
+      </div>
     </div>
-</div>
 
-<!-- Modal Registrar Pago -->
-<div class="modal fade" id="pagoModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-money-bill"></i> Registrar Pago
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="pagoForm">
-                    <input type="hidden" id="pago_factura_id">
-                    
-                    <div class="row">
-                        <div class="col-md-6">
-                            <label class="form-label">Factura *</label>
-                            <input type="text" class="form-control" id="pago_factura_numero" readonly>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Proveedor *</label>
-                            <input type="text" class="form-control" id="pago_proveedor" readonly>
-                        </div>
-                    </div>
+    <!-- ============================================ -->
+    <!-- TAB LISTA DE PAGOS -->
+    <!-- ============================================ -->
+    <div id="pagos-list-proveedor" class="tab-content">
+      <h2>Historial de Pagos a Proveedores</h2>
 
-                    <div class="row mt-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Saldo Pendiente</label>
-                            <input type="text" class="form-control" id="pago_saldo" readonly>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Monto a Pagar *</label>
-                            <input type="number" id="pago_monto" class="form-control" step="0.01" required>
-                        </div>
-                    </div>
+      <div class="pagos-toolbar">
+        <select id="filtroProveedorPagos">
+          <option value="">Todos los proveedores</option>
+        </select>
+        <input type="date" id="filtroDesdePagos">
+        <input type="date" id="filtroHastaPagos">
+        <select id="filtroEstadoPagos">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="parcial">Parcial</option>
+          <option value="aplicado">Aplicado</option>
+        </select>
+        <button class="btn btn-info" onclick="cargarPagosProveedor()">Filtrar</button>
+      </div>
 
-                    <div class="row mt-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Fecha de Pago *</label>
-                            <input type="date" id="pago_fecha" class="form-control" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Forma de Pago *</label>
-                            <select id="pago_forma" class="form-select" onchange="mostrarCamposFormaPago()" required>
-                                <option value="">-- Seleccionar --</option>
-                                <option value="EFECTIVO">Efectivo</option>
-                                <option value="TRANSFERENCIA">Transferencia</option>
-                                <option value="CHEQUE">Cheque Propio</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Campos dinámicos según forma de pago -->
-                    <div id="camposFormaPago" class="mt-3"></div>
-
-                    <div class="mt-3">
-                        <label class="form-label">Observaciones</label>
-                        <textarea id="pago_observaciones" class="form-control" rows="2"></textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success" onclick="guardarPago()">
-                    <i class="fas fa-save"></i> Registrar Pago
-                </button>
-            </div>
-        </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Proveedor</th>
+            <th>Monto</th>
+            <th>Items</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="pagosListProveedor">
+          <tr>
+            <td colspan="7">
+              <div>...</div>
+              Cargando pagos...
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-</div>
 
-<!-- Modal Detalle Pago -->
-<div class="modal fade" id="detallePagoModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Detalle del Pago</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="detallePagoContent">
-                <!-- Se llena con JS -->
-            </div>
-        </div>
+    <!-- ============================================ -->
+    <!-- TAB ORDENES DE PAGO -->
+    <!-- ============================================ -->
+    <div id="ordenes-pago-list" class="tab-content">
+      <h2>Ordenes de Pago</h2>
+
+      <div class="pagos-toolbar">
+        <select id="filtroProveedorOrdenes">
+          <option value="">Todos los proveedores</option>
+        </select>
+        <input type="date" id="filtroOrdenesDesde">
+        <input type="date" id="filtroOrdenesHasta">
+        <select id="filtroEstadoOrdenes">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="autorizada">Autorizada</option>
+          <option value="pagada">Pagada</option>
+          <option value="cancelada">Cancelada</option>
+        </select>
+        <button class="btn btn-info" onclick="cargarOrdenesPago()">Filtrar</button>
+        <button class="btn btn-success" onclick="nuevaOrdenPago()">+ Nueva Orden</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Nro Orden</th>
+            <th>Fecha</th>
+            <th>Proveedor</th>
+            <th>Monto</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="ordenesPagoList">
+          <tr>
+            <td colspan="6">
+              <div>...</div>
+              Cargando ordenes de pago...
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-</div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/pagos-proveedores.js"></script>
-<script src="js/dashboard.js"></script>
+    <!-- ============================================ -->
+    <!-- TAB CHEQUES -->
+    <!-- ============================================ -->
+    <div id="cheques-list-proveedor" class="tab-content">
+      <h2>Gestion de Cheques Emitidos</h2>
+
+      <div class="pagos-toolbar">
+        <select id="filtroChequeProveedor">
+          <option value="">Todos los proveedores</option>
+        </select>
+        <select id="filtroChequeEstadoProveedor">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="depositado">Depositado</option>
+          <option value="acreditado">Acreditado</option>
+          <option value="rechazado">Rechazado</option>
+        </select>
+        <input type="date" id="filtroChequeDesdeProveedor">
+        <input type="date" id="filtroChequeHastaProveedor">
+        <button class="btn btn-info" onclick="cargarChequesProveedor()">Filtrar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Cheque Nro</th>
+            <th>Banco</th>
+            <th>Proveedor</th>
+            <th>Monto</th>
+            <th>Emision</th>
+            <th>Cobro</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="chequesListProveedor">
+          <tr>
+            <td colspan="8">
+              <div>...</div>
+              Cargando cheques...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TAB ESTADO DE CUENTA -->
+    <!-- ============================================ -->
+    <div id="estado-cuenta-proveedor" class="tab-content">
+      <h2>Estado de Cuenta por Proveedor</h2>
+
+      <div class="pagos-toolbar">
+        <select id="filtroEstadoCuentaProveedor">
+          <option value="">Seleccionar proveedor</option>
+        </select>
+        <input type="date" id="filtroEstadoCuentaDesde">
+        <input type="date" id="filtroEstadoCuentaHasta">
+        <button class="btn btn-info" onclick="cargarEstadoCuenta()">Generar Reporte</button>
+        <button class="btn btn-primary" onclick="imprimirEstadoCuenta()">Imprimir</button>
+      </div>
+
+      <div id="estado-cuenta-detalle">
+        <div class="estado-cuenta-header">
+          <h3>Estado de Cuenta</h3>
+          <div id="estado-cuenta-info"></div>
+        </div>
+        
+        <div class="estado-cuenta-resumen">
+          <div class="resumen-card">
+            <div class="resumen-title">Saldo Anterior</div>
+            <div class="resumen-value" id="saldo-anterior">$0.00</div>
+          </div>
+          <div class="resumen-card">
+            <div class="resumen-title">Compras</div>
+            <div class="resumen-value" id="total-compras">$0.00</div>
+          </div>
+          <div class="resumen-card">
+            <div class="resumen-title">Pagos</div>
+            <div class="resumen-value" id="total-pagos">$0.00</div>
+          </div>
+          <div class="resumen-card">
+            <div class="resumen-title">Saldo Actual</div>
+            <div class="resumen-value" id="saldo-actual">$0.00</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Documento</th>
+              <th>Descripcion</th>
+              <th>Debe</th>
+              <th>Haber</th>
+              <th>Saldo</th>
+            </tr>
+          </thead>
+          <tbody id="estadoCuentaDetalle">
+            <tr>
+              <td colspan="6">
+                Seleccione un proveedor y genere el reporte
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- MODALES -->
+    <!-- ============================================ -->
+
+    <!-- Modal Detalle Pago Proveedor -->
+    <div id="pagoModalProveedor" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Detalle del Pago</h3>
+          <span class="close" onclick="cerrarModal('pagoModalProveedor')">&times;</span>
+        </div>
+        <div id="pagoDetalleProveedor"></div>
+      </div>
+    </div>
+
+    <!-- Modal Detalle Cheque -->
+    <div id="chequeModalProveedor" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Gestion de Cheque</h3>
+          <span class="close" onclick="cerrarModal('chequeModalProveedor')">&times;</span>
+        </div>
+        <div id="chequeDetalleProveedor"></div>
+      </div>
+    </div>
+
+    <!-- Modal Nueva Orden de Pago -->
+    <div id="ordenPagoModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Nueva Orden de Pago</h3>
+          <span class="close" onclick="cerrarModal('ordenPagoModal')">&times;</span>
+        </div>
+        <div id="ordenPagoDetalle"></div>
+      </div>
+    </div>
+
+    <!-- Alerta global -->
+    <div id="globalAlertProveedor" class="alert"></div>
+  </div>
+  <script src="js/api.js"></script>
+  <script src="js/pagos-proveedores.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
 </body>
 </html>

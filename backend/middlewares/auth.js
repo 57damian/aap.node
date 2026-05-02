@@ -1,9 +1,10 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en_produccion';
+const JWT_SECRET = process.env.JWT_SECRET || 'una_frase_muy_larga_y_compleja_con_numeros_123!@#_cambiar_en_produccion';
 
 const verificarToken = async (req, res, next) => {
+    let token;
     try {
         // Obtener token del header
         const authHeader = req.headers['authorization'];
@@ -11,7 +12,7 @@ const verificarToken = async (req, res, next) => {
             return res.status(401).json({ error: 'Token no proporcionado' });
         }
 
-        const token = authHeader.replace('Bearer ', '');
+        token = authHeader.replace('Bearer ', '');
         
         // Verificar token
         const decoded = jwt.verify(token, JWT_SECRET);
@@ -35,6 +36,7 @@ const verificarToken = async (req, res, next) => {
             return res.status(401).json({ error: 'Token expirado' });
         }
         if (error.name === 'JsonWebTokenError') {
+            console.error('Error JWT:', error.message, 'token:', token);
             return res.status(401).json({ error: 'Token inválido' });
         }
         console.error('Error en verificación de token:', error);
