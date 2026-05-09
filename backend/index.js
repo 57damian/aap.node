@@ -122,11 +122,6 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Ruta principal
-app.get('/', (req, res) => {
-  res.json({ message: '🚀 API de Transformadores funcionando correctamente' });
-});
-
 // Middleware de autenticación para todas las rutas /api excepto /api/auth
 app.use('/api', (req, res, next) => {
     if (req.path.startsWith('/auth')) return next();
