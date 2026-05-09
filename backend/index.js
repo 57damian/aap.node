@@ -105,7 +105,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // En producción, servir el frontend desde la raíz
-const rutaFrontend = path.join(__dirname, '../frontend');
+const rutaFrontend = path.resolve(__dirname, '../frontend');
+console.log('🔍 DEBUG - __dirname:', __dirname);
+console.log('🔍 DEBUG - rutaFrontend:', rutaFrontend);
+console.log('🔍 DEBUG - cwd:', process.cwd());
 app.use(express.static(rutaFrontend));
 
 // Logging (desarrollo)
@@ -162,15 +165,47 @@ app.use('/api/reportes-oc', reportesOCRoutes);
 app.use('/api/ventas', ventasRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 
-// Ruta comodín para el frontend (Solo en producción)
-// Si la ruta no es /api/*, intenta servir el index.html del frontend
+// Endpoint de depuración para verificar rutas en Railway
+app.get('/debug-paths', (req, res) => {
+    const fs = require('fs');
+    const projectRoot = path.resolve(__dirname, '..');
+    let filesInRoot = [];
+    let frontendFiles = [];
+    let frontendExists = false;
+    let indexPathExists = false;
+    try {
+        filesInRoot = fs.readdirSync(projectRoot);
+        frontendExists = fs.existsSync(rutaFrontend);
+        if (frontendExists) {
+            frontendFiles = fs.readdirSync(rutaFrontend);
+            indexPathExists = fs.existsSync(path.join(rutaFrontend, 'index.html'));
+        }
+    } catch(e) {
+        return res.json({ error: e.message });
+    }
+    res.json({
+        cwd: process.cwd(),
+        __dirname: __dirname,
+        rutaFrontend: rutaFrontend,
+        projectRoot: projectRoot,
+        frontendExists: frontendExists,
+        indexPathExists: indexPathExists,
+        filesInProjectRoot: filesInRoot,
+        frontendFiles: frontendFiles
+    });
+});
+
+// Ruta comodín para el frontend
+// Cualquier ruta que no sea /api/* sirve el index.html del frontend
 app.get('*', (req, res) => {
     // No interferir con rutas de API
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'Ruta no encontrada' });
     }
     // Servir el index.html del frontend
-    res.sendFile(path.join(rutaFrontend, 'index.html'));
+    const indexPath = path.join(rutaFrontend, 'index.html');
+    console.log('📄 Sirviendo frontend:', indexPath);
+    res.sendFile(indexPath);
 });
 
 // Manejo de errores 404
