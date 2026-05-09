@@ -75,6 +75,14 @@ app.use(helmet({
                 'http://localhost:3000',
                 'http://127.0.0.1:3000'
             ];
+            // Agregar origen de Railway desde variable de entorno (si existe)
+            if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+                allowedOrigins.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+            }
+            // Permitir cualquier origen de Railway (*.railway.app)
+            if (origin && origin.endsWith('.railway.app')) {
+                return callback(null, true);
+            }
             // Permitir requests sin origin (como Postman, curl, etc.)
             if (!origin || allowedOrigins.indexOf(origin) !== -1) {
                 callback(null, true);
@@ -95,7 +103,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Servir archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use('/frontend', express.static(path.join(__dirname, '../frontend')));
+
+// En producción, servir el frontend desde la raíz
+const rutaFrontend = path.join(__dirname, '../frontend');
+app.use(express.static(rutaFrontend));
 
 // Logging (desarrollo)
 if (process.env.NODE_ENV !== 'production') {
@@ -155,6 +166,17 @@ app.use('/api/reportes', reportesRoutes);
 app.use('/api/reportes-oc', reportesOCRoutes);
 app.use('/api/ventas', ventasRoutes);
 app.use('/api/usuarios', usuariosRoutes);
+
+// Ruta comodín para el frontend (Solo en producción)
+// Si la ruta no es /api/*, intenta servir el index.html del frontend
+app.get('*', (req, res) => {
+    // No interferir con rutas de API
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'Ruta no encontrada' });
+    }
+    // Servir el index.html del frontend
+    res.sendFile(path.join(rutaFrontend, 'index.html'));
+});
 
 // Manejo de errores 404
 app.use((req, res) => {

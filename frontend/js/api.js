@@ -1,4 +1,13 @@
-const API_URL = 'http://localhost:3000';
+// Detectar automáticamente la URL del API según el entorno
+// En desarrollo: usa localhost:3000
+// En producción (Railway): usa la URL relativa (mismo dominio)
+const API_URL = (function() {
+  // Si estamos en un servidor (no archivo local), usamos URL relativa
+  if (window.location.hostname !== '127.0.0.1' && window.location.hostname !== 'localhost') {
+    return ''; // URL relativa: las peticiones van al mismo dominio
+  }
+  return 'http://localhost:3000';
+})();
 
 // =====================
 // API FETCH CON JWT
