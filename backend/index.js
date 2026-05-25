@@ -119,6 +119,17 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
+// Endpoint de prueba de base de datos
+app.get('/test-db', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.json({ ok: true, now: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Rutas públicas
 app.use('/api/auth', authRoutes);
 app.get('/health', (req, res) => {
