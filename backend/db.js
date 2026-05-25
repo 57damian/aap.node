@@ -1,25 +1,28 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+
+console.log('🔍 [db.js] Inicializando conexión...');
+console.log('🔍 DATABASE_URL existe?', !!process.env.DATABASE_URL);
+if (process.env.DATABASE_URL) {
+  // Mostrar solo los primeros 40 caracteres para no exponer credenciales completas
+  console.log('🔍 DATABASE_URL (inicio):', process.env.DATABASE_URL.substring(0, 40) + '...');
+  console.log('🔍 ¿Incluye sslmode=require?', process.env.DATABASE_URL.includes('sslmode=require'));
+} else {
+  console.error('❌ DATABASE_URL no está definida en el entorno');
+}
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('sslmode=require') 
+    ? { rejectUnauthorized: false } 
+    : false
 });
 
-console.log('DATABASE_URL existe?', !!process.env.DATABASE_URL);
-console.log('DATABASE_URL (primeros 30 caracteres):', process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) : 'NO DEFINIDA');
+pool.on('connect', () => {
+  console.log('✅ Pool conectado a la base de datos');
+});
 
-// Verificar conexión al iniciar
-pool.connect((err, client, release) => {
-    if (err) {
-        console.error('Error conectando a la base de datos:', err.stack);
-    } else {
-        console.log('✅ Conectado a PostgreSQL');
-        release();
-    }
+pool.on('error', (err) => {
+  console.error('❌ Error inesperado en el pool de BD:', err);
 });
 
 module.exports = pool;

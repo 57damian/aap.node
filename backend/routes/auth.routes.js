@@ -24,11 +24,19 @@ router.post('/login', [
 
         const { usuario, password } = req.body;
 
-        // Buscar usuario en la base de datos
-        const result = await pool.query(
-            'SELECT id, nombre_usuario, password_hash, rol, activo FROM usuarios WHERE nombre_usuario = $1',
-            [usuario]
-        );
+        console.log('🔍 Intento de login para usuario:', usuario);
+        console.log('🔍 DATABASE_URL desde auth.routes:', !!process.env.DATABASE_URL);
+        let result;
+        try {
+            result = await pool.query(
+                'SELECT id, nombre_usuario, password_hash, rol, activo FROM usuarios WHERE nombre_usuario = $1',
+                [usuario]
+            );
+            console.log('🔍 Resultado query:', result.rows.length);
+        } catch (err) {
+            console.error('❌ Error en query de login:', err);
+            return res.status(500).json({ error: 'Error en el servidor' });
+        }
 
         if (result.rows.length === 0) {
             return res.status(401).json({ error: 'Credenciales inválidas' });
