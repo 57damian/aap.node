@@ -104,8 +104,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Servir archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// En producción, servir el frontend desde la raíz
-const rutaFrontend = path.resolve(__dirname, '../frontend');
+// En producción, servir el frontend desde la carpeta public/
+const rutaFrontend = path.join(__dirname, 'public');
 console.log('🔍 DEBUG - __dirname:', __dirname);
 console.log('🔍 DEBUG - rutaFrontend:', rutaFrontend);
 console.log('🔍 DEBUG - cwd:', process.cwd());

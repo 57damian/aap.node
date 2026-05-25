@@ -1,0 +1,752 @@
+﻿﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usuarios - Transformadores ERP</title>
+  <!-- Bootstrap CSS primero -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Font Awesome para iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <!-- Tu CSS personalizado después -->
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- CSS adicional para arreglar modales -->
+  <link rel="stylesheet" href="css/modal-fix.css">
+</head>
+<body>
+
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+</div>
+
+<div class="container main-container">
+  <!-- Header Principal -->
+  <div class="usuarios-header">
+    <h1><i class="fas fa-users"></i> Gestión de Usuarios</h1>
+    <p>Administración de usuarios y permisos del sistema</p>
+  </div>
+
+  <!-- Filtros y Acciones -->
+  <div class="filtros-container">
+    <div class="filtros-row">
+      <div class="filtro-group">
+        <label class="filtro-label">Buscar usuario</label>
+        <input type="text" class="filtro-input" id="searchInput" 
+               placeholder="Nombre, email o rol...">
+      </div>
+      <div class="filtro-group">
+        <label class="filtro-label">Rol</label>
+        <select class="filtro-select" id="filtroRol">
+          <option value="">Todos los roles</option>
+          <option value="admin">Administrador</option>
+          <option value="empleado">Empleado</option>
+        </select>
+      </div>
+      <div class="filtro-group">
+        <label class="filtro-label">Estado</label>
+        <select class="filtro-select" id="filtroEstado">
+          <option value="">Todos los estados</option>
+          <option value="true">Activos</option>
+          <option value="false">Inactivos</option>
+        </select>
+      </div>
+    </div>
+    <div class="filtros-acciones">
+      <button class="btn btn-secondary" onclick="limpiarFiltros()">
+        <i class="fas fa-times"></i> Limpiar
+      </button>
+      <button class="btn btn-primary" onclick="cargarUsuarios()">
+        <i class="fas fa-search"></i> Buscar
+      </button>
+      <button class="btn btn-success" onclick="abrirModalUsuario()">
+        <i class="fas fa-plus"></i> Nuevo Usuario
+      </button>
+    </div>
+  </div>
+
+  <!-- Grid de Usuarios -->
+  <div class="usuarios-grid" id="usuariosGrid">
+    <!-- Se llena dinámicamente -->
+  </div>
+</div>
+
+<!-- Modal Usuario -->
+<div class="modal fade" id="usuarioModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content modal-content-modern">
+      <div class="modal-header modal-header-modern">
+        <h5 class="modal-title" id="modalTitle">Nuevo Usuario</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body modal-body-modern">
+        <form id="usuarioForm" class="form-container">
+          <input type="hidden" id="usuarioId">
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label required">Nombre de Usuario *</label>
+              <input type="text" class="form-control" id="nombre_usuario" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label required">Email *</label>
+              <input type="email" class="form-control" id="email" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label required">Contraseña *</label>
+              <div style="position: relative;">
+                <input type="password" class="form-control" id="password" required>
+                <button type="button" class="password-toggle" onclick="togglePassword('password')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); border: none; background: transparent; cursor: pointer; color: var(--gray-500);">
+                  <i class="fas fa-eye" id="password-eye"></i>
+                </button>
+              </div>
+              <div class="form-text">
+                <strong>Requisitos de contraseña:</strong><br>
+                • Mínimo 6 caracteres<br>
+                • Debe contener mayúsculas y minúsculas<br>
+                • Debe contener al menos un número
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Confirmar Contraseña *</label>
+              <div style="position: relative;">
+                <input type="password" class="form-control" id="confirm_password" required>
+                <button type="button" class="password-toggle" onclick="togglePassword('confirm_password')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); border: none; background: transparent; cursor: pointer; color: var(--gray-500);">
+                  <i class="fas fa-eye" id="confirm_password-eye"></i>
+                </button>
+              </div>
+              <div class="form-text">Debe coincidir con la contraseña</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label required">Rol *</label>
+              <select class="form-select" id="rol" required>
+                <option value="">Seleccionar rol</option>
+                <option value="admin">Administrador</option>
+                <option value="empleado">Empleado (solo Produccion)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Estado</label>
+              <select class="form-select" id="activo">
+                <option value="true">Activo</option>
+                <option value="false">Inactivo</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Nombre Completo</label>
+            <input type="text" class="form-control" id="nombre_completo" placeholder="Nombre y apellido">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Teléfono</label>
+            <input type="tel" class="form-control" id="telefono" placeholder="Código de área + número">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Observaciones</label>
+            <textarea class="form-control" id="observaciones" rows="3" placeholder="Notas adicionales sobre el usuario"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer modal-footer-modern">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btnGuardarUsuario" onclick="guardarUsuario()">
+          <i class="fas fa-save"></i> Guardar Usuario
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts en el orden correcto -->
+<!-- Primero jQuery (necesario para Bootstrap 5?) no, Bootstrap 5 no necesita jQuery -->
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Tus scripts -->
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/css-utilities.js"></script>
+
+<script>
+  let usuarios = [];
+  let usuarioModal;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // Inicializar modal de Bootstrap
+    const modalElement = document.getElementById('usuarioModal');
+    if (modalElement) {
+      usuarioModal = new bootstrap.Modal(modalElement);
+    }
+    
+    cargarUsuarios();
+    
+    // Event listeners para búsqueda en tiempo real
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+      searchInput.addEventListener('input', cssUtils.debounce(cargarUsuarios, 300));
+    }
+    
+    const filtroRol = document.getElementById('filtroRol');
+    if (filtroRol) {
+      filtroRol.addEventListener('change', cargarUsuarios);
+    }
+    
+    const filtroEstado = document.getElementById('filtroEstado');
+    if (filtroEstado) {
+      filtroEstado.addEventListener('change', cargarUsuarios);
+    }
+
+    // Validación en tiempo real de contraseñas
+    const passwordField = document.getElementById('password');
+    const confirmPasswordField = document.getElementById('confirm_password');
+    
+    if (passwordField) {
+      passwordField.addEventListener('input', function() {
+        validatePasswordStrength(this.value);
+        if (confirmPasswordField.value) {
+          validatePasswordMatch();
+        }
+      });
+    }
+    
+    if (confirmPasswordField) {
+      confirmPasswordField.addEventListener('input', validatePasswordMatch);
+    }
+  });
+
+  function validatePasswordStrength(password) {
+    const passwordField = document.getElementById('password');
+    let strength = 0;
+    let feedback = [];
+    
+    if (password.length >= 6) {
+      strength++;
+    } else {
+      feedback.push('Mínimo 6 caracteres');
+    }
+    
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) {
+      strength++;
+    } else {
+      feedback.push('Mayúsculas y minúsculas');
+    }
+    
+    if (/\d/.test(password)) {
+      strength++;
+    } else {
+      feedback.push('Al menos un número');
+    }
+    
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+      strength++;
+    }
+    
+    // Actualizar feedback visual
+    const formText = passwordField.parentElement.querySelector('.form-text');
+    if (formText) {
+      let strengthText = '';
+      let strengthColor = '';
+      
+      if (password.length > 0) {
+        if (strength <= 1) {
+          strengthText = 'Débil';
+          strengthColor = 'var(--danger-500)';
+        } else if (strength === 2) {
+          strengthText = 'Media';
+          strengthColor = 'var(--warning-500)';
+        } else if (strength === 3) {
+          strengthText = 'Buena';
+          strengthColor = 'var(--info-500)';
+        } else {
+          strengthText = 'Excelente';
+          strengthColor = 'var(--success-500)';
+        }
+        
+        formText.innerHTML = `
+          <strong>Requisitos de contraseña:</strong><br>
+          • Mínimo 6 caracteres<br>
+          • Debe contener mayúsculas y minúsculas<br>
+          • Debe contener al menos un número<br>
+          <strong style="color: ${strengthColor}">Fortaleza: ${strengthText}</strong>
+        `;
+      }
+    }
+  }
+
+  function validatePasswordMatch() {
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+    const confirmField = document.getElementById('confirm_password');
+    
+    if (confirmPassword.length > 0) {
+      if (password === confirmPassword) {
+        confirmField.classList.remove('is-invalid');
+        confirmField.style.borderColor = 'var(--success-500)';
+      } else {
+        confirmField.classList.add('is-invalid');
+        confirmField.style.borderColor = 'var(--danger-500)';
+      }
+    } else {
+      confirmField.classList.remove('is-invalid');
+      confirmField.style.borderColor = '';
+    }
+  }
+
+  async function cargarUsuarios() {
+    try {
+      cssUtils.showLoader('Cargando usuarios...');
+      
+      const params = new URLSearchParams();
+      const search = document.getElementById('searchInput')?.value.trim() || '';
+      const rol = document.getElementById('filtroRol')?.value || '';
+      const estado = document.getElementById('filtroEstado')?.value || '';
+      
+      if (search) params.append('search', search);
+      if (rol) params.append('rol', rol);
+      if (estado) params.append('activo', estado);
+      
+      const response = await apiFetch(`/api/usuarios?${params}`);
+      usuarios = response.usuarios || [];
+      
+      renderizarUsuarios();
+      cssUtils.hideLoader();
+      
+    } catch (error) {
+      cssUtils.hideLoader();
+      cssUtils.showNotification('Error al cargar usuarios', 'danger');
+      console.error('Error cargando usuarios:', error);
+    }
+  }
+
+  function renderizarUsuarios() {
+    const grid = document.getElementById('usuariosGrid');
+    if (!grid) return;
+    
+    if (usuarios.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <i class="fas fa-users fa-3x"></i>
+          </div>
+          <div class="empty-state-title">No se encontraron usuarios</div>
+          <div class="empty-state-description">
+            No hay usuarios que coincidan con los filtros aplicados
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    grid.innerHTML = usuarios.map(usuario => `
+      <div class="usuario-card ${usuario.rol}">
+        <div class="usuario-avatar">
+          ${usuario.nombre_usuario ? usuario.nombre_usuario.charAt(0).toUpperCase() : 'U'}
+        </div>
+        <div class="usuario-info">
+          <div class="usuario-nombre">${usuario.nombre_completo || usuario.nombre_usuario}</div>
+          <div class="usuario-email">${usuario.email}</div>
+        </div>
+        <div class="usuario-estado estado-${usuario.activo ? 'activo' : 'inactivo'}"></div>
+        <div class="usuario-acciones">
+          <button class="btn-usuario btn-editar" onclick="editarUsuario(${usuario.id})" title="Editar">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn-usuario btn-reset-password" onclick="resetPassword(${usuario.id})" title="Resetear contraseña">
+            <i class="fas fa-key"></i>
+          </button>
+          <button class="btn-usuario btn-eliminar" onclick="eliminarUsuario(${usuario.id})" title="Eliminar">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function getRolLabel(rol) {
+    const roles = {
+      'admin': 'Administrador',
+      'control': 'Control',
+      'operario': 'Operario',
+      'empleado': 'Empleado'
+    };
+    return roles[rol] || rol;
+  }
+
+  function abrirModalUsuario(usuarioId = null) {
+  try {
+    console.log('Abriendo modal, usuarioId:', usuarioId);
+    
+    const modalElement = document.getElementById('usuarioModal');
+    if (!modalElement) {
+      console.error('No se encontró el elemento del modal');
+      return;
+    }
+
+    // Preparar el formulario
+    const form = document.getElementById('usuarioForm');
+    const modalTitle = document.getElementById('modalTitle');
+    
+    // Resetear formulario
+    if (form) form.reset();
+    
+    // Limpiar clases de error
+    document.querySelectorAll('.is-invalid').forEach(el => {
+      el.classList.remove('is-invalid');
+    });
+    
+    // Resetear estilos de campos de contraseña
+    const passwordField = document.getElementById('password');
+    const confirmField = document.getElementById('confirm_password');
+    if (passwordField) {
+      passwordField.style.borderColor = '';
+      passwordField.type = 'password';
+      document.getElementById('password-eye').className = 'fas fa-eye';
+    }
+    if (confirmField) {
+      confirmField.style.borderColor = '';
+      confirmField.type = 'password';
+      document.getElementById('confirm_password-eye').className = 'fas fa-eye';
+    }
+    
+    // Configurar según sea edición o nuevo
+    if (usuarioId) {
+      // MODO EDICIÓN
+      const usuario = usuarios.find(u => u.id === usuarioId);
+      if (usuario) {
+        document.getElementById('usuarioId').value = usuario.id;
+        document.getElementById('nombre_usuario').value = usuario.nombre_usuario || '';
+        document.getElementById('email').value = usuario.email || '';
+        document.getElementById('rol').value = usuario.rol || '';
+        document.getElementById('activo').value = usuario.activo ? 'true' : 'false';
+        document.getElementById('nombre_completo').value = usuario.nombre_completo || '';
+        document.getElementById('telefono').value = usuario.telefono || '';
+        document.getElementById('observaciones').value = usuario.observaciones || '';
+        
+        if (modalTitle) modalTitle.textContent = 'Editar Usuario';
+        
+        // Ocultar campos de contraseña
+        const passwordGroup = document.getElementById('password').closest('.form-group');
+        const confirmGroup = document.getElementById('confirm_password').closest('.form-group');
+        if (passwordGroup) passwordGroup.style.display = 'none';
+        if (confirmGroup) confirmGroup.style.display = 'none';
+        
+        document.getElementById('password').required = false;
+        document.getElementById('confirm_password').required = false;
+      }
+    } else {
+      // MODO NUEVO USUARIO
+      if (modalTitle) modalTitle.textContent = 'Nuevo Usuario';
+      document.getElementById('usuarioId').value = '';
+      
+      // Mostrar campos de contraseña
+      const passwordGroup = document.getElementById('password').closest('.form-group');
+      const confirmGroup = document.getElementById('confirm_password').closest('.form-group');
+      if (passwordGroup) passwordGroup.style.display = 'block';
+      if (confirmGroup) confirmGroup.style.display = 'block';
+      
+      document.getElementById('password').required = true;
+      document.getElementById('confirm_password').required = true;
+      
+      // Valor por defecto para activo
+      const activoSelect = document.getElementById('activo');
+      if (activoSelect) activoSelect.value = 'true';
+    }
+    
+    // Mostrar modal usando Bootstrap
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+      // Limpiar cualquier backdrop residual ANTES de crear el nuevo modal
+      document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+        backdrop.remove();
+      });
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      
+      // Crear nueva instancia del modal
+      if (usuarioModal) {
+        try {
+          usuarioModal.dispose();
+        } catch (e) {
+          console.log('Error al desechar modal anterior:', e);
+        }
+      }
+      
+      usuarioModal = new bootstrap.Modal(modalElement, {
+        backdrop: true,
+        keyboard: true,
+        focus: true
+      });
+      
+      usuarioModal.show();
+      
+      // Forzar focus en el primer campo después de que el modal se muestre
+      setTimeout(() => {
+        const firstInput = modalElement.querySelector('input:not([disabled]):not([readonly])');
+        if (firstInput) {
+          firstInput.focus();
+          // Forzar un evento de focus para asegurar que el input esté activo
+          firstInput.dispatchEvent(new Event('focus'));
+        }
+      }, 300);
+      
+    } else {
+      console.error('Bootstrap no disponible');
+      alert('Error: Bootstrap no está cargado correctamente');
+    }
+    
+    console.log('Modal abierto correctamente');
+    
+  } catch (error) {
+    console.error('Error al abrir modal:', error);
+    alert('Error al abrir el modal. Por favor recarga la página.');
+  }
+}
+
+  function validarFormulario() {
+    const nombreUsuario = document.getElementById('nombre_usuario')?.value.trim() || '';
+    const email = document.getElementById('email')?.value.trim() || '';
+    const password = document.getElementById('password')?.value || '';
+    const confirmPassword = document.getElementById('confirm_password')?.value || '';
+    const rol = document.getElementById('rol')?.value || '';
+    
+    // Resetear errores
+    document.querySelectorAll('.form-control').forEach(input => {
+      input.classList.remove('is-invalid');
+    });
+    
+    let isValid = true;
+    let errorMessage = '';
+    
+    // Validar nombre de usuario
+    if (!nombreUsuario) {
+      document.getElementById('nombre_usuario')?.classList.add('is-invalid');
+      errorMessage = 'El nombre de usuario es obligatorio';
+      isValid = false;
+    } else if (nombreUsuario.length < 3) {
+      document.getElementById('nombre_usuario')?.classList.add('is-invalid');
+      errorMessage = 'El nombre de usuario debe tener al menos 3 caracteres';
+      isValid = false;
+    }
+    
+    // Validar email
+    if (!email) {
+      document.getElementById('email')?.classList.add('is-invalid');
+      errorMessage = errorMessage || 'El email es obligatorio';
+      isValid = false;
+    } else if (!isValidEmail(email)) {
+      document.getElementById('email')?.classList.add('is-invalid');
+      errorMessage = errorMessage || 'El formato del email no es válido';
+      isValid = false;
+    }
+    
+    // Validar rol
+    if (!rol) {
+      document.getElementById('rol')?.classList.add('is-invalid');
+      errorMessage = errorMessage || 'Debe seleccionar un rol';
+      isValid = false;
+    }
+    
+    // Validar contraseña solo para nuevos usuarios
+    const usuarioId = document.getElementById('usuarioId')?.value || '';
+    if (!usuarioId) {
+      if (!password) {
+        document.getElementById('password')?.classList.add('is-invalid');
+        errorMessage = errorMessage || 'La contraseña es obligatoria';
+        isValid = false;
+      } else if (password.length < 6) {
+        document.getElementById('password')?.classList.add('is-invalid');
+        errorMessage = errorMessage || 'La contraseña debe tener al menos 6 caracteres';
+        isValid = false;
+      } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+        document.getElementById('password')?.classList.add('is-invalid');
+        errorMessage = errorMessage || 'La contraseña debe contener mayúsculas, minúsculas y números';
+        isValid = false;
+      }
+      
+      if (password !== confirmPassword) {
+        document.getElementById('confirm_password')?.classList.add('is-invalid');
+        errorMessage = errorMessage || 'Las contraseñas no coinciden';
+        isValid = false;
+      }
+    }
+    
+    if (!isValid) {
+      cssUtils.showNotification(errorMessage, 'warning');
+    }
+    
+    return isValid;
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  async function guardarUsuario() {
+    try {
+      // Validar formulario
+      if (!validarFormulario()) {
+        return;
+      }
+
+      // Mostrar estado de carga
+      const btnGuardar = document.getElementById('btnGuardarUsuario');
+      const textoOriginal = btnGuardar.innerHTML;
+      btnGuardar.disabled = true;
+      btnGuardar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+
+      const usuarioId = document.getElementById('usuarioId').value;
+      const formData = {
+        nombre_usuario: document.getElementById('nombre_usuario').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        rol: document.getElementById('rol').value,
+        activo: document.getElementById('activo').value === 'true',
+        nombre_completo: document.getElementById('nombre_completo').value.trim(),
+        telefono: document.getElementById('telefono').value.trim(),
+        observaciones: document.getElementById('observaciones').value.trim()
+      };
+
+      // Agregar contraseña solo para nuevos usuarios
+      if (!usuarioId) {
+        formData.password = document.getElementById('password').value;
+      }
+
+      let response;
+      if (usuarioId) {
+        // Actualizar usuario existente
+        response = await apiFetch(`/api/usuarios/${usuarioId}`, {
+          method: 'PUT',
+          body: JSON.stringify(formData)
+        });
+      } else {
+        // Crear nuevo usuario
+        response = await apiFetch('/api/usuarios', {
+          method: 'POST',
+          body: JSON.stringify(formData)
+        });
+      }
+
+      // Cerrar modal
+      if (usuarioModal) {
+        usuarioModal.hide();
+      }
+
+      // Mostrar notificación de éxito
+      cssUtils.showNotification(
+        usuarioId ? 'Usuario actualizado exitosamente' : 'Usuario creado exitosamente', 
+        'success'
+      );
+
+      // Recargar lista de usuarios
+      await cargarUsuarios();
+
+    } catch (error) {
+      console.error('Error guardando usuario:', error);
+      
+      // Mostrar error específico del backend si existe
+      const errorMessage = error.error || error.message || 'Error al guardar usuario';
+      cssUtils.showNotification(errorMessage, 'danger');
+      
+    } finally {
+      // Restaurar botón
+      const btnGuardar = document.getElementById('btnGuardarUsuario');
+      btnGuardar.disabled = false;
+      btnGuardar.innerHTML = '<i class="fas fa-save"></i> Guardar Usuario';
+    }
+  }
+
+  async function editarUsuario(usuarioId) {
+    abrirModalUsuario(usuarioId);
+  }
+
+  async function resetPassword(usuarioId) {
+    if (!confirm('¿Está seguro de que desea resetear la contraseña de este usuario?')) {
+      return;
+    }
+    
+    try {
+      await apiFetch(`/api/usuarios/${usuarioId}/reset-password`, { 
+        method: 'POST' 
+      });
+      cssUtils.showNotification('Contraseña reseteada exitosamente', 'success');
+    } catch (error) {
+      cssUtils.showNotification('Error al resetear contraseña: ' + (error.error || 'Error desconocido'), 'danger');
+      console.error('Error reseteando contraseña:', error);
+    }
+  }
+
+  async function eliminarUsuario(usuarioId) {
+    const usuario = usuarios.find(u => u.id === usuarioId);
+    if (!usuario) return;
+    
+    if (!confirm(`¿Está seguro de que desea eliminar al usuario "${usuario.nombre_usuario}"?`)) {
+      return;
+    }
+    
+    try {
+      await apiFetch(`/api/usuarios/${usuarioId}`, { 
+        method: 'DELETE' 
+      });
+      cssUtils.showNotification('Usuario eliminado exitosamente', 'success');
+      await cargarUsuarios();
+    } catch (error) {
+      cssUtils.showNotification('Error al eliminar usuario: ' + (error.error || 'Error desconocido'), 'danger');
+      console.error('Error eliminando usuario:', error);
+    }
+  }
+
+  function limpiarFiltros() {
+    const searchInput = document.getElementById('searchInput');
+    const filtroRol = document.getElementById('filtroRol');
+    const filtroEstado = document.getElementById('filtroEstado');
+    
+    if (searchInput) searchInput.value = '';
+    if (filtroRol) filtroRol.value = '';
+    if (filtroEstado) filtroEstado.value = '';
+    
+    cargarUsuarios();
+  }
+
+  function logout() {
+    localStorage.clear();
+    window.location.href = 'login.html';
+  }
+
+  function togglePassword(fieldId) {
+    const passwordField = document.getElementById(fieldId);
+    const eyeIcon = document.getElementById(fieldId + '-eye');
+    
+    if (passwordField.type === 'password') {
+      passwordField.type = 'text';
+      eyeIcon.className = 'fas fa-eye-slash';
+    } else {
+      passwordField.type = 'password';
+      eyeIcon.className = 'fas fa-eye';
+    }
+  }
+</script>
+
+<!-- dashboard.js al final -->
+<script src="js/dashboard.js"></script>
+</body>
+</html>

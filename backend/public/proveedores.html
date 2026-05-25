@@ -1,0 +1,190 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proveedores</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .stats-grid { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .stat-card { background: #f8f9fa; border-radius: 0.5rem; padding: 1rem; flex: 1; min-width: 150px; }
+        .filtros-container { background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; }
+        .filtros-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
+        .filtro-group { flex: 1; min-width: 200px; }
+        .filtros-acciones { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+        .proveedores-table { width: 100%; border-collapse: collapse; }
+        .proveedores-table th { background: #343a40; color: white; padding: 0.75rem; }
+        .proveedores-table td { padding: 0.75rem; border-bottom: 1px solid #dee2e6; }
+    </style>
+</head>
+<body>
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'" class="active">Proveedores</button>
+    <button data-roles="admin,control" onclick="window.location.href='facturas-compra.html'">Facturas</button>
+    <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'">Pagos</button>
+    <button data-roles="admin,control" onclick="window.location.href='stock.html'">Stock</button>
+    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
+    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
+    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+</div>
+
+    <div class="container mt-4">
+        <!-- Estadísticas -->
+        <div class="stats-grid">
+            <div class="stat-card"><span>Total Proveedores</span><h3 id="totalProveedores">0</h3></div>
+            <div class="stat-card"><span>Activos</span><h3 id="proveedoresActivos">0</h3></div>
+            <div class="stat-card"><span>Deuda Total</span><h3 id="deudaTotal">$0</h3></div>
+            <div class="stat-card"><span>Compras del Mes</span><h3 id="comprasMes">0</h3></div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="filtros-container">
+            <div class="filtros-row">
+                <div class="filtro-group">
+                    <label>Buscar</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Nombre, CUIT, email...">
+                </div>
+                <div class="filtro-group">
+                    <label>Estado</label>
+                    <select class="form-select" id="filtroEstado">
+                        <option value="todos">Todos</option>
+                        <option value="activos" selected>Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                    </select>
+                </div>
+                <div class="filtro-group">
+                    <label>Deuda</label>
+                    <select class="form-select" id="filtroDeuda">
+                        <option value="todos">Todos</option>
+                        <option value="con-deuda">Con deuda</option>
+                        <option value="sin-deuda">Sin deuda</option>
+                    </select>
+                </div>
+            </div>
+            <div class="filtros-acciones">
+                <button class="btn btn-secondary" onclick="limpiarFiltros()">Limpiar</button>
+                <button class="btn btn-primary" onclick="cargarProveedores()">Buscar</button>
+                <button class="btn btn-success" onclick="abrirModalProveedor()">Nuevo Proveedor</button>
+            </div>
+        </div>
+
+        <!-- Tabla -->
+        <div class="table-responsive">
+            <table class="table table-hover proveedores-table">
+                <thead>
+                    <tr>
+                        <th>Proveedor</th>
+                        <th>Contacto</th>
+                        <th>Compras</th>
+                        <th>Deuda</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="proveedoresTableBody">
+                    <tr><td colspan="6" class="text-center">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Proveedor -->
+    <div class="modal fade" id="proveedorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Nuevo Proveedor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="proveedorForm">
+                        <input type="hidden" id="proveedorId">
+                        <div class="mb-3">
+                            <label>Nombre *</label>
+                            <input type="text" class="form-control" id="nombre" required>
+                        </div>
+                        <div class="mb-3">
+                            <label>CUIT</label>
+                            <input type="text" class="form-control" id="cuit" placeholder="XX-XXXXXXXX-X">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label>Teléfono</label>
+                                <input type="text" class="form-control" id="telefono">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label>Email</label>
+                                <input type="email" class="form-control" id="email">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label>Dirección</label>
+                            <input type="text" class="form-control" id="direccion">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label>Contacto</label>
+                                <input type="text" class="form-control" id="contacto">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label>Condición IVA</label>
+                                <select class="form-select" id="condicion_iva">
+                                    <option>RESPONSABLE INSCRIPTO</option>
+                                    <option>MONOTRIBUTO</option>
+                                    <option>EXENTO</option>
+                                    <option>CONSUMIDOR FINAL</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label>Observaciones</label>
+                            <textarea class="form-control" id="observaciones" rows="2"></textarea>
+                        </div>
+                        <div class="mb-3" id="estadoField" style="display:none;">
+                            <label>Estado</label>
+                            <select class="form-select" id="activo">
+                                <option value="true">Activo</option>
+                                <option value="false">Inactivo</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarProveedor()">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Detalle -->
+    <div class="modal fade" id="detalleModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Detalle del Proveedor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detalleContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/proveedores.js"></script>
+</body>
+</html>
