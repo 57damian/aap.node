@@ -101,6 +101,30 @@ app.use(helmet({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// ========== ENDPOINT DE DIAGNÓSTICO PARA LOGIN ==========
+app.post('/test-login', async (req, res) => {
+  const { nombre_usuario, password } = req.body;
+  console.log('🧪 Test login para:', nombre_usuario);
+  try {
+    const result = await pool.query('SELECT id, nombre_usuario, password_hash FROM usuarios WHERE nombre_usuario = $1', [nombre_usuario]);
+    if (result.rows.length === 0) {
+      return res.json({ ok: false, mensaje: 'Usuario no existe' });
+    }
+    const user = result.rows[0];
+    const bcrypt = require('bcryptjs');
+    const match = await bcrypt.compare(password, user.password_hash);
+    res.json({
+      ok: true,
+      usuarioExiste: true,
+      contrasenaValida: match,
+      hashAlmacenado: user.password_hash.substring(0, 20) + '...'
+    });
+  } catch (err) {
+    console.error('Error en test-login:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Servir archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
