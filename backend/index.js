@@ -125,6 +125,28 @@ app.post('/test-login', async (req, res) => {
   }
 });
 
+// ========== ENDPOINT PARA RESETEAR CONTRASEÑA ADMIN ==========
+app.post('/reset-password-admin', async (req, res) => {
+  console.log('🔑 Solicitando reset de contraseña admin');
+  try {
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash('admin123', 10);
+    console.log('Hash generado:', hash);
+    const result = await pool.query(
+      "UPDATE usuarios SET password_hash = $1 WHERE nombre_usuario = 'admin' RETURNING id, nombre_usuario",
+      [hash]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, mensaje: 'Usuario admin no encontrado' });
+    }
+    console.log('✅ Contraseña de admin actualizada a: admin123');
+    res.json({ ok: true, mensaje: 'Contraseña actualizada a admin123', usuario: result.rows[0] });
+  } catch (err) {
+    console.error('❌ Error reseteando contraseña:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Servir archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
