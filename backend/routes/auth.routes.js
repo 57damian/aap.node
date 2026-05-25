@@ -8,6 +8,7 @@ const { verificarToken, authorize } = require('../middlewares/auth');
 
 // Configuración JWT (debería estar en variables de entorno)
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en_produccion';
+console.log('🔑 JWT_SECRET (auth.routes) existe?', !!process.env.JWT_SECRET);
 const JWT_EXPIRES_IN = '8h';
 
 // LOGIN

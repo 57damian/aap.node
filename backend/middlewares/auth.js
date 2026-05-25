@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'una_frase_muy_larga_y_compleja_con_numeros_123!@#_cambiar_en_produccion';
+const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en_produccion';
+console.log('🔑 JWT_SECRET (middleware) existe?', !!process.env.JWT_SECRET);
 
 const verificarToken = async (req, res, next) => {
     let token;
