@@ -42,6 +42,7 @@ const pagosClientesRoutes = require('./routes/pagos-clientes.routes');    // Pag
 // ========================================================================
 
 const app = express();
+app.set('trust proxy', 1); // Confiar en proxy inverso (Railway)
 const port = process.env.PORT || 3000;
 
 // Configuración de seguridad
