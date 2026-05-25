@@ -15,45 +15,39 @@ router.post('/login', [
     body('usuario').notEmpty().trim().escape(),
     body('password').notEmpty()
 ], async (req, res) => {
+    console.log('🔐 Iniciando proceso de login');
+    const { usuario, password } = req.body;
+    console.log('Usuario recibido:', usuario);
+
     try {
-        // Validar inputs
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const { usuario, password } = req.body;
-
-        console.log('🔍 Intento de login para usuario:', usuario);
-        console.log('🔍 DATABASE_URL desde auth.routes:', !!process.env.DATABASE_URL);
-        let result;
-        try {
-            result = await pool.query(
-                'SELECT id, nombre_usuario, password_hash, rol, activo FROM usuarios WHERE nombre_usuario = $1',
-                [usuario]
-            );
-            console.log('🔍 Resultado query:', result.rows.length);
-        } catch (err) {
-            console.error('❌ Error en query de login:', err);
-            return res.status(500).json({ error: 'Error en el servidor' });
-        }
+        console.log('Consultando base de datos...');
+        const result = await pool.query('SELECT * FROM usuarios WHERE nombre_usuario = $1', [usuario]);
+        console.log('Resultado query:', result.rows.length);
 
         if (result.rows.length === 0) {
+            console.log('❌ Usuario no encontrado');
             return res.status(401).json({ error: 'Credenciales inválidas' });
         }
 
         const user = result.rows[0];
+        console.log('Usuario encontrado, hash (primeros 20):', user.password_hash.substring(0, 20));
 
         // Verificar si el usuario está activo
         if (!user.activo) {
+            console.log('❌ Usuario inactivo');
             return res.status(401).json({ error: 'Usuario inactivo' });
         }
 
-        // Verificar contraseña
-        const passwordValida = await bcrypt.compare(password, user.password_hash);
-        if (!passwordValida) {
+        console.log('Comparando contraseña...');
+        const match = await bcrypt.compare(password, user.password_hash);
+        console.log('¿Coincide?', match);
+
+        if (!match) {
+            console.log('❌ Contraseña incorrecta');
             return res.status(401).json({ error: 'Credenciales inválidas' });
         }
+
+        console.log('✅ Contraseña válida. Generando token...');
 
         // Actualizar último acceso
         await pool.query(
@@ -71,6 +65,7 @@ router.post('/login', [
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
         );
+        console.log('Token generado correctamente');
 
         // Responder con token y datos del usuario (sin hash)
         res.json({
@@ -82,10 +77,11 @@ router.post('/login', [
                 rol: user.rol
             }
         });
+        console.log('✅ Respuesta enviada al cliente');
 
     } catch (error) {
-        console.error('Error en login:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
+        console.error('❌ Error en login:', error);
+        res.status(500).json({ error: 'Error interno del servidor', detalle: error.message });
     }
 });
 
