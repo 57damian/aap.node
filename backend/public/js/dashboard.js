@@ -10,10 +10,10 @@
   try {
     const usuario = JSON.parse(userStr);
     
-    // Verificar si es empleado intentando acceder al dashboard
+    // Verificar si es empleado u operario intentando acceder al dashboard
     const currentPage = window.location.pathname.split('/').pop();
-    if (usuario.rol === 'empleado' && currentPage === 'dashboard.html') {
-      // Redirigir empleados a producción
+    if ((usuario.rol === 'empleado' || usuario.rol === 'operario') && currentPage === 'dashboard.html') {
+      // Redirigir empleados y operarios a producción
       window.location.href = 'produccion.html';
       return null;
     }
