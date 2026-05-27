@@ -10,7 +10,7 @@
   <div class="navbar">
     <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
     <div class="navbar-menu">
-      <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'">Dashboard</button>
+      <button data-roles="admin,control" onclick="window.location.href='dashboard.html'">Dashboard</button>
       <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
       <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
       <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
@@ -320,6 +320,10 @@
         verificarEstadoSistema();
       }, 5 * 60 * 1000);
     });
+  </script>
+  <script src="js/roleGuard.js"></script>
+  <script>
+    verificarRolPagina(['admin', 'control']);
   </script>
 </body>
 </html>
