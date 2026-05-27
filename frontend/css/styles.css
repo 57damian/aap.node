@@ -1252,6 +1252,83 @@ body:has(.login-container) {
   }
 }
 
+/* ============================================ */
+/* ESTILOS PARA TARJETAS DE USUARIO (usuarios.html) */
+/* ============================================ */
+.usuario-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: white;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s;
+}
+.usuario-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.usuario-avatar {
+  width: 48px;
+  height: 48px;
+  background: var(--primary-100, #e0e7ff);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.2rem;
+  color: var(--primary-700, #1e3a8a);
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+.usuario-info {
+  flex: 1;
+  min-width: 0;
+}
+.usuario-nombre {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: var(--gray-800);
+}
+.usuario-email {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+.usuario-estado {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin: 0 1rem;
+  flex-shrink: 0;
+}
+.estado-activo { background-color: #28a745; }
+.estado-inactivo { background-color: #dc3545; }
+.usuario-acciones {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.btn-usuario {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-editar { color: #0d6efd; }
+.btn-reset-password { color: #ffc107; }
+.btn-eliminar { color: #dc3545; }
+.btn-usuario:hover {
+  background: #f8f9fa;
+}
+
 /* Mejoras de accesibilidad */
 @media (prefers-reduced-motion: reduce) {
   * {

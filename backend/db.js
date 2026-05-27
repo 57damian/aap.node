@@ -12,9 +12,7 @@ if (process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('sslmode=require') 
-    ? { rejectUnauthorized: false } 
-    : false
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 pool.on('connect', () => {

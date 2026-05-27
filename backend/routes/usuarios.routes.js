@@ -423,30 +423,49 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
 });
 
 // =============================
-// RESET PASSWORD
+// RESET PASSWORD (con opción de nueva contraseña)
 // POST /api/usuarios/:id/reset-password
 // =============================
 router.post('/:id/reset-password', authorize(['admin']), async (req, res) => {
   const client = await pool.connect();
   
   try {
+    const { nueva_password } = req.body; // Opcional
+    const usuarioId = req.params.id;
+    
     // Verificar que el usuario existe
     const usuarioExistente = await client.query(
       'SELECT id, nombre_usuario, email FROM usuarios WHERE id = $1',
-      [req.params.id]
+      [usuarioId]
     );
     
     if (usuarioExistente.rows.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
-    // Generar nueva contraseña temporal
-    const newPassword = Math.random().toString(36).slice(-8);
-    const passwordHash = await bcrypt.hash(newPassword, 12);
+    let passwordFinal;
+    let esGenerada = false;
+    
+    if (nueva_password && nueva_password.trim() !== '') {
+      // Validar fortaleza de la nueva contraseña
+      if (nueva_password.length < 6) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      }
+      if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(nueva_password)) {
+        return res.status(400).json({ error: 'La contraseña debe contener mayúsculas, minúsculas y números' });
+      }
+      passwordFinal = nueva_password;
+    } else {
+      // Generar aleatoria (comportamiento original)
+      passwordFinal = Math.random().toString(36).slice(-8);
+      esGenerada = true;
+    }
+    
+    const passwordHash = await bcrypt.hash(passwordFinal, 12);
     
     await client.query(
       'UPDATE usuarios SET password_hash = $1, updated_at = NOW() WHERE id = $2',
-      [passwordHash, req.params.id]
+      [passwordHash, usuarioId]
     );
     
     await client.query('COMMIT');
@@ -454,8 +473,8 @@ router.post('/:id/reset-password', authorize(['admin']), async (req, res) => {
     const usuario = usuarioExistente.rows[0];
     
     res.json({
-      message: 'Contraseña reseteada exitosamente',
-      nueva_password: newPassword,
+      message: esGenerada ? 'Contraseña generada aleatoriamente' : 'Contraseña actualizada exitosamente',
+      nueva_password: passwordFinal,
       usuario: {
         id: usuario.id,
         nombre_usuario: usuario.nombre_usuario,
@@ -514,7 +533,7 @@ router.put('/cambiar-password', authorize(['admin', 'control', 'operario', 'empl
     }
     
     // Encriptar nueva contraseña
-    const salt = await bcrypt.genSalt(12, null, null, 'b');
+    const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password_nueva, salt);
     
     await client.query(
