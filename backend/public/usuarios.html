@@ -30,6 +30,9 @@
     <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
     <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
   </div>
+  <button class="btn btn-outline-info btn-sm" onclick="abrirModalCambiarPassword()" title="Cambiar mi contraseña">
+    <i class="fas fa-key"></i> Cambiar Contraseña
+  </button>
   <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
 </div>
 
@@ -179,6 +182,67 @@
   </div>
 </div>
 
+<!-- Modal Cambiar Contraseña -->
+<div class="modal fade" id="cambiarPasswordModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Cambiar mi contraseña</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="cambiarPasswordForm">
+          <div class="mb-3">
+            <label class="form-label">Contraseña actual</label>
+            <input type="password" class="form-control" id="pass_actual" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nueva contraseña</label>
+            <input type="password" class="form-control" id="pass_nueva" required>
+            <div class="form-text">Mínimo 6 caracteres, mayúsculas, minúsculas y número.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Confirmar nueva contraseña</label>
+            <input type="password" class="form-control" id="pass_confirm" required>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="cambiarMiPassword()">Actualizar contraseña</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para restablecer contraseña de usuario -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Restablecer contraseña</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Ingrese la <strong>nueva contraseña</strong> para el usuario <span id="resetUsuarioNombre" class="fw-bold"></span></p>
+        <div class="mb-3">
+          <label class="form-label">Nueva contraseña</label>
+          <input type="password" class="form-control" id="resetNuevaPassword" required>
+          <div class="form-text">Mínimo 6 caracteres, mayúsculas, minúsculas y números.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Confirmar contraseña</label>
+          <input type="password" class="form-control" id="resetConfirmPassword" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmarReset">Guardar nueva contraseña</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Scripts en el orden correcto -->
 <!-- Primero jQuery (necesario para Bootstrap 5?) no, Bootstrap 5 no necesita jQuery -->
 <!-- Bootstrap JS -->
@@ -191,12 +255,27 @@
 <script>
   let usuarios = [];
   let usuarioModal;
+  let cambiarPasswordModal;
+  let resetPasswordModal;
+  let usuarioIdParaReset = null;
 
   document.addEventListener('DOMContentLoaded', function() {
-    // Inicializar modal de Bootstrap
+    // Inicializar modales de Bootstrap
     const modalElement = document.getElementById('usuarioModal');
     if (modalElement) {
       usuarioModal = new bootstrap.Modal(modalElement);
+    }
+    
+    const modalCambio = document.getElementById('cambiarPasswordModal');
+    if (modalCambio) {
+      cambiarPasswordModal = new bootstrap.Modal(modalCambio);
+    }
+    
+    // Inicializar modal de reset de contraseña
+    const modalReset = document.getElementById('resetPasswordModal');
+    if (modalReset) {
+      resetPasswordModal = new bootstrap.Modal(modalReset);
+      document.getElementById('btnConfirmarReset').addEventListener('click', confirmarResetPassword);
     }
     
     cargarUsuarios();
@@ -679,19 +758,107 @@
     abrirModalUsuario(usuarioId);
   }
 
-  async function resetPassword(usuarioId) {
-    if (!confirm('¿Está seguro de que desea resetear la contraseña de este usuario?')) {
+  function resetPassword(usuarioId) {
+    const usuario = usuarios.find(u => u.id === usuarioId);
+    if (!usuario) return;
+    
+    usuarioIdParaReset = usuarioId;
+    document.getElementById('resetUsuarioNombre').innerText = usuario.nombre_usuario;
+    document.getElementById('resetNuevaPassword').value = '';
+    document.getElementById('resetConfirmPassword').value = '';
+    
+    if (resetPasswordModal) {
+      resetPasswordModal.show();
+    }
+  }
+
+  async function confirmarResetPassword() {
+    const nuevaPassword = document.getElementById('resetNuevaPassword').value;
+    const confirmPassword = document.getElementById('resetConfirmPassword').value;
+    
+    // Validaciones
+    if (!nuevaPassword || !confirmPassword) {
+      cssUtils.showNotification('Debe ingresar y confirmar la contraseña', 'warning');
+      return;
+    }
+    if (nuevaPassword !== confirmPassword) {
+      cssUtils.showNotification('Las contraseñas no coinciden', 'warning');
+      return;
+    }
+    if (nuevaPassword.length < 6) {
+      cssUtils.showNotification('La contraseña debe tener al menos 6 caracteres', 'warning');
+      return;
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(nuevaPassword)) {
+      cssUtils.showNotification('La contraseña debe tener mayúsculas, minúsculas y números', 'warning');
       return;
     }
     
     try {
-      await apiFetch(`/api/usuarios/${usuarioId}/reset-password`, { 
-        method: 'POST' 
+      await apiFetch(`/api/usuarios/${usuarioIdParaReset}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ nueva_password: nuevaPassword })
       });
-      cssUtils.showNotification('Contraseña reseteada exitosamente', 'success');
+      cssUtils.showNotification('Contraseña actualizada exitosamente', 'success');
+      if (resetPasswordModal) {
+        resetPasswordModal.hide();
+      }
+      await cargarUsuarios();
     } catch (error) {
-      cssUtils.showNotification('Error al resetear contraseña: ' + (error.error || 'Error desconocido'), 'danger');
-      console.error('Error reseteando contraseña:', error);
+      cssUtils.showNotification('Error: ' + (error.error || 'No se pudo actualizar la contraseña'), 'danger');
+    }
+  }
+
+  function abrirModalCambiarPassword() {
+    document.getElementById('cambiarPasswordForm').reset();
+    if (cambiarPasswordModal) {
+      cambiarPasswordModal.show();
+    }
+  }
+
+  async function cambiarMiPassword() {
+    const passActual = document.getElementById('pass_actual').value;
+    const passNueva = document.getElementById('pass_nueva').value;
+    const passConfirm = document.getElementById('pass_confirm').value;
+
+    if (!passActual || !passNueva || !passConfirm) {
+      cssUtils.showNotification('Todos los campos son obligatorios', 'warning');
+      return;
+    }
+    if (passNueva.length < 6) {
+      cssUtils.showNotification('La nueva contraseña debe tener al menos 6 caracteres', 'warning');
+      return;
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(passNueva)) {
+      cssUtils.showNotification('La contraseña debe tener mayúsculas, minúsculas y números', 'warning');
+      return;
+    }
+    if (passNueva !== passConfirm) {
+      cssUtils.showNotification('Las contraseñas nuevas no coinciden', 'warning');
+      return;
+    }
+
+    try {
+      await apiFetch('/api/usuarios/cambiar-password', {
+        method: 'PUT',
+        body: JSON.stringify({
+          password_actual: passActual,
+          password_nueva: passNueva,
+          password_confirmacion: passConfirm
+        })
+      });
+      cssUtils.showNotification('Contraseña actualizada correctamente', 'success');
+      if (cambiarPasswordModal) {
+        cambiarPasswordModal.hide();
+      }
+      // Preguntar si desea cerrar sesión para usar la nueva clave
+      setTimeout(() => {
+        if (confirm('La contraseña se cambió correctamente. ¿Desea cerrar sesión ahora para usar la nueva?')) {
+          logout();
+        }
+      }, 2000);
+    } catch (error) {
+      cssUtils.showNotification(error.error || 'Error al cambiar contraseña', 'danger');
     }
   }
 
