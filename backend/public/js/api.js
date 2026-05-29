@@ -42,7 +42,7 @@ async function apiFetch(endpoint, options = {}) {
     if (response.status === 401) {
       // Token expirado o inválido
       localStorage.clear();
-      window.location.href = 'index.html';
+      window.location.href = 'login.html';
       throw new Error('Sesión expirada');
     }
 

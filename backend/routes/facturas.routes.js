@@ -35,8 +35,23 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
       numero_factura,
       tipo_factura,
       fecha,
-      dias_credito = 0
+      dias_credito
     } = req.body;
+
+    console.log('📥 Body recibido en facturación:', req.body);
+    console.log('🔍 dias_credito (original):', dias_credito, 'tipo:', typeof dias_credito);
+
+    // ✅ Normalizar días de crédito: si es null, undefined o string vacío → 0
+    const diasCredito = (dias_credito === undefined || dias_credito === null || dias_credito === '') 
+                        ? 0 
+                        : Number(dias_credito);
+
+    console.log('✅ diasCredito (normalizado):', diasCredito, 'tipo:', typeof diasCredito);
+
+    // Validar que sea un número válido (opcional)
+    if (isNaN(diasCredito) || diasCredito < 0) {
+      throw new Error('Días de crédito inválido');
+    }
 
     if (!venta_id || !numero_factura || !tipo_factura || !fecha) {
       throw new Error('Datos incompletos');
@@ -124,7 +139,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
         numero_factura,
         tipo_factura,
         fecha,
-        dias_credito,
+        diasCredito,
         subtotal,
         ivaTotal,
         total
@@ -135,11 +150,21 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
 
     // 7️⃣ Insertar factura_items
     for (const item of calculos) {
+      console.log('Item a insertar:', {
+        factura_id: factura.id,
+        venta_item_id: item.id,
+        ficha_id: item.ficha_id,
+        cantidad: item.cantidad,
+        precio_unitario_pesos: item.precio_unitario_pesos,
+        sub: item.sub,
+        ivaItem: item.ivaItem,
+        tot: item.tot
+      });
       await client.query(
         `INSERT INTO factura_items
          (factura_id, venta_item_id, ficha_id,
-          cantidad, precio_unitario_sin_iva,
-          subtotal, iva_21, total)
+          cantidad, precio_unitario,
+          subtotal, iva, total)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [
           factura.id,

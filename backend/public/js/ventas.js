@@ -163,24 +163,12 @@ function verVenta(id) {
 }
 
 /* =====================
-   FACTURAR
+   FACTURAR: redirige al detalle de la venta (allí está el modal completo)
 ===================== */
-async function facturarVenta(id) {
-  if (!confirm('¿Facturar esta venta?')) return;
-
-  try {
-    await apiFetch('/api/facturas', {
-      method: 'POST',
-      body: JSON.stringify({ venta_id: id })
-    });
-
-    mostrarNotificacion('Factura generada correctamente', 'success');
-    cargarVentas();
-  } catch (err) {
-    console.error('Error facturando venta:', err);
-    mostrarNotificacion(err.error || err.message || 'Error al facturar', 'error');
-  }
+function facturarVenta(id) {
+  window.location.href = `venta_detalle.html?id=${id}`;
 }
+
 
 document.addEventListener('DOMContentLoaded', () => {
   cargarClientes();
