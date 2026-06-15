@@ -25,8 +25,7 @@ if (!usuario) {
 // =====================
 // VARIABLES GLOBALES
 // =====================
-let pagoItems = []; // Items del pago actual
-let pagoId = null; // ID del pago creado
+let pagoItems = [];
 let facturasPendientes = [];
 let facturasSeleccionadas = [];
 
@@ -34,22 +33,15 @@ let facturasSeleccionadas = [];
 // INICIALIZACIÓN
 // =====================
 document.addEventListener('DOMContentLoaded', async () => {
-  console.log('✅ pagos.js cargado');
+  console.log('✅ pagos.js cargado (versión simplificada)');
 
-  // Setear fecha actual
   const hoy = new Date().toISOString().split('T')[0];
   const fechaRecepcion = document.getElementById('fecha_recepcion');
-  const fechaEmision = document.getElementById('fecha_emision');
-  
   if (fechaRecepcion) fechaRecepcion.value = hoy;
-  if (fechaEmision) fechaEmision.value = hoy;
 
-  // Cargar datos iniciales
   await cargarClientes();
-  await cargarTalonarios();
   await verificarAlertasCheques();
 
-  // Event listeners
   const clienteSelect = document.getElementById('cliente_id');
   if (clienteSelect) {
     clienteSelect.addEventListener('change', async (e) => {
@@ -62,26 +54,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnGuardarPago = document.getElementById('btnGuardarPago');
   if (btnGuardarPago) btnGuardarPago.addEventListener('click', guardarPago);
 
-  const btnAplicarPago = document.getElementById('btnAplicarPago');
-  if (btnAplicarPago) btnAplicarPago.addEventListener('click', aplicarPago);
-
-  const btnGenerarRecibo = document.getElementById('btnGenerarRecibo');
-  if (btnGenerarRecibo) btnGenerarRecibo.addEventListener('click', generarRecibo);
-
-  // Cargar listados iniciales
   cargarPagos();
-  cargarRecibos();
   cargarCheques();
 });
 
 // =====================
-// CARGAR CLIENTES - VERSIÓN CORREGIDA
+// CARGAR CLIENTES
 // =====================
 async function cargarClientes() {
   try {
     const clientes = await apiFetch('/api/clientes');
     
-    // Select para pago
     const selectPago = document.getElementById('cliente_id');
     if (selectPago) {
       selectPago.innerHTML = '<option value="">-- Seleccionar Cliente --</option>';
@@ -93,7 +76,6 @@ async function cargarClientes() {
       });
     }
     
-    // Select para filtro de pagos
     const selectFiltro = document.getElementById('filtroCliente');
     if (selectFiltro) {
       selectFiltro.innerHTML = '<option value="">Todos los clientes</option>';
@@ -105,19 +87,6 @@ async function cargarClientes() {
       });
     }
     
-    // Select para filtro de recibos
-    const selectReciboFiltro = document.getElementById('filtroReciboCliente');
-    if (selectReciboFiltro) {
-      selectReciboFiltro.innerHTML = '<option value="">Todos los clientes</option>';
-      clientes.forEach(cliente => {
-        const option = document.createElement('option');
-        option.value = cliente.id;
-        option.textContent = cliente.nombre;
-        selectReciboFiltro.appendChild(option);
-      });
-    }
-    
-    // Select para filtro de cheques
     const selectChequeFiltro = document.getElementById('filtroChequeCliente');
     if (selectChequeFiltro) {
       selectChequeFiltro.innerHTML = '<option value="">Todos los clientes</option>';
@@ -136,32 +105,11 @@ async function cargarClientes() {
 }
 
 // =====================
-// CARGAR TALONARIOS
-// =====================
-async function cargarTalonarios() {
-  try {
-    const talonarios = await apiFetch('/api/pagos/talonarios');
-    const select = document.getElementById('talonario_id');
-    if (select) {
-      select.innerHTML = '<option value="">-- Seleccionar Talonario --</option>';
-      talonarios.forEach(t => {
-        const option = document.createElement('option');
-        option.value = t.id;
-        option.textContent = t.numero_talonario;
-        select.appendChild(option);
-      });
-    }
-  } catch (err) {
-    console.error('Error cargando talonarios:', err);
-  }
-}
-
-// =====================
-// CARGAR FACTURAS PENDIENTES - VERSION MEJORADA
+// CARGAR FACTURAS PENDIENTES
 // =====================
 async function cargarFacturasPendientes(clienteId) {
   try {
-    facturasPendientes = await apiFetch(`/api/pagos/facturas-pendientes/${clienteId}`);
+    facturasPendientes = await apiFetch(`/api/pagos-clientes/facturas-pendientes/${clienteId}`);
     actualizarTablaFacturas();
     await cargarEstadoCuenta(clienteId);
   } catch (err) {
@@ -171,18 +119,17 @@ async function cargarFacturasPendientes(clienteId) {
 }
 
 // =====================
-// CARGAR ESTADO DE CUENTA DEL CLIENTE (NUEVO)
+// CARGAR ESTADO DE CUENTA DEL CLIENTE
 // =====================
 async function cargarEstadoCuenta(clienteId) {
   try {
-    const estado = await apiFetch(`/api/pagos/estado-cuenta/${clienteId}`);
+    const estado = await apiFetch(`/api/pagos-clientes/estado-cuenta/${clienteId}`);
 
     let resumenDiv = document.getElementById('resumen-cuenta');
     if (!resumenDiv) {
       resumenDiv = document.createElement('div');
       resumenDiv.id = 'resumen-cuenta';
       resumenDiv.className = 'resumen-cuenta';
-
       const formSection = document.querySelector('.form-section');
       if (formSection && formSection.parentNode) {
         formSection.parentNode.insertBefore(resumenDiv, formSection);
@@ -220,82 +167,68 @@ async function cargarEstadoCuenta(clienteId) {
         </div>
       </div>
     `;
+    resumenDiv.style.display = 'block';
   } catch (err) {
     console.error('Error cargando estado de cuenta:', err);
   }
 }
 
 // =====================
-// ACTUALIZAR TABLA DE FACTURAS - VERSION MEJORADA
+// ACTUALIZAR TABLA DE FACTURAS
 // =====================
 function actualizarTablaFacturas() {
   const tbody = document.getElementById('facturasPendientesList');
   if (!tbody) return;
   
   if (!facturasPendientes || facturasPendientes.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" style="text-align: center; padding: 20px;">
-          No hay facturas pendientes para este cliente
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px;">No hay facturas pendientes para este cliente</td></tr>`;
     return;
   }
 
   tbody.innerHTML = facturasPendientes.map(f => {
     const hoy = new Date();
-    const vencimiento = new Date(f.fecha_vencimiento);
-    const diasVencida = Math.ceil((hoy - vencimiento) / (1000 * 60 * 60 * 24));
+    const vencimiento = f.fecha_vencimiento ? new Date(f.fecha_vencimiento) : null;
     
-    let estadoClass = '';
-    let estadoText = '';
+    let estadoClass = 'badge-info';
+    let estadoText = 'Pendiente';
     
-    if (f.estado_pago === 'vencida') {
+    if (f.estado_pago === 'parcial') {
+      estadoClass = 'badge-warning';
+      estadoText = `Pago parcial (debe $${Number(f.saldo).toFixed(2)})`;
+    } else if (f.estado_pago === 'vencida') {
       estadoClass = 'badge-danger';
-      estadoText = `VENCIDA (${diasVencida} dias)`;
-    } else {
+      const diasVencida = vencimiento ? Math.ceil((hoy - vencimiento) / (1000 * 60 * 60 * 24)) : 0;
+      estadoText = `VENCIDA (${diasVencida} días)`;
+    } else if (vencimiento) {
       const diasRestantes = Math.ceil((vencimiento - hoy) / (1000 * 60 * 60 * 24));
       if (diasRestantes <= 3) {
         estadoClass = 'badge-warning';
-        estadoText = `Vence en ${diasRestantes} dias`;
-      } else {
-        estadoClass = 'badge-info';
-        estadoText = 'Pendiente';
+        estadoText = `Vence en ${diasRestantes} días`;
       }
     }
     
     return `
-    <tr>
-      <td><input type="checkbox" class="factura-check" data-id="${f.id}" data-saldo="${f.saldo}" onchange="seleccionarFactura(this)"></td>
-      <td><strong>${f.numero_factura}</strong></td>
-      <td>${f.tipo_factura || 'A'}</td>
-      <td>${new Date(f.fecha).toLocaleDateString('es-AR')}</td>
-      <td>$${Number(f.total).toFixed(2)}</td>
-      <td>$${Number(f.saldo).toFixed(2)}</td>
-      <td><span class="badge ${estadoClass}">${estadoText}</span></td>
-    </tr>
-  `;
+      <tr>
+        <td><input type="checkbox" class="factura-check" data-id="${f.id}" data-saldo="${f.saldo}" onchange="seleccionarFactura(this)"></td>
+        <td><strong>${f.numero_factura}</strong></td>
+        <td>${f.tipo_factura || 'A'}</td>
+        <td>${f.fecha ? new Date(f.fecha).toLocaleDateString('es-AR') : '-'}</td>
+        <td>$${Number(f.total).toFixed(2)}</td>
+        <td><strong>$${Number(f.saldo).toFixed(2)}</strong></td>
+        <td><span class="badge ${estadoClass}">${estadoText}</span></td>
+      </tr>
+    `;
   }).join('');
 }
 
 // =====================
-// SELECCIONAR FACTURA - CON VALIDACION DE MONTO
+// SELECCIONAR FACTURA
 // =====================
 function seleccionarFactura(checkbox) {
   const id = parseInt(checkbox.dataset.id);
   const saldo = parseFloat(checkbox.dataset.saldo);
   
   if (checkbox.checked) {
-    const totalPago = calcularTotalPago();
-    const totalSeleccionado = facturasSeleccionadas.reduce((sum, f) => sum + f.monto, 0);
-    
-    if (totalSeleccionado + saldo > totalPago && totalPago > 0) {
-      mostrarAlerta(`El monto seleccionado ($${(totalSeleccionado + saldo).toFixed(2)}) supera el pago ($${totalPago.toFixed(2)})`, 'error');
-      checkbox.checked = false;
-      return;
-    }
-    
     facturasSeleccionadas.push({
       factura_id: id,
       monto: saldo,
@@ -333,12 +266,12 @@ function actualizarTablaAplicacion() {
       <td>
         <input type="number" 
                class="monto-aplicar" 
-               data-index="${index}"
+               data-factura-id="${f.factura_id}"
                value="${f.monto.toFixed(2)}"
                min="0.01"
                max="${f.saldo}"
                step="0.01"
-               onchange="actualizarMontoAplicar(${index}, this.value)">
+               oninput="actualizarMontoAplicar(${index}, this.value)">
       </td>
       <td>
         <button class="btn-remove" onclick="eliminarFacturaSeleccionada(${index})">X</button>
@@ -451,7 +384,7 @@ function eliminarItemPago(index) {
 }
 
 // =====================
-// CALCULAR TOTAL DEL PAGO - CON VALIDACION
+// CALCULAR TOTAL DEL PAGO
 // =====================
 function calcularTotalPago() {
   let total = 0;
@@ -484,14 +417,20 @@ function calcularTotalPago() {
 }
 
 // =====================
-// GUARDAR PAGO
+// GUARDAR PAGO + APLICAR (flujo unificado)
 // =====================
 async function guardarPago() {
   const cliente_id = document.getElementById('cliente_id')?.value;
   const fecha_recepcion = document.getElementById('fecha_recepcion')?.value;
+  const numero_talonario = document.getElementById('numero_talonario')?.value || null;
   
   if (!cliente_id || !fecha_recepcion) {
     mostrarAlerta('Complete los datos del cliente y fecha', 'error');
+    return;
+  }
+
+  if (facturasSeleccionadas.length === 0) {
+    mostrarAlerta('Seleccione al menos una factura para aplicar el pago', 'error');
     return;
   }
 
@@ -534,34 +473,42 @@ async function guardarPago() {
     return;
   }
 
+  const aplicaciones = facturasSeleccionadas.map((f) => {
+    const input = document.querySelector(`.monto-aplicar[data-factura-id="${f.factura_id}"]`);
+    const monto = input ? (parseFloat(input.value) || 0) : f.monto;
+    return {
+      factura_id: f.factura_id,
+      monto_aplicado: monto
+    };
+  });
+
+  const totalAplicar = aplicaciones.reduce((sum, a) => sum + a.monto_aplicado, 0);
+  const totalPago = calcularTotalPago();
+
+  if (totalAplicar > totalPago + 0.01) {
+    mostrarAlerta(`El total a aplicar ($${totalAplicar.toFixed(2)}) supera el monto del pago ($${totalPago.toFixed(2)})`, 'error');
+    return;
+  }
+
   const data = {
     cliente_id: parseInt(cliente_id),
     fecha_recepcion,
+    numero_talonario,
     observaciones: document.getElementById('observaciones_pago')?.value || null,
-    items
+    items,
+    aplicaciones
   };
 
   try {
-    const response = await apiFetch('/api/pagos/pagos', {
+    const response = await apiFetch('/api/pagos-clientes/pagos', {
       method: 'POST',
       body: JSON.stringify(data)
     });
 
-    pagoId = response.pago.id;
-    mostrarAlerta('✅ Pago registrado correctamente', 'success');
+    mostrarAlerta(`✅ Pago #${response.pago_id} registrado y aplicado correctamente (${response.estado})`, 'success');
     
-    const pagoIdSpan = document.getElementById('pago-id');
-    const montoPagoSpan = document.getElementById('monto-pago');
-    const pagoAplicarSection = document.getElementById('pago-aplicar-section');
-    
-    if (pagoIdSpan) pagoIdSpan.textContent = pagoId;
-    if (montoPagoSpan) montoPagoSpan.textContent = `$${calcularTotalPago().toFixed(2)}`;
-    if (pagoAplicarSection) pagoAplicarSection.style.display = 'block';
-    
-    const container = document.getElementById('pago-items-container');
-    if (container) container.innerHTML = '';
-    pagoItems = [];
-    calcularTotalPago();
+    resetForms();
+    cargarPagos();
 
   } catch (err) {
     console.error('Error guardando pago:', err);
@@ -570,106 +517,42 @@ async function guardarPago() {
 }
 
 // =====================
-// APLICAR PAGO
+// RESET FORMS
 // =====================
-async function aplicarPago() {
-  if (!pagoId) {
-    mostrarAlerta('Primero debe crear un pago', 'error');
-    return;
-  }
-
-  if (facturasSeleccionadas.length === 0) {
-    mostrarAlerta('Seleccione al menos una factura', 'error');
-    return;
-  }
-
-  const aplicaciones = facturasSeleccionadas.map(f => ({
-    factura_id: f.factura_id,
-    monto_aplicado: f.monto
-  }));
-
-  try {
-    const response = await apiFetch(`/api/pagos/pagos/${pagoId}/aplicar`, {
-      method: 'POST',
-      body: JSON.stringify({ aplicaciones })
-    });
-
-    mostrarAlerta('✅ Pago aplicado correctamente', 'success');
-    
-    const clienteId = document.getElementById('cliente_id')?.value;
-    if (clienteId) await cargarFacturasPendientes(clienteId);
-    
-    facturasSeleccionadas = [];
-    actualizarTablaAplicacion();
-    
-    const reciboSection = document.getElementById('recibo-section');
-    if (reciboSection) reciboSection.style.display = 'block';
-
-  } catch (err) {
-    console.error('Error aplicando pago:', err);
-    mostrarAlerta(err.error || 'Error aplicando pago', 'error');
-  }
-}
-
-// =====================
-// GENERAR RECIBO
-// =====================
-async function generarRecibo() {
-  const numero_recibo = document.getElementById('numero_recibo')?.value;
-  const talonario_id = document.getElementById('talonario_id')?.value;
-  const fecha_emision = document.getElementById('fecha_emision')?.value;
-  const cliente_id = document.getElementById('cliente_id')?.value;
+function resetForms() {
+  const itemsContainer = document.getElementById('pago-items-container');
+  if (itemsContainer) itemsContainer.innerHTML = '';
+  pagoItems = [];
+  facturasSeleccionadas = [];
   
-  if (!numero_recibo || !fecha_emision || !cliente_id) {
-    mostrarAlerta('Complete número, fecha y cliente del recibo', 'error');
-    return;
+  const clienteSelect = document.getElementById('cliente_id');
+  if (clienteSelect) clienteSelect.value = '';
+  
+  const fechaRecepcion = document.getElementById('fecha_recepcion');
+  if (fechaRecepcion) fechaRecepcion.value = new Date().toISOString().split('T')[0];
+  
+  const numeroTalonario = document.getElementById('numero_talonario');
+  if (numeroTalonario) numeroTalonario.value = '';
+  
+  const observacionesPago = document.getElementById('observaciones_pago');
+  if (observacionesPago) observacionesPago.value = '';
+  
+  const totalPagoSpan = document.getElementById('total-pago');
+  if (totalPagoSpan) totalPagoSpan.textContent = '$0.00';
+  
+  const facturasPendientesList = document.getElementById('facturasPendientesList');
+  if (facturasPendientesList) {
+    facturasPendientesList.innerHTML = '<tr><td colspan="7">Seleccione un cliente para ver sus facturas pendientes</td></tr>';
   }
-
-  let talonario_numero = null;
-  if (talonario_id) {
-    const select = document.getElementById('talonario_id');
-    talonario_numero = select.options[select.selectedIndex]?.text;
-  }
-
-  const data = {
-    numero_recibo,
-    talonario_numero,
-    cliente_id: parseInt(cliente_id),
-    fecha_emision,
-    pago_ids: [pagoId],
-    observaciones: document.getElementById('observaciones_recibo')?.value || null
-  };
-
-  try {
-    const response = await apiFetch('/api/pagos/recibos', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-
-    mostrarAlerta('✅ Recibo generado correctamente', 'success');
-    
-    const reciboSection = document.getElementById('recibo-section');
-    const pagoAplicarSection = document.getElementById('pago-aplicar-section');
-    
-    if (reciboSection) reciboSection.style.display = 'none';
-    if (pagoAplicarSection) pagoAplicarSection.style.display = 'none';
-    
-    const numeroReciboInput = document.getElementById('numero_recibo');
-    const observacionesReciboInput = document.getElementById('observaciones_recibo');
-    if (numeroReciboInput) numeroReciboInput.value = '';
-    if (observacionesReciboInput) observacionesReciboInput.value = '';
-    
-    cargarPagos();
-    cargarRecibos();
-
-  } catch (err) {
-    console.error('Error generando recibo:', err);
-    mostrarAlerta(err.error || 'Error generando recibo', 'error');
+  
+  const resumenCuenta = document.getElementById('resumen-cuenta');
+  if (resumenCuenta) {
+    resumenCuenta.style.display = 'none';
   }
 }
 
 // =====================
-// CARGAR PAGOS - VERSIÓN CORREGIDA
+// CARGAR PAGOS (con columna Talonario)
 // =====================
 async function cargarPagos() {
   try {
@@ -678,7 +561,7 @@ async function cargarPagos() {
     const hasta = document.getElementById('filtroHasta')?.value;
     const estado = document.getElementById('filtroEstado')?.value;
 
-    let url = '/api/pagos/pagos';
+    let url = '/api/pagos-clientes/pagos';
     const params = [];
     
     if (cliente_id) params.push(`cliente_id=${cliente_id}`);
@@ -695,18 +578,11 @@ async function cargarPagos() {
     if (!tbody) return;
     
     if (!pagos || pagos.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="7" style="text-align: center; padding: 40px;">
-            No hay pagos registrados
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 40px;">No hay pagos registrados</td></tr>`;
       return;
     }
 
     tbody.innerHTML = pagos.map(p => {
-      // Verificar que p.items existe antes de mapear
       const itemsHtml = p.items && Array.isArray(p.items) && p.items.length > 0 
         ? p.items.map(i => `<span class="badge badge-${(i.tipo || '').toLowerCase()}">${i.tipo || ''}</span>`).join('')
         : '-';
@@ -716,72 +592,17 @@ async function cargarPagos() {
           <td>#${p.id}</td>
           <td>${p.fecha_recepcion ? new Date(p.fecha_recepcion).toLocaleDateString('es-AR') : '-'}</td>
           <td>${p.cliente_nombre || '-'}</td>
+          <td>${p.numero_talonario || '-'}</td>
           <td>$${Number(p.monto_total || 0).toFixed(2)}</td>
           <td>${itemsHtml}</td>
           <td><span class="badge badge-${p.estado || 'pendiente'}">${p.estado || 'pendiente'}</span></td>
-          <td>
-            <button class="btn btn-info btn-sm" onclick="verPago(${p.id})">👁️ Ver</button>
-          </td>
+          <td><button class="btn btn-info btn-sm" onclick="verPago(${p.id})">👁️ Ver</button></td>
         </tr>
       `;
     }).join('');
 
   } catch (err) {
     console.error('Error cargando pagos:', err);
-  }
-}
-
-// =====================
-// CARGAR RECIBOS
-// =====================
-async function cargarRecibos() {
-  try {
-    const cliente_id = document.getElementById('filtroReciboCliente')?.value;
-    const desde = document.getElementById('filtroReciboDesde')?.value;
-    const hasta = document.getElementById('filtroReciboHasta')?.value;
-
-    let url = '/api/pagos/recibos';
-    const params = [];
-    
-    if (cliente_id) params.push(`cliente_id=${cliente_id}`);
-    if (desde) params.push(`desde=${desde}`);
-    if (hasta) params.push(`hasta=${hasta}`);
-    
-    if (params.length > 0) {
-      url += '?' + params.join('&');
-    }
-
-    const recibos = await apiFetch(url);
-    const tbody = document.getElementById('recibosList');
-    if (!tbody) return;
-    
-    if (!recibos || recibos.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align: center; padding: 40px;">
-            No hay recibos generados
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
-    tbody.innerHTML = recibos.map(r => `
-      <tr>
-        <td><strong>${r.numero_recibo || '-'}</strong></td>
-        <td>${r.fecha_emision ? new Date(r.fecha_emision).toLocaleDateString('es-AR') : '-'}</td>
-        <td>${r.cliente_nombre || '-'}</td>
-        <td>$${Number(r.total_pagado || 0).toFixed(2)}</td>
-        <td>${r.numero_talonario || '-'}</td>
-        <td>
-          <button class="btn btn-info btn-sm" onclick="verRecibo(${r.id})">👁️ Ver</button>
-          <button class="btn btn-primary btn-sm" onclick="generarPDF(${r.id})">📄 PDF</button>
-        </td>
-      </tr>
-    `).join('');
-
-  } catch (err) {
-    console.error('Error cargando recibos:', err);
   }
 }
 
@@ -795,7 +616,7 @@ async function cargarCheques() {
     const desde = document.getElementById('filtroChequeDesde')?.value;
     const hasta = document.getElementById('filtroChequeHasta')?.value;
 
-    let url = '/api/pagos/cheques';
+    let url = '/api/pagos-clientes/cheques';
     const params = [];
     
     if (cliente_id) params.push(`cliente_id=${cliente_id}`);
@@ -812,13 +633,7 @@ async function cargarCheques() {
     if (!tbody) return;
     
     if (!cheques || cheques.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="8" style="text-align: center; padding: 40px;">
-            No hay cheques registrados
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 40px;">No hay cheques registrados</td></tr>`;
       return;
     }
 
@@ -842,9 +657,7 @@ async function cargarCheques() {
               `<br><span style="color: #dc3545; font-size: 12px;">⚠️ Vence en ${diasRestantes} días</span>` : ''}
           </td>
           <td><span class="badge ${estadoClass}">${c.cheque_estado || 'pendiente'}</span></td>
-          <td>
-            <button class="btn btn-info btn-sm" onclick="verCheque(${c.id})">👁️ Ver</button>
-          </td>
+          <td><button class="btn btn-info btn-sm" onclick="verCheque(${c.cheque_id})">👁️ Ver</button></td>
         </tr>
       `;
     }).join('');
@@ -859,7 +672,7 @@ async function cargarCheques() {
 // =====================
 async function verificarAlertasCheques() {
   try {
-    const alertas = await apiFetch('/api/pagos/cheques/alertas?dias=3');
+    const alertas = await apiFetch('/api/pagos-clientes/cheques/alertas?dias=3');
     
     if (alertas.total > 0) {
       const alertaDiv = document.getElementById('alertasCheques');
@@ -868,6 +681,9 @@ async function verificarAlertasCheques() {
         alertaCount.textContent = `(${alertas.total} cheque${alertas.total > 1 ? 's' : ''} próximo${alertas.total > 1 ? 's' : ''} a vencer)`;
         alertaDiv.style.display = 'block';
       }
+    } else {
+      const alertaDiv = document.getElementById('alertasCheques');
+      if (alertaDiv) alertaDiv.style.display = 'none';
     }
   } catch (err) {
     console.error('Error verificando alertas:', err);
@@ -885,84 +701,67 @@ function verAlertasCheques() {
 }
 
 // =====================
-// VER PAGO
+// VER PAGO (con trazabilidad completa)
 // =====================
 async function verPago(id) {
   try {
-    const pago = await apiFetch(`/api/pagos/pagos/${id}`);
-    
-    const detalle = document.getElementById('pagoDetalle');
-    if (!detalle) return;
-    
-    detalle.innerHTML = `
+    const data = await apiFetch(`/api/pagos-clientes/pagos/${id}/trazabilidad`);
+    const { pago, items, aplicaciones, total_aplicado, saldo_sin_aplicar } = data;
+
+    let html = `
       <div style="margin-bottom: 20px;">
         <h4>Pago #${pago.id}</h4>
-        <p><strong>Fecha:</strong> ${pago.fecha_recepcion ? new Date(pago.fecha_recepcion).toLocaleDateString('es-AR') : '-'}</p>
-        <p><strong>Cliente:</strong> ${pago.cliente_nombre || '-'}</p>
-        <p><strong>Total:</strong> $${Number(pago.monto_total || 0).toFixed(2)}</p>
-        <p><strong>Estado:</strong> <span class="badge badge-${pago.estado || 'pendiente'}">${pago.estado || 'pendiente'}</span></p>
+        <p><strong>Fecha:</strong> ${new Date(pago.fecha_recepcion).toLocaleDateString('es-AR')}</p>
+        <p><strong>Cliente:</strong> ${pago.cliente_nombre}</p>
+        <p><strong>Talonario:</strong> ${pago.numero_talonario || '—'}</p>
+        <p><strong>Monto total:</strong> $${Number(pago.monto_total).toFixed(2)}</p>
+        <p><strong>Total aplicado:</strong> $${total_aplicado.toFixed(2)}</p>
+        <p><strong>Saldo sin aplicar:</strong> $${saldo_sin_aplicar.toFixed(2)}</p>
+        <p><strong>Estado:</strong> <span class="badge badge-${pago.estado}">${pago.estado}</span></p>
       </div>
 
-      <h5>Items</h5>
-      <table style="width: 100%; margin-bottom: 20px;">
-        <thead>
-          <tr>
-            <th>Tipo</th>
-            <th>Detalle</th>
-            <th>Monto</th>
-          </tr>
-        </thead>
+      <h5>Formas de pago</h5>
+      <table style="width:100%; margin-bottom:20px;">
+        <thead><tr><th>Tipo</th><th>Detalle</th><th>Monto</th></tr></thead>
         <tbody>
-          ${pago.items && pago.items.length > 0 ? pago.items.map(i => `
+          ${items.map(i => `
             <tr>
-              <td>${i.tipo || '-'}</td>
-              <td>
-                ${i.tipo === 'CHEQUE' ? `${i.cheque_banco || ''} - N° ${i.cheque_numero || ''}` : 
-                  i.tipo === 'TRANSFERENCIA' ? `Op: ${i.transferencia_numero_operacion || ''}` : 
-                  '-'}
-              </td>
-              <td>$${Number(i.monto || 0).toFixed(2)}</td>
+              <td>${i.tipo}</td>
+              <td>${i.tipo === 'CHEQUE' ? `${i.cheque_banco} - N° ${i.cheque_numero}` : 
+                    i.tipo === 'TRANSFERENCIA' ? `Op: ${i.transferencia_numero_operacion}` : '—'}</td>
+              <td>$${Number(i.monto).toFixed(2)}</td>
             </tr>
-          `).join('') : '<tr><td colspan="3">Sin items</td></tr>'}
+          `).join('')}
+        </tbody>
+      </table>
+
+      <h5>Aplicación a facturas</h5>
+      <table style="width:100%; margin-bottom:20px;">
+        <thead><tr><th>Factura</th><th>Fecha</th><th>Total factura</th><th>Monto aplicado</th><th>Saldo restante</th><th>Fecha aplicación</th></tr></thead>
+        <tbody>
+          ${aplicaciones.map(ap => `
+            <tr>
+              <td>${ap.numero_factura}</td>
+              <td>${new Date(ap.fecha_factura).toLocaleDateString('es-AR')}</td>
+              <td>$${Number(ap.total_factura).toFixed(2)}</td>
+              <td><strong>$${Number(ap.monto_aplicado).toFixed(2)}</strong></td>
+              <td>$${Number(ap.saldo_factura).toFixed(2)}</td>
+              <td>${new Date(ap.fecha_aplicacion).toLocaleDateString('es-AR')}</td>
+            </tr>
+          `).join('')}
         </tbody>
       </table>
     `;
 
-    const modal = document.getElementById('pagoModal');
-    if (modal) modal.style.display = 'block';
+    if (saldo_sin_aplicar > 0) {
+      html += `<div class="alert alert-warning">⚠️ Este pago tiene saldo sin aplicar. Puede seguir aplicándose en el futuro.</div>`;
+    }
 
+    document.getElementById('pagoDetalle').innerHTML = html;
+    document.getElementById('pagoModal').style.display = 'block';
   } catch (err) {
-    console.error('Error cargando pago:', err);
-    mostrarAlerta('Error cargando detalle del pago', 'error');
-  }
-}
-
-// =====================
-// VER RECIBO
-// =====================
-async function verRecibo(id) {
-  try {
-    const recibo = await apiFetch(`/api/pagos/recibos/${id}`);
-    
-    const detalle = document.getElementById('reciboDetalle');
-    if (!detalle) return;
-    
-    detalle.innerHTML = `
-      <div style="margin-bottom: 20px;">
-        <h4>Recibo N°: ${recibo.numero_recibo || '-'}</h4>
-        <p><strong>Fecha:</strong> ${recibo.fecha_emision ? new Date(recibo.fecha_emision).toLocaleDateString('es-AR') : '-'}</p>
-        <p><strong>Cliente:</strong> ${recibo.cliente_nombre || '-'}</p>
-        <p><strong>Talonario:</strong> ${recibo.numero_talonario || '-'}</p>
-        <p><strong>Total:</strong> $${Number(recibo.total_pagado || 0).toFixed(2)}</p>
-      </div>
-    `;
-
-    const modal = document.getElementById('reciboModal');
-    if (modal) modal.style.display = 'block';
-
-  } catch (err) {
-    console.error('Error cargando recibo:', err);
-    mostrarAlerta('Error cargando detalle del recibo', 'error');
+    console.error('Error cargando trazabilidad:', err);
+    mostrarAlerta('Error al cargar detalle completo del pago', 'error');
   }
 }
 
@@ -971,7 +770,7 @@ async function verRecibo(id) {
 // =====================
 async function verCheque(id) {
   try {
-    const cheque = await apiFetch(`/api/pagos/cheques/${id}`);
+    const cheque = await apiFetch(`/api/pagos-clientes/cheques/${id}`);
     
     const detalle = document.getElementById('chequeDetalle');
     if (!detalle) return;
@@ -985,21 +784,21 @@ async function verCheque(id) {
         <p><strong>Fecha Emisión:</strong> ${cheque.cheque_fecha_emision ? new Date(cheque.cheque_fecha_emision).toLocaleDateString('es-AR') : '-'}</p>
         <p><strong>Fecha Cobro:</strong> ${cheque.cheque_fecha_cobro ? new Date(cheque.cheque_fecha_cobro).toLocaleDateString('es-AR') : '-'}</p>
         <p><strong>Estado:</strong> <span class="badge badge-${cheque.cheque_estado || 'pendiente'}">${cheque.cheque_estado || 'pendiente'}</span></p>
-        ${cheque.cheque_fecha_depositado ? `<p><strong>Fecha Depósito:</strong> ${new Date(cheque.cheque_fecha_depositado).toLocaleDateString('es-AR')}</p>` : ''}
-        ${cheque.cheque_gasto_comision ? `<p><strong>Gasto Comisión:</strong> $${Number(cheque.cheque_gasto_comision).toFixed(2)}</p>` : ''}
-        ${cheque.cheque_motivo_rechazo ? `<p><strong>Motivo Rechazo:</strong> ${cheque.cheque_motivo_rechazo}</p>` : ''}
+        ${cheque.fecha_depositado ? `<p><strong>Fecha Depósito:</strong> ${new Date(cheque.fecha_depositado).toLocaleDateString('es-AR')}</p>` : ''}
+        ${cheque.gasto_comision ? `<p><strong>Gasto Comisión:</strong> $${Number(cheque.gasto_comision).toFixed(2)}</p>` : ''}
+        ${cheque.motivo_rechazo ? `<p><strong>Motivo Rechazo:</strong> ${cheque.motivo_rechazo}</p>` : ''}
       </div>
 
       ${cheque.cheque_estado === 'pendiente' ? `
         <div style="display: flex; gap: 10px; margin-top: 20px;">
-          <button class="btn btn-info" onclick="depositarCheque(${cheque.id})">🏦 Depositar</button>
-          <button class="btn btn-danger" onclick="rechazarCheque(${cheque.id})">❌ Rechazar</button>
+          <button class="btn btn-info" onclick="depositarCheque(${cheque.cheque_id})">🏦 Depositar</button>
+          <button class="btn btn-danger" onclick="rechazarCheque(${cheque.cheque_id})">❌ Rechazar</button>
         </div>
       ` : ''}
 
       ${cheque.cheque_estado === 'depositado' ? `
         <div style="margin-top: 20px;">
-          <button class="btn btn-success" onclick="acreditarCheque(${cheque.id})">✅ Acreditar</button>
+          <button class="btn btn-success" onclick="acreditarCheque(${cheque.cheque_id})">✅ Acreditar</button>
         </div>
       ` : ''}
     `;
@@ -1021,7 +820,7 @@ async function depositarCheque(id) {
   if (!fecha) return;
 
   try {
-    await apiFetch(`/api/pagos/cheques/${id}/depositar`, {
+    await apiFetch(`/api/pagos-clientes/cheques/${id}/depositar`, {
       method: 'POST',
       body: JSON.stringify({ fecha_depositado: fecha })
     });
@@ -1061,7 +860,7 @@ async function rechazarCheque(id) {
   }
 
   try {
-    await apiFetch(`/api/pagos/cheques/${id}/rechazar`, {
+    await apiFetch(`/api/pagos-clientes/cheques/${id}/rechazar`, {
       method: 'POST',
       body: JSON.stringify({
         motivo_rechazo: motivo,
@@ -1087,7 +886,7 @@ async function acreditarCheque(id) {
   if (!confirm('¿Confirmar acreditación del cheque?')) return;
 
   try {
-    await apiFetch(`/api/pagos/cheques/${id}/acreditar`, {
+    await apiFetch(`/api/pagos-clientes/cheques/${id}/acreditar`, {
       method: 'PUT'
     });
 
@@ -1110,44 +909,6 @@ function cerrarModal(modalId) {
 }
 
 // =====================
-// GENERAR PDF
-// =====================
-async function generarPDF(id) {
-  try {
-    const response = await apiFetch(`/api/pagos/recibos/${id}/pdf`);
-    mostrarAlerta('✅ PDF generado correctamente', 'success');
-    // window.open(`/api/pagos/recibos/${id}/pdf/download`, '_blank');
-  } catch (err) {
-    console.error('Error generando PDF:', err);
-    mostrarAlerta('Error generando PDF', 'error');
-  }
-}
-
-// =====================
-// RESET FORMS
-// =====================
-function resetForms() {
-  const itemsContainer = document.getElementById('pago-items-container');
-  if (itemsContainer) itemsContainer.innerHTML = '';
-  
-  const pagoAplicarSection = document.getElementById('pago-aplicar-section');
-  if (pagoAplicarSection) pagoAplicarSection.style.display = 'none';
-  
-  const reciboSection = document.getElementById('recibo-section');
-  if (reciboSection) reciboSection.style.display = 'none';
-  
-  pagoItems = [];
-  facturasSeleccionadas = [];
-  pagoId = null;
-  
-  const numeroRecibo = document.getElementById('numero_recibo');
-  const observacionesRecibo = document.getElementById('observaciones_recibo');
-  
-  if (numeroRecibo) numeroRecibo.value = '';
-  if (observacionesRecibo) observacionesRecibo.value = '';
-}
-
-// =====================
 // MOSTRAR TAB
 // =====================
 function showTab(tabName, event) {
@@ -1166,12 +927,8 @@ function showTab(tabName, event) {
     event.target.classList.add('active');
   }
   
-  // Cargar datos según tab
   if (tabName === 'pagos-list') {
     cargarPagos();
-  }
-  if (tabName === 'recibos-list') {
-    cargarRecibos();
   }
   if (tabName === 'cheques-list') {
     cargarCheques();
