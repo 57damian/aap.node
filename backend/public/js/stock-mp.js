@@ -82,11 +82,12 @@ function abrirModalCrear() {
     document.getElementById('descripcion').value = '';
     document.getElementById('unidad_medida').value = '';
     document.getElementById('ubicacion').value = '';
-    document.getElementById('stock_actual').value = '0';
     document.getElementById('stock_minimo').value = '0';
     document.getElementById('precio_referencia').value = '';
     document.getElementById('activo').checked = true;
-    
+    // Al crear todavía no hay stock cargado (entra por factura de compra o ajuste manual)
+    document.getElementById('stockActualGroup').style.display = 'none';
+
     const modal = new bootstrap.Modal(document.getElementById('materiaPrimaModal'));
     modal.show();
 }
@@ -103,11 +104,14 @@ async function abrirModalEditar(id) {
         document.getElementById('descripcion').value = materiaPrima.descripcion || '';
         document.getElementById('unidad_medida').value = materiaPrima.unidad_medida || '';
         document.getElementById('ubicacion').value = materiaPrima.ubicacion || '';
-        document.getElementById('stock_actual').value = materiaPrima.stock_actual || 0;
         document.getElementById('stock_minimo').value = materiaPrima.stock_minimo || 0;
         document.getElementById('precio_referencia').value = materiaPrima.precio_referencia || '';
         document.getElementById('activo').checked = materiaPrima.activo !== false;
-        
+        // Al editar se muestra el stock actual solo como referencia (de solo lectura):
+        // se carga por factura de compra o por ajuste en stock.html, nunca desde acá.
+        document.getElementById('stockActualGroup').style.display = '';
+        document.getElementById('stock_actual_display').value = `${materiaPrima.stock_actual || 0} ${materiaPrima.unidad_medida || ''}`.trim();
+
         const modal = new bootstrap.Modal(document.getElementById('materiaPrimaModal'));
         modal.show();
     } catch (err) {
@@ -125,7 +129,6 @@ async function guardarMateriaPrima() {
         const descripcion = document.getElementById('descripcion').value.trim();
         const unidad_medida = document.getElementById('unidad_medida').value;
         const ubicacion = document.getElementById('ubicacion').value.trim();
-        const stock_actual = parseFloat(document.getElementById('stock_actual').value) || 0;
         const stock_minimo = parseFloat(document.getElementById('stock_minimo').value) || 0;
         const precio_referencia = document.getElementById('precio_referencia').value ? parseFloat(document.getElementById('precio_referencia').value) : null;
         const activo = document.getElementById('activo').checked;
@@ -154,7 +157,6 @@ async function guardarMateriaPrima() {
             descripcion,
             unidad_medida,
             ubicacion,
-            stock_actual,
             stock_minimo,
             activo
         };
@@ -210,7 +212,11 @@ async function eliminarMateriaPrima(id) {
 async function verHistorialPrecios(id) {
     try {
         const historial = await apiFetch(`/api/materias-primas/${id}/historial-precios`);
-        
+
+        const materiaPrima = materiasPrimasCache.find(mp => mp.id === id);
+        document.getElementById('historialPreciosModalTitle').textContent =
+            materiaPrima ? `Historial de Precios — ${materiaPrima.nombre}` : 'Historial de Precios';
+
         const tbody = document.getElementById('historialPreciosBody');
         if (!historial || historial.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
@@ -249,7 +255,11 @@ async function verHistorialPreciosModal() {
     
     try {
         const historial = await apiFetch(`/api/materias-primas/${materiaPrimaId}/historial-precios`);
-        
+
+        const nombre = document.getElementById('nombre').value.trim();
+        document.getElementById('historialPreciosModalTitle').textContent =
+            nombre ? `Historial de Precios — ${nombre}` : 'Historial de Precios';
+
         const tbody = document.getElementById('historialPreciosBody');
         if (!historial || historial.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';

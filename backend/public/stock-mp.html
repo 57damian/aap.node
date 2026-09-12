@@ -132,9 +132,10 @@
                     </div>
                     
                     <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-6 mb-3" id="stockActualGroup" style="display:none;">
                             <label class="form-label">Stock Actual</label>
-                            <input type="number" id="stock_actual" class="form-control" step="0.01" min="0" value="0">
+                            <input type="text" id="stock_actual_display" class="form-control" disabled>
+                            <small class="text-muted">Para modificar el stock hay que usar <a href="stock.html" target="_blank">Ajuste de Stock</a>, no se edita desde acá.</small>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Stock Mínimo *</label>
@@ -182,7 +183,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Historial de Precios</h5>
+                <h5 class="modal-title" id="historialPreciosModalTitle">Historial de Precios</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
