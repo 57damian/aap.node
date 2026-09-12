@@ -90,6 +90,34 @@ async function cargarStock() {
     }
 }
 
+// Indicador persistente de variación de precio respecto a la última compra
+// al mismo proveedor (diseño acordado 12/09/2026: toda suba o baja se avisa
+// directamente en el listado, no solo al abrir el historial de precios).
+function renderizarVariacionPrecio(s) {
+    const variacion = s.variacion_precio;
+
+    if (variacion === null || variacion === undefined) {
+        return '<span class="text-muted">—</span>';
+    }
+
+    const valor = parseFloat(variacion);
+    if (isNaN(valor) || Math.abs(valor) < 0.01) {
+        return '<span class="text-muted">sin cambios</span>';
+    }
+
+    if (valor > 0) {
+        // Subió de precio respecto a la última compra a este proveedor
+        return `<span class="badge bg-danger" title="Antes: ${formatearMoneda(s.variacion_precio_anterior || 0)}">
+            <i class="fas fa-arrow-up"></i> ${valor.toFixed(1)}%
+        </span>`;
+    }
+
+    // Bajó de precio respecto a la última compra a este proveedor
+    return `<span class="badge bg-success" title="Antes: ${formatearMoneda(s.variacion_precio_anterior || 0)}">
+        <i class="fas fa-arrow-down"></i> ${Math.abs(valor).toFixed(1)}%
+    </span>`;
+}
+
 // Renderizar tabla de stock
 function renderizarTablaStock(stock) {
     const tbody = document.getElementById('stockTableBody');
@@ -122,6 +150,7 @@ function renderizarTablaStock(stock) {
                 <td>${s.stock_minimo || 0} ${s.unidad_medida || 'UNI'}</td>
                 <td>${s.ubicacion || '-'}</td>
                 <td>${formatearMoneda(s.ultimo_precio || 0)}</td>
+                <td>${renderizarVariacionPrecio(s)}</td>
                 <td>${s.fecha_ultima_compra || '-'}</td>
                 <td>${estadoBadge}</td>
                 <td>
@@ -360,16 +389,17 @@ async function verPrecios(articuloId) {
         
         const tbody = document.getElementById('preciosBody');
         if (!precios || precios.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No hay historial de precios</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
         } else {
             tbody.innerHTML = precios.map(p => `
                 <tr>
                     <td>${p.fecha_cambio || '-'}</td>
                     <td>${formatearMoneda(p.precio_anterior || 0)}</td>
                     <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
-                    <td class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">
+                    <td class="${p.variacion_porcentaje > 0 ? 'text-danger' : 'text-success'}">
                         ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
                     </td>
+                    <td>${p.proveedor_nombre || '-'}</td>
                     <td>${p.factura_numero || '-'}</td>
                 </tr>
             `).join('');

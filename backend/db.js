@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const { Pool } = require('pg');
 
 console.log('🔍 [db.js] Inicializando conexión...');

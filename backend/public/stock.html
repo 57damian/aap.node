@@ -31,9 +31,9 @@
 <div class="container main-container">
     <!-- Header Principal -->
     <div class="proveedores-header">
-        <h1><i class="fas fa-industry"></i> Stock de Producción</h1>
-        <p class="text-warning"><strong>MODELOS PRODUCIDOS - Stock disponible para ventas</strong></p>
-        <p>Gestión de modelos terminados producidos en fábrica</p>
+        <h1><i class="fas fa-boxes"></i> Stock de Materias Primas</h1>
+        <p class="text-warning"><strong>MATERIAS PRIMAS - Stock comprado a proveedores para construcción</strong></p>
+        <p>Gestión de materias primas compradas para la fabricación de transformadores</p>
         <div class="d-flex align-items-center mt-2">
             <span class="badge bg-warning me-2" id="dolarActual">Dólar: ARS 0.00</span>
             <button class="btn btn-sm btn-outline-warning" onclick="window.location.href='stock-mp.html'">
@@ -150,6 +150,7 @@
                             <th>Stock Mínimo</th>
                             <th>Ubicación</th>
                             <th>Último Precio</th>
+                            <th>Variación</th>
                             <th>Última Compra</th>
                             <th>Estado</th>
                             <th>Acciones</th>
@@ -157,7 +158,7 @@
                     </thead>
                     <tbody id="stockTableBody">
                         <tr>
-                            <td colspan="10" class="text-center">
+                            <td colspan="11" class="text-center">
                                 <div class="spinner-border text-primary" role="status">
                                     <span class="visually-hidden">Cargando...</span>
                                 </div>
@@ -352,6 +353,7 @@
                                 <th>Precio Nuevo</th>
                                 <th>Variación %</th>
                                 <th>Factura</th>
+                                <th>Proveedor</th>
                             </tr>
                         </thead>
                         <tbody id="preciosBody">

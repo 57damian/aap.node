@@ -10,47 +10,61 @@ router.use(verificarToken);
  * Devuelve el stock de MATERIAS PRIMAS con filtros (compatible con frontend stock.js)
  * Query params: proveedor_id, estado, search
  * NOTA: Este endpoint es solo para materias primas, no para productos terminados
+ *
+ * El "último proveedor" y el "último precio" se toman de materias_primas /
+ * stock_movimientos (que es lo que realmente alimenta facturas-compra.routes.js),
+ * no de las tablas viejas compras/compra_items/precios_materia_prima, que son
+ * de una versión anterior del sistema y ya no se usan (ver nota en el doc del
+ * proyecto: "Auditoría — Módulo Stock").
  */
 router.get('/', async (req, res) => {
   try {
     const { proveedor_id, estado, search } = req.query;
 
     let query = `
-      SELECT 
+      SELECT
         mp.id as articulo_id,
         mp.codigo,
         mp.nombre,
-        p.nombre as proveedor_nombre,
         mp.stock_actual,
         mp.stock_minimo,
         mp.ubicacion,
         mp.unidad_medida,
-        (SELECT precio_unitario FROM precios_materia_prima 
-         WHERE materia_prima_id = mp.id 
-         ORDER BY fecha_desde DESC LIMIT 1) as ultimo_precio,
-        (SELECT MAX(c.fecha_compra) 
-         FROM compras c 
-         JOIN compra_items ci ON c.id = ci.compra_id 
-         WHERE ci.materia_prima_id = mp.id) as fecha_ultima_compra
+        mp.precio_referencia as ultimo_precio,
+        mp.fecha_ultima_compra,
+        ultimo_mov.proveedor_nombre,
+        ultima_variacion.variacion_porcentaje as variacion_precio,
+        ultima_variacion.precio_anterior as variacion_precio_anterior,
+        ultima_variacion.fecha_cambio as variacion_fecha
       FROM materias_primas mp
-      LEFT JOIN (
-        SELECT DISTINCT ON (ci.materia_prima_id) ci.materia_prima_id, p.nombre
-        FROM compra_items ci
-        JOIN compras c ON ci.compra_id = c.id
-        JOIN proveedores p ON c.proveedor_id = p.id
-        ORDER BY ci.materia_prima_id, c.fecha_compra DESC
-      ) p ON mp.id = p.materia_prima_id
+      LEFT JOIN LATERAL (
+        SELECT p.nombre as proveedor_nombre
+        FROM stock_movimientos sm
+        JOIN proveedores p ON sm.proveedor_id = p.id
+        WHERE sm.materia_prima_id = mp.id AND sm.proveedor_id IS NOT NULL
+        ORDER BY sm.fecha_movimiento DESC, sm.id DESC
+        LIMIT 1
+      ) ultimo_mov ON true
+      LEFT JOIN LATERAL (
+        -- Última variación de precio registrada para este material, siempre
+        -- comparada contra el mismo proveedor de esa compra (ver
+        -- facturas-compra.routes.js). Esto alimenta el indicador persistente
+        -- de "subió/bajó" en el listado de Stock (diseño acordado 12/09/2026).
+        SELECT hpm.variacion_porcentaje, hpm.precio_anterior, hpm.fecha_cambio
+        FROM historial_precios_materias hpm
+        WHERE hpm.materia_prima_id = mp.id
+        ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC
+        LIMIT 1
+      ) ultima_variacion ON true
       WHERE mp.activo = true
     `;
     const params = [];
     let paramIndex = 1;
 
     if (proveedor_id) {
-      query += ` AND p.materia_prima_id IN (
-        SELECT DISTINCT ci.materia_prima_id 
-        FROM compra_items ci 
-        JOIN compras c ON ci.compra_id = c.id 
-        WHERE c.proveedor_id = $${paramIndex}
+      query += ` AND EXISTS (
+        SELECT 1 FROM stock_movimientos sm2
+        WHERE sm2.materia_prima_id = mp.id AND sm2.proveedor_id = $${paramIndex}
       )`;
       params.push(proveedor_id);
       paramIndex++;
@@ -90,12 +104,10 @@ router.get('/', async (req, res) => {
 router.get('/actual', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         mp.id, mp.codigo, mp.nombre, mp.unidad_medida,
         mp.stock_actual, mp.stock_minimo, mp.ubicacion,
-        (SELECT precio_unitario FROM precios_materia_prima 
-         WHERE materia_prima_id = mp.id 
-         ORDER BY fecha_desde DESC LIMIT 1) as ultimo_precio
+        mp.precio_referencia as ultimo_precio
       FROM materias_primas mp
       WHERE mp.activo = true
       ORDER BY mp.nombre
@@ -119,24 +131,32 @@ router.get('/actual', async (req, res) => {
  * GET /api/stock/movimientos
  * Lista todos los movimientos con filtros opcionales
  * Query params: materia_prima_id, desde, hasta, tipo
+ *
+ * Incluye alias (fecha, articulo_nombre, usuario, observacion) para que
+ * coincidan con lo que espera el frontend (public/js/stock.js
+ * renderizarMovimientos) además de los nombres originales de columna.
  */
 router.get('/movimientos', async (req, res) => {
   try {
     const { materia_prima_id, desde, hasta, tipo } = req.query;
 
     let query = `
-      SELECT 
+      SELECT
         sm.*,
+        sm.fecha_movimiento as fecha,
+        mp.codigo as articulo_codigo,
+        mp.nombre as articulo_nombre,
         u.nombre_usuario as usuario_nombre,
-        ci.compra_id,
-        c.numero_comprobante,
-        c.fecha_compra,
+        u.nombre_usuario as usuario,
+        sm.observaciones as observacion,
+        fc.numero_factura,
+        fc.fecha_emision as factura_fecha,
         p.nombre as proveedor_nombre
       FROM stock_movimientos sm
+      JOIN materias_primas mp ON sm.materia_prima_id = mp.id
       LEFT JOIN usuarios u ON sm.usuario_id = u.id
-      LEFT JOIN compra_items ci ON sm.compra_item_id = ci.id
-      LEFT JOIN compras c ON ci.compra_id = c.id
-      LEFT JOIN proveedores p ON c.proveedor_id = p.id
+      LEFT JOIN facturas_compra fc ON sm.factura_id = fc.id
+      LEFT JOIN proveedores p ON sm.proveedor_id = p.id
       WHERE 1=1
     `;
     const params = [];
@@ -179,18 +199,22 @@ router.get('/materia-prima/:id/movimientos', async (req, res) => {
     const { desde, hasta } = req.query;
 
     let query = `
-      SELECT 
+      SELECT
         sm.*,
+        sm.fecha_movimiento as fecha,
+        mp.codigo as articulo_codigo,
+        mp.nombre as articulo_nombre,
         u.nombre_usuario as usuario_nombre,
-        ci.compra_id,
-        c.numero_comprobante,
-        c.fecha_compra,
+        u.nombre_usuario as usuario,
+        sm.observaciones as observacion,
+        fc.numero_factura,
+        fc.fecha_emision as factura_fecha,
         p.nombre as proveedor_nombre
       FROM stock_movimientos sm
+      JOIN materias_primas mp ON sm.materia_prima_id = mp.id
       LEFT JOIN usuarios u ON sm.usuario_id = u.id
-      LEFT JOIN compra_items ci ON sm.compra_item_id = ci.id
-      LEFT JOIN compras c ON ci.compra_id = c.id
-      LEFT JOIN proveedores p ON c.proveedor_id = p.id
+      LEFT JOIN facturas_compra fc ON sm.factura_id = fc.id
+      LEFT JOIN proveedores p ON sm.proveedor_id = p.id
       WHERE sm.materia_prima_id = $1
     `;
     const params = [id];
@@ -249,7 +273,7 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
 
     // Insertar movimiento
     await client.query(`
-      INSERT INTO stock_movimientos 
+      INSERT INTO stock_movimientos
         (materia_prima_id, fecha_movimiento, tipo_movimiento, cantidad, unidad,
          stock_anterior, stock_nuevo, observaciones, usuario_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -270,14 +294,6 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
       'UPDATE materias_primas SET stock_actual = $1 WHERE id = $2',
       [stockNuevo, materia_prima_id]
     );
-
-    // Opcional: actualizar productos_stock si se usa
-    await client.query(`
-      INSERT INTO productos_stock (materia_prima_id, proveedor_id, stock_actual)
-      VALUES ($1, NULL, $2)
-      ON CONFLICT (materia_prima_id, proveedor_id) 
-      DO UPDATE SET stock_actual = EXCLUDED.stock_actual
-    `, [materia_prima_id, stockNuevo]);
 
     await client.query('COMMIT');
 
@@ -303,14 +319,10 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
 router.get('/resumen', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         COUNT(*) as total_materiales,
         SUM(stock_actual) as total_unidades,
-        SUM(stock_actual * COALESCE((
-          SELECT precio_unitario FROM precios_materia_prima 
-          WHERE materia_prima_id = mp.id 
-          ORDER BY fecha_desde DESC LIMIT 1
-        ), 0)) as valor_total_stock,
+        SUM(stock_actual * COALESCE(precio_referencia, 0)) as valor_total_stock,
         COUNT(CASE WHEN stock_actual = 0 THEN 1 END) as materiales_sin_stock,
         COUNT(CASE WHEN stock_actual <= stock_minimo AND stock_actual > 0 THEN 1 END) as materiales_stock_bajo
       FROM materias_primas mp

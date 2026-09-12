@@ -33,10 +33,12 @@ router.get('/', async (req, res) => {
     }
 
     if (proveedor_id) {
-      // Filtrar materias primas que tengan compras a ese proveedor
-      query += ` AND EXISTS (SELECT 1 FROM compra_items ci 
-                JOIN compras c ON ci.compra_id = c.id 
-                WHERE ci.materia_prima_id = mp.id AND c.proveedor_id = $${paramIndex})`;
+      // Filtrar materias primas que tengan movimientos de stock de ese proveedor
+      // (stock_movimientos.proveedor_id, que es lo que factura-compra.routes.js
+      // completa realmente en cada compra; compra_items/compras es un esquema
+      // viejo ya sin uso, ver "Auditoría — Módulo Stock" en el doc del proyecto)
+      query += ` AND EXISTS (SELECT 1 FROM stock_movimientos sm
+                WHERE sm.materia_prima_id = mp.id AND sm.proveedor_id = $${paramIndex})`;
       params.push(proveedor_id);
       paramIndex++;
     }
@@ -193,13 +195,12 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
       const { id } = req.params;
       
       const result = await pool.query(`
-        SELECT 
+        SELECT
           hpm.id,
           hpm.precio_nuevo,
           hpm.precio_anterior,
           hpm.variacion_porcentaje,
           hpm.fecha_cambio,
-          hpm.observaciones,
           fc.numero_factura as factura_numero,
           p.nombre as proveedor_nombre,
           u.nombre_completo as usuario_nombre

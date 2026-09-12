@@ -325,53 +325,69 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
         // Ítem manual que no se guarda como materia prima
         es_item_manual = true;
       } else if (materia_prima_id) {
-        // Ítem existente - SIEMPRE verificar si el precio cambió
-        // Obtener precio anterior actual
-        const precioAnteriorResult = await client.query(
-          'SELECT precio_referencia FROM materias_primas WHERE id = $1',
-          [materia_prima_id]
+        // Ítem existente. El "último precio" global (mp.precio_referencia, lo que
+        // se muestra en el listado de Stock) siempre se actualiza a lo pagado en
+        // ESTA compra, sea cual sea el proveedor — es solo una referencia rápida.
+        //
+        // La "variación" que dispara la alerta, en cambio, es específica del
+        // proveedor: se compara contra la última compra de este material A ESTE
+        // MISMO proveedor (vía stock_movimientos.proveedor_id), no contra el
+        // último precio global. Así, con varios proveedores para un mismo
+        // material, cada uno tiene su propia comparación y no se mezclan entre sí.
+        // (Diseño acordado 12/09/2026, ver doc del proyecto.)
+        const precioAnteriorProveedorResult = await client.query(
+          `SELECT precio_unitario FROM stock_movimientos
+           WHERE materia_prima_id = $1 AND proveedor_id = $2 AND tipo_movimiento = 'ENTRADA'
+           ORDER BY fecha_movimiento DESC, id DESC LIMIT 1`,
+          [materia_prima_id, proveedor_id]
         );
-        
-        const precio_anterior = precioAnteriorResult.rows[0]?.precio_referencia || 0;
+
+        const precio_anterior_proveedor = precioAnteriorProveedorResult.rows.length > 0
+          ? parseFloat(precioAnteriorProveedorResult.rows[0].precio_unitario)
+          : null;
         const precio_nuevo = item.precio_unitario;
-        
-        // Solo actualizar si el precio es diferente (con tolerancia de 0.01 para decimales)
-        const diferencia = Math.abs(precio_nuevo - precio_anterior);
-        if (diferencia > 0.01) {
-          const variacion = precio_anterior > 0 
-            ? ((precio_nuevo - precio_anterior) / precio_anterior) * 100 
-            : 0;
-          
-          // Actualizar precio de referencia
-          await client.query(
-            `UPDATE materias_primas 
-             SET precio_referencia = $1, fecha_ultima_compra = CURRENT_DATE, actualizado_en = CURRENT_TIMESTAMP
-             WHERE id = $2`,
-            [precio_nuevo, materia_prima_id]
-          );
-          
-          // Registrar en historial de precios
-          await client.query(
-            `INSERT INTO historial_precios_materias (
-              materia_prima_id, proveedor_id,
-              precio_anterior, precio_nuevo,
-              variacion_porcentaje, factura_id,
-              fecha_cambio, created_by, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, $7, CURRENT_TIMESTAMP)`,
-            [
-              materia_prima_id,
-              proveedor_id,
-              precio_anterior,
-              precio_nuevo,
-              variacion,
-              factura.id,
-              usuario_id
-            ]
-          );
-          
-          console.log(`✅ Precio actualizado para materia prima ${materia_prima_id}: $${precio_anterior} → $${precio_nuevo} (${variacion.toFixed(2)}%)`);
+
+        // Actualizar precio de referencia global (siempre, independiente del proveedor)
+        await client.query(
+          `UPDATE materias_primas
+           SET precio_referencia = $1, fecha_ultima_compra = CURRENT_DATE, actualizado_en = CURRENT_TIMESTAMP
+           WHERE id = $2`,
+          [precio_nuevo, materia_prima_id]
+        );
+
+        if (precio_anterior_proveedor === null) {
+          console.log(`ℹ️  Primera compra registrada de materia prima ${materia_prima_id} a este proveedor (${proveedor_id}); no hay precio previo de ese proveedor para comparar`);
         } else {
-          console.log(`ℹ️  Precio sin cambios para materia prima ${materia_prima_id}: $${precio_anterior}`);
+          // Solo registrar variación si el precio es diferente (con tolerancia de 0.01 para decimales)
+          const diferencia = Math.abs(precio_nuevo - precio_anterior_proveedor);
+          if (diferencia > 0.01) {
+            const variacion = precio_anterior_proveedor > 0
+              ? ((precio_nuevo - precio_anterior_proveedor) / precio_anterior_proveedor) * 100
+              : 0;
+
+            // Registrar en historial de precios (ligado a este proveedor)
+            await client.query(
+              `INSERT INTO historial_precios_materias (
+                materia_prima_id, proveedor_id,
+                precio_anterior, precio_nuevo,
+                variacion_porcentaje, factura_id,
+                fecha_cambio, created_by, created_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, $7, CURRENT_TIMESTAMP)`,
+              [
+                materia_prima_id,
+                proveedor_id,
+                precio_anterior_proveedor,
+                precio_nuevo,
+                variacion,
+                factura.id,
+                usuario_id
+              ]
+            );
+
+            console.log(`✅ Variación de precio detectada (proveedor ${proveedor_id}) para materia prima ${materia_prima_id}: $${precio_anterior_proveedor} → $${precio_nuevo} (${variacion.toFixed(2)}%)`);
+          } else {
+            console.log(`ℹ️  Precio sin cambios para materia prima ${materia_prima_id} respecto al mismo proveedor (${proveedor_id}): $${precio_anterior_proveedor}`);
+          }
         }
       }
       
@@ -409,17 +425,28 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
       const estadoFinal = estado || 'PENDIENTE';
       if (materia_prima_id && (estadoFinal === 'PENDIENTE' || estadoFinal === 'PAGADA')) {
         console.log(`📦 Actualizando stock para materia prima ${materia_prima_id}: +${item.cantidad} unidades (estado: ${estadoFinal})`);
-        
+
+        // Tomar el stock actual ANTES de modificarlo (con lock), para poder dejar
+        // stock_anterior/stock_nuevo en el movimiento, igual que ya se hace en los
+        // ajustes manuales (POST /api/stock/ajuste). Antes quedaban en null/0 para
+        // los movimientos generados desde una factura.
+        const stockActualResult = await client.query(
+          'SELECT stock_actual FROM materias_primas WHERE id = $1 FOR UPDATE',
+          [materia_prima_id]
+        );
+        const stockAnterior = parseFloat(stockActualResult.rows[0]?.stock_actual || 0);
+        const stockNuevo = stockAnterior + parseFloat(item.cantidad);
+
         // Actualizar stock
         await client.query(
-          `UPDATE materias_primas 
-           SET stock_actual = stock_actual + $1, 
+          `UPDATE materias_primas
+           SET stock_actual = $1,
                fecha_ultima_compra = CURRENT_DATE,
                actualizado_en = CURRENT_TIMESTAMP
            WHERE id = $2`,
-          [item.cantidad, materia_prima_id]
+          [stockNuevo, materia_prima_id]
         );
-        
+
         // Crear movimiento de stock
         await client.query(
           `INSERT INTO stock_movimientos (
@@ -427,8 +454,9 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
             cantidad, precio_unitario,
             factura_id, proveedor_id,
             observaciones, usuario_id, created_at,
-            fecha_movimiento, unidad
-          ) VALUES ($1, 'ENTRADA', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_DATE, $8)`,
+            fecha_movimiento, unidad,
+            stock_anterior, stock_nuevo
+          ) VALUES ($1, 'ENTRADA', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_DATE, $8, $9, $10)`,
           [
             materia_prima_id,
             item.cantidad,
@@ -437,11 +465,13 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
             proveedor_id,
             `Compra desde factura ${numero_factura}`,
             usuario_id,
-            item.unidad_medida || 'UNI'
+            item.unidad_medida || 'UNI',
+            stockAnterior,
+            stockNuevo
           ]
         );
-        
-        console.log(`✅ Stock actualizado y movimiento creado para materia prima ${materia_prima_id}`);
+
+        console.log(`✅ Stock actualizado (${stockAnterior} → ${stockNuevo}) y movimiento creado para materia prima ${materia_prima_id}`);
       } else {
         console.log(`⚠️  No se actualizó stock para materia prima ${materia_prima_id}:`);
         if (!materia_prima_id) console.log(`   - materia_prima_id es null o undefined`);
