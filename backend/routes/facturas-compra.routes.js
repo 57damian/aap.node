@@ -13,11 +13,12 @@ router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => 
     const { proveedor_id, estado, fecha_desde, fecha_hasta, tipo_factura } = req.query;
     
     let query = `
-      SELECT 
+      SELECT
         fc.*,
         p.nombre as proveedor_nombre,
         p.cuit as proveedor_cuit,
         u.nombre_completo as creado_por,
+        hd.dolar as dolar,
         COALESCE(SUM(fi.subtotal), 0) as subtotal_items,
         COALESCE(SUM(fi.iva), 0) as iva_items,
         COALESCE(SUM(fi.total), 0) as total_items,
@@ -25,6 +26,7 @@ router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => 
       FROM facturas_compra fc
       JOIN proveedores p ON fc.proveedor_id = p.id
       LEFT JOIN usuarios u ON fc.created_by = u.id
+      LEFT JOIN historial_dolar hd ON fc.dolar_historial_id = hd.id
       LEFT JOIN factura_items fi ON fc.id = fi.factura_id
     `;
     
@@ -66,7 +68,7 @@ router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => 
       query += ' WHERE ' + conditions.join(' AND ');
     }
     
-    query += ' GROUP BY fc.id, p.nombre, p.cuit, u.nombre_completo ORDER BY fc.fecha_emision DESC, fc.id DESC';
+    query += ' GROUP BY fc.id, p.nombre, p.cuit, u.nombre_completo, hd.dolar ORDER BY fc.fecha_emision DESC, fc.id DESC';
     
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -112,17 +114,19 @@ router.get('/:id', authorize(['admin', 'control', 'compras']), async (req, res) 
     
     // Obtener cabecera de factura
     const facturaResult = await pool.query(
-      `SELECT 
+      `SELECT
         fc.*,
         p.nombre as proveedor_nombre,
         p.cuit as proveedor_cuit,
         p.direccion as proveedor_direccion,
         p.telefono as proveedor_telefono,
         p.email as proveedor_email,
-        u.nombre_completo as creado_por
+        u.nombre_completo as creado_por,
+        hd.dolar as dolar
        FROM facturas_compra fc
        JOIN proveedores p ON fc.proveedor_id = p.id
        LEFT JOIN usuarios u ON fc.created_by = u.id
+       LEFT JOIN historial_dolar hd ON fc.dolar_historial_id = hd.id
        WHERE fc.id = $1`,
       [id]
     );
@@ -182,16 +186,17 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
       condicion_pago,
       observaciones,
       estado,
+      dolar,
       items
     } = req.body;
-    
+
     const usuario_id = req.usuario.id;
-    
+
     // Validaciones básicas
     if (!proveedor_id || !fecha_emision || !tipo_factura || !numero_factura || !items || items.length === 0) {
       throw new Error('Datos incompletos: proveedor, fecha, tipo factura, número e items son obligatorios');
     }
-    
+
     // Validar tipo de factura
     if (!['A', 'B', 'C', 'X'].includes(tipo_factura)) {
       throw new Error('Tipo de factura inválido. Debe ser A, B, C o X');
@@ -240,7 +245,24 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
     const subtotalFinal = subtotal !== undefined ? parseFloat(subtotal) : subtotalCalculado;
     const ivaFinal = iva !== undefined ? parseFloat(iva) : ivaCalculado;
     const totalFinal = total !== undefined ? parseFloat(total) : totalCalculado;
-    
+
+    // Cotización del dólar para esta factura: campo opcional (diseño acordado
+    // 12/09/2026). Si se informa, se registra una fila nueva en historial_dolar
+    // (mismo mecanismo que PUT /api/precios/parametros/dolar) y la factura
+    // queda ligada a ella vía dolar_historial_id. No se toca el parámetro
+    // global parametros.dolar_banco: cargar una factura vieja con su cotización
+    // de ese momento no debe pisar el dólar "actual" que se usa como sugerencia
+    // en facturas nuevas.
+    const dolarValido = dolar !== undefined && dolar !== null && dolar !== '' && !isNaN(parseFloat(dolar)) && parseFloat(dolar) > 0;
+    let dolarHistorialId = null;
+    if (dolarValido) {
+      const dolarResult = await client.query(
+        `INSERT INTO historial_dolar (dolar, usuario_id, created_at) VALUES ($1, $2, CURRENT_TIMESTAMP) RETURNING id`,
+        [parseFloat(dolar), usuario_id]
+      );
+      dolarHistorialId = dolarResult.rows[0].id;
+    }
+
     // Insertar cabecera de factura
     const facturaResult = await client.query(
       `INSERT INTO facturas_compra (
@@ -249,8 +271,8 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
         numero_comprobante, cae, subtotal, iva,
         percepciones, retenciones, total,
         condicion_pago, observaciones, estado,
-        created_by, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        created_by, dolar_historial_id, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *`,
       [
         proveedor_id,
@@ -269,7 +291,8 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
         condicion_pago || 'CONTADO',
         observaciones || null,
         estado || 'PENDIENTE',
-        usuario_id
+        usuario_id,
+        dolarHistorialId
       ]
     );
     
@@ -305,18 +328,21 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
         es_item_manual = true;
         creado_como_materia_prima = true;
         
-        // Registrar en historial de precios
+        // Registrar en historial de precios (primer precio de este material,
+        // no hay anterior con qué comparar, variación 0)
         await client.query(
           `INSERT INTO historial_precios_materias (
             materia_prima_id, proveedor_id,
             precio_anterior, precio_nuevo,
+            precio_nuevo_usd,
             variacion_porcentaje, factura_id,
             fecha_cambio, created_by, created_at
-          ) VALUES ($1, $2, NULL, $3, 0, $4, CURRENT_DATE, $5, CURRENT_TIMESTAMP)`,
+          ) VALUES ($1, $2, NULL, $3, $4, 0, $5, CURRENT_DATE, $6, CURRENT_TIMESTAMP)`,
           [
             materia_prima_id,
             proveedor_id,
             item.precio_unitario,
+            dolarValido ? item.precio_unitario / parseFloat(dolar) : null,
             factura.id,
             usuario_id
           ]
@@ -335,15 +361,23 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
         // último precio global. Así, con varios proveedores para un mismo
         // material, cada uno tiene su propia comparación y no se mezclan entre sí.
         // (Diseño acordado 12/09/2026, ver doc del proyecto.)
+        // Se trae también el dólar de la factura de esa compra anterior (si
+        // la tenía cargada) para poder comparar precios en USD más abajo.
         const precioAnteriorProveedorResult = await client.query(
-          `SELECT precio_unitario FROM stock_movimientos
-           WHERE materia_prima_id = $1 AND proveedor_id = $2 AND tipo_movimiento = 'ENTRADA'
-           ORDER BY fecha_movimiento DESC, id DESC LIMIT 1`,
+          `SELECT sm.precio_unitario, hd_anterior.dolar as dolar_anterior
+           FROM stock_movimientos sm
+           LEFT JOIN facturas_compra fc_anterior ON sm.factura_id = fc_anterior.id
+           LEFT JOIN historial_dolar hd_anterior ON fc_anterior.dolar_historial_id = hd_anterior.id
+           WHERE sm.materia_prima_id = $1 AND sm.proveedor_id = $2 AND sm.tipo_movimiento = 'ENTRADA'
+           ORDER BY sm.fecha_movimiento DESC, sm.id DESC LIMIT 1`,
           [materia_prima_id, proveedor_id]
         );
 
         const precio_anterior_proveedor = precioAnteriorProveedorResult.rows.length > 0
           ? parseFloat(precioAnteriorProveedorResult.rows[0].precio_unitario)
+          : null;
+        const dolar_anterior = precioAnteriorProveedorResult.rows.length > 0 && precioAnteriorProveedorResult.rows[0].dolar_anterior !== null
+          ? parseFloat(precioAnteriorProveedorResult.rows[0].dolar_anterior)
           : null;
         const precio_nuevo = item.precio_unitario;
 
@@ -358,33 +392,44 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
         if (precio_anterior_proveedor === null) {
           console.log(`ℹ️  Primera compra registrada de materia prima ${materia_prima_id} a este proveedor (${proveedor_id}); no hay precio previo de ese proveedor para comparar`);
         } else {
-          // Solo registrar variación si el precio es diferente (con tolerancia de 0.01 para decimales)
+          // Solo registrar variación si el precio en pesos es diferente (con tolerancia de 0.01)
           const diferencia = Math.abs(precio_nuevo - precio_anterior_proveedor);
           if (diferencia > 0.01) {
-            const variacion = precio_anterior_proveedor > 0
-              ? ((precio_nuevo - precio_anterior_proveedor) / precio_anterior_proveedor) * 100
-              : 0;
+            // La variación que dispara la alerta ▲/▼ se calcula en USD, no en
+            // pesos (diseño acordado 12/09/2026): así una devaluación no se ve
+            // como "aumento de precio" del material. Si no hay dólar cargado
+            // para esta factura o para la compra anterior, no se puede
+            // convertir a USD y por lo tanto no se dispara alerta (queda en
+            // NULL); el precio en pesos se sigue guardando igual.
+            const precio_anterior_usd = dolar_anterior ? precio_anterior_proveedor / dolar_anterior : null;
+            const precio_nuevo_usd = dolarValido ? precio_nuevo / parseFloat(dolar) : null;
+            const variacion = (precio_anterior_usd !== null && precio_nuevo_usd !== null && precio_anterior_usd > 0)
+              ? ((precio_nuevo_usd - precio_anterior_usd) / precio_anterior_usd) * 100
+              : null;
 
             // Registrar en historial de precios (ligado a este proveedor)
             await client.query(
               `INSERT INTO historial_precios_materias (
                 materia_prima_id, proveedor_id,
                 precio_anterior, precio_nuevo,
+                precio_anterior_usd, precio_nuevo_usd,
                 variacion_porcentaje, factura_id,
                 fecha_cambio, created_by, created_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE, $7, CURRENT_TIMESTAMP)`,
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9, CURRENT_TIMESTAMP)`,
               [
                 materia_prima_id,
                 proveedor_id,
                 precio_anterior_proveedor,
                 precio_nuevo,
+                precio_anterior_usd,
+                precio_nuevo_usd,
                 variacion,
                 factura.id,
                 usuario_id
               ]
             );
 
-            console.log(`✅ Variación de precio detectada (proveedor ${proveedor_id}) para materia prima ${materia_prima_id}: $${precio_anterior_proveedor} → $${precio_nuevo} (${variacion.toFixed(2)}%)`);
+            console.log(`✅ Variación de precio detectada (proveedor ${proveedor_id}) para materia prima ${materia_prima_id}: $${precio_anterior_proveedor} → $${precio_nuevo}` + (variacion !== null ? ` (${variacion.toFixed(2)}% en USD)` : ' (sin dólar cargado, no se calcula % ni se dispara alerta)'));
           } else {
             console.log(`ℹ️  Precio sin cambios para materia prima ${materia_prima_id} respecto al mismo proveedor (${proveedor_id}): $${precio_anterior_proveedor}`);
           }
@@ -483,14 +528,16 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
     
     // Obtener factura completa para respuesta
     const facturaCompletaResult = await pool.query(
-      `SELECT 
+      `SELECT
         fc.*,
         p.nombre as proveedor_nombre,
         p.cuit as proveedor_cuit,
-        u.nombre_completo as creado_por
+        u.nombre_completo as creado_por,
+        hd.dolar as dolar
        FROM facturas_compra fc
        JOIN proveedores p ON fc.proveedor_id = p.id
        LEFT JOIN usuarios u ON fc.created_by = u.id
+       LEFT JOIN historial_dolar hd ON fc.dolar_historial_id = hd.id
        WHERE fc.id = $1`,
       [factura.id]
     );
@@ -547,11 +594,12 @@ router.put('/:id', authorize(['admin', 'control', 'compras']), async (req, res) 
       total,
       condicion_pago,
       observaciones,
-      estado
+      estado,
+      dolar
     } = req.body;
-    
+
     const usuario_id = req.usuario.id;
-    
+
     // Verificar que la factura existe
     const facturaExistente = await client.query(
       'SELECT * FROM facturas_compra WHERE id = $1 FOR UPDATE',
@@ -663,7 +711,22 @@ router.put('/:id', authorize(['admin', 'control', 'compras']), async (req, res) 
       updateValues.push(estado);
       paramIndex++;
     }
-    
+
+    // Cotización del dólar: solo se toca si se manda un valor válido. Igual
+    // que en el alta, se registra una fila nueva en historial_dolar y se liga
+    // la factura a ella; no pisa parametros.dolar_banco (ver comentario en
+    // el POST de este mismo archivo).
+    const dolarValido = dolar !== undefined && dolar !== null && dolar !== '' && !isNaN(parseFloat(dolar)) && parseFloat(dolar) > 0;
+    if (dolarValido) {
+      const dolarResult = await client.query(
+        `INSERT INTO historial_dolar (dolar, usuario_id, created_at) VALUES ($1, $2, CURRENT_TIMESTAMP) RETURNING id`,
+        [parseFloat(dolar), usuario_id]
+      );
+      updateFields.push(`dolar_historial_id = $${paramIndex}`);
+      updateValues.push(dolarResult.rows[0].id);
+      paramIndex++;
+    }
+
     // Solo actualizar si hay campos para actualizar
     if (updateFields.length > 0) {
       updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
@@ -683,14 +746,16 @@ router.put('/:id', authorize(['admin', 'control', 'compras']), async (req, res) 
     
     // Obtener factura actualizada
     const facturaActualizada = await pool.query(
-      `SELECT 
+      `SELECT
         fc.*,
         p.nombre as proveedor_nombre,
         p.cuit as proveedor_cuit,
-        u.nombre_completo as creado_por
+        u.nombre_completo as creado_por,
+        hd.dolar as dolar
        FROM facturas_compra fc
        JOIN proveedores p ON fc.proveedor_id = p.id
        LEFT JOIN usuarios u ON fc.created_by = u.id
+       LEFT JOIN historial_dolar hd ON fc.dolar_historial_id = hd.id
        WHERE fc.id = $1`,
       [id]
     );

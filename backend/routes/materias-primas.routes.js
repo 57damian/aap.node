@@ -199,6 +199,8 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
           hpm.id,
           hpm.precio_nuevo,
           hpm.precio_anterior,
+          hpm.precio_nuevo_usd,
+          hpm.precio_anterior_usd,
           hpm.variacion_porcentaje,
           hpm.fecha_cambio,
           fc.numero_factura as factura_numero,

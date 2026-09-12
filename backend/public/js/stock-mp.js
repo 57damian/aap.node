@@ -208,6 +208,22 @@ async function eliminarMateriaPrima(id) {
     }
 }
 
+// Sub-línea con el valor en USD debajo del precio en pesos, si hay dólar
+// cargado para esa compra (diseño acordado 12/09/2026 - cotización del dólar
+// por factura). Si no hay dato en USD (facturas viejas, o factura sin dólar
+// cargado), no se muestra nada.
+function renderPrecioUsd(valorUsd) {
+    if (valorUsd === null || valorUsd === undefined) return '';
+    return `<br><small class="text-muted">USD ${parseFloat(valorUsd).toFixed(2)}</small>`;
+}
+
+function renderVariacionHistorial(p) {
+    if (p.variacion_porcentaje === null || p.variacion_porcentaje === undefined) {
+        return '<span class="text-muted">—</span>';
+    }
+    return `<span class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje}%</span>`;
+}
+
 // Ver historial de precios desde la tabla
 async function verHistorialPrecios(id) {
     try {
@@ -224,11 +240,9 @@ async function verHistorialPrecios(id) {
             tbody.innerHTML = historial.map(p => `
                 <tr>
                     <td>${p.fecha_cambio || '-'}</td>
-                    <td>${formatearMoneda(p.precio_anterior || 0)}</td>
-                    <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
-                    <td class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">
-                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
-                    </td>
+                    <td>${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
+                    <td>${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
+                    <td>${renderVariacionHistorial(p)}</td>
                     <td>${p.factura_numero || '-'}</td>
                     <td>${p.usuario_nombre || '-'}</td>
                 </tr>
@@ -267,11 +281,9 @@ async function verHistorialPreciosModal() {
             tbody.innerHTML = historial.map(p => `
                 <tr>
                     <td>${p.fecha_cambio || '-'}</td>
-                    <td>${formatearMoneda(p.precio_anterior || 0)}</td>
-                    <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
-                    <td class="${p.variacion_porcentaje > 0 ? 'text-success' : 'text-danger'}">
-                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
-                    </td>
+                    <td>${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
+                    <td>${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
+                    <td>${renderVariacionHistorial(p)}</td>
                     <td>${p.factura_numero || '-'}</td>
                     <td>${p.usuario_nombre || '-'}</td>
                 </tr>

@@ -51,6 +51,26 @@ class FacturasCompra {
         this.addEmptyItem();
     }
     
+    // Trae la cotización actual del dólar (parametros.dolar_banco) para
+    // sugerirla como valor inicial en una factura nueva. Solo se llama para
+    // altas: al editar, loadFactura() carga el dólar propio de esa factura
+    // (o lo deja vacío si no lo tenía), que no debe pisarse con el actual.
+    async loadDolarActual() {
+        try {
+            const dolarInfo = typeof apiFetch === 'function'
+                ? await apiFetch('/api/precios/parametros/dolar')
+                : await fetch(`${API_URL || 'http://localhost:3000'}/api/precios/parametros/dolar`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                }).then(r => r.json());
+
+            if (dolarInfo && dolarInfo.dolar) {
+                document.getElementById('dolar').value = dolarInfo.dolar;
+            }
+        } catch (error) {
+            console.error('Error cargando dólar actual:', error);
+        }
+    }
+
     async loadProveedores() {
         try {
             // Mostrar indicador de carga
@@ -685,6 +705,7 @@ class FacturasCompra {
             condicion_pago: document.getElementById('condicion_pago').value,
             observaciones: document.getElementById('observaciones').value || null,
             estado: document.getElementById('estado').value,
+            dolar: document.getElementById('dolar').value ? parseFloat(document.getElementById('dolar').value) : null,
             items: this.items
         };
         
@@ -1188,6 +1209,7 @@ class FacturasCompra {
             document.getElementById('retenciones').value = factura.retenciones || 0;
             document.getElementById('observaciones').value = factura.observaciones || '';
             document.getElementById('estado').value = factura.estado || 'PENDIENTE';
+            document.getElementById('dolar').value = factura.dolar || '';
             
             // Actualizar display del número
             this.updateNumeroFacturaDisplay();
@@ -1224,6 +1246,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (facturaId) {
         window.facturasCompra.loadFactura(facturaId);
+    } else {
+        window.facturasCompra.loadDolarActual();
     }
 });
     
