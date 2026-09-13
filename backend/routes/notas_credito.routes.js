@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize } = require('../middlewares/auth');
+const { saldoFactura } = require('../services/cuenta-cliente');
 
 router.use(verificarToken);
 
@@ -38,23 +39,14 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
       throw new Error('Factura no encontrada');
     }
 
-    /* 2️⃣ Calcular saldo actual (incluyendo NC previas) */
-    const saldoRes = await client.query(
-      `
-      SELECT
-        f.total
-        - COALESCE(SUM(ap.monto_aplicado),0)
-        - COALESCE(SUM(nc.total),0) AS saldo
-      FROM facturas f
-      LEFT JOIN aplicacion_pagos ap ON ap.factura_id = f.id
-      LEFT JOIN notas_credito nc ON nc.factura_id = f.id
-      WHERE f.id = $1
-      GROUP BY f.id
-      `,
-      [factura_id]
-    );
-
-    const saldoActual = parseFloat(saldoRes.rows[0].saldo);
+    /* 2️⃣ Saldo actual de la factura (incluye NC previas y cobros acreditados).
+       La versión anterior hacía LEFT JOIN a aplicacion_pagos y a
+       notas_credito en la misma consulta con SUM(): con más de un pago y
+       más de una NC el producto cartesiano multiplicaba ambas sumas y el
+       saldo salía mal. Ahora se usa el servicio compartido. */
+    const factura = await saldoFactura(client, factura_id);
+    if (!factura) throw new Error('Factura no encontrada');
+    const saldoActual = parseFloat(factura.saldo);
 
     let subtotal = 0;
     let ivaTotal = 0;

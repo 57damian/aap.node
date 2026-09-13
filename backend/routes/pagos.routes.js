@@ -1,3 +1,13 @@
+/* NOTA (13/09/2026 — reorganización del módulo de Cobros):
+ * pago_items.cheque_estado fue eliminado; el estado de cualquier forma de
+ * cobro vive ahora en pago_items.estado con valores en mayúscula
+ * (EN_CARTERA / DEPOSITADO / ACREDITADO / RECHAZADO / ANULADO).
+ * Acá se actualizaron las referencias para que las consultas no rompan,
+ * PERO el bug de fondo sigue abierto: este archivo joinea pago_items
+ * (que es la tabla de cobros de CLIENTES) contra pagos_proveedores, así
+ * que puede devolver cheques de clientes como si fueran de un proveedor.
+ * Se resuelve al cerrar el módulo de Proveedores — ver claude/modulo-proveedores.md.
+ */
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -157,7 +167,7 @@ router.get('/cheques', async (req, res) => {
         pi.cheque_fecha_emision,
         pi.cheque_fecha_cobro,
         pi.cheque_fecha_depositado,
-        pi.cheque_estado,
+        pi.estado AS cheque_estado,
         pi.cheque_gasto_comision,
         pi.cheque_motivo_rechazo,
         p.proveedor_id,
@@ -177,8 +187,8 @@ router.get('/cheques', async (req, res) => {
     }
     
     if (estado) {
-      query += ` AND pi.cheque_estado = $${params.length + 1}`;
-      params.push(estado);
+      query += ` AND pi.estado = $${params.length + 1}`;
+      params.push(String(estado).toUpperCase());
     }
     
     if (desde) {
@@ -215,7 +225,7 @@ router.get('/cheques/:id', async (req, res) => {
         pi.cheque_fecha_emision,
         pi.cheque_fecha_cobro,
         pi.cheque_fecha_depositado,
-        pi.cheque_estado,
+        pi.estado AS cheque_estado,
         pi.cheque_gasto_comision,
         pi.cheque_motivo_rechazo,
         p.proveedor_id,
@@ -259,7 +269,7 @@ router.get('/cheques/alertas', async (req, res) => {
       JOIN pagos_proveedores p ON pi.pago_id = p.id
       JOIN proveedores pr ON p.proveedor_id = pr.id
       WHERE pi.tipo = 'CHEQUE'
-        AND pi.cheque_estado = 'pendiente'
+        AND pi.estado = 'EN_CARTERA'
         AND pi.cheque_fecha_cobro BETWEEN CURRENT_DATE AND CURRENT_DATE + ($1 * INTERVAL '1 day')
       ORDER BY pi.cheque_fecha_cobro ASC
     `, [diasNum]);
@@ -286,7 +296,7 @@ router.post('/cheques/:id/depositar', async (req, res) => {
     
     const result = await client.query(`
       UPDATE pago_items 
-      SET cheque_fecha_depositado = $1, cheque_estado = 'depositado'
+      SET cheque_fecha_depositado = $1, estado = 'DEPOSITADO'
       WHERE id = $2 AND tipo = 'CHEQUE'
       RETURNING *
     `, [fecha_depositado || new Date().toISOString().split('T')[0], id]);
@@ -319,7 +329,7 @@ router.post('/cheques/:id/rechazar', async (req, res) => {
     // Actualizar cheque rechazado
     const result = await client.query(`
       UPDATE pago_items 
-      SET cheque_estado = 'rechazado', 
+      SET estado = 'RECHAZADO', 
           cheque_motivo_rechazo = $1,
           cheque_gasto_comision = $2
       WHERE id = $3 AND tipo = 'CHEQUE'
@@ -337,8 +347,8 @@ router.post('/cheques/:id/rechazar', async (req, res) => {
       
       await client.query(`
         INSERT INTO pago_items 
-        (pago_id, tipo, monto, cheque_numero, cheque_banco, cheque_fecha_emision, cheque_fecha_cobro, observaciones, cheque_estado)
-        VALUES ($1, 'CHEQUE', $2, $3, $4, $5, $6, $7, 'pendiente')
+        (pago_id, tipo, monto, cheque_numero, cheque_banco, cheque_fecha_emision, cheque_fecha_cobro, observaciones, estado)
+        VALUES ($1, 'CHEQUE', $2, $3, $4, $5, $6, $7, 'EN_CARTERA')
       `, [pago_id, monto, numero_cheque, banco, fecha_emision, fecha_cobro, observaciones]);
     }
     
@@ -363,8 +373,8 @@ router.put('/cheques/:id/acreditar', async (req, res) => {
     
     const result = await client.query(`
       UPDATE pago_items 
-      SET cheque_estado = 'acreditado'
-      WHERE id = $1 AND tipo = 'CHEQUE' AND cheque_estado = 'depositado'
+      SET estado = 'ACREDITADO'
+      WHERE id = $1 AND tipo = 'CHEQUE' AND estado = 'DEPOSITADO'
       RETURNING *
     `, [id]);
     

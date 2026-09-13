@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize } = require('../middlewares/auth');
+const { resumenCliente, cuentaCorriente } = require('../services/cuenta-cliente');
 
 router.use(verificarToken);
 
@@ -159,156 +160,58 @@ router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
   }
 });
 
-/* ESTADO FINANCIERO - CORREGIDO */
+/* ESTADO FINANCIERO DEL CLIENTE
+   Antes esta ruta sumaba solo los pagos con estado 'acreditado', un valor
+   que el módulo de pagos nunca escribía: el total pagado daba siempre 0 y
+   el saldo terminaba siendo igual al total facturado. Ahora delega en
+   services/cuenta-cliente.js, que es la única definición de saldo del
+   sistema (ver claude/modulo-pagos.md). */
 router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
-  const { id } = req.params;
-
-  const clienteCheck = await pool.query(
-    'SELECT id, nombre FROM clientes WHERE id = $1',
-    [id]
-  );
-
-  if (!clienteCheck.rows.length)
-    return res.status(404).json({ error: 'Cliente no encontrado' });
-
-  // CORREGIDO: Calcular total facturado por cliente correctamente
-  const facturadoRes = await pool.query(
-    `
-    SELECT COALESCE(SUM(f.total - COALESCE(nc.total_credito, 0)), 0) AS total_facturado
-    FROM facturas f
-    LEFT JOIN (
-      SELECT factura_id, SUM(total) AS total_credito
-      FROM notas_credito
-      GROUP BY factura_id
-    ) nc ON nc.factura_id = f.id
-    WHERE f.cliente_id = $1
-    `,
-    [id]
-  );
-
-  const totalFacturado = parseFloat(facturadoRes.rows[0].total_facturado) || 0;
-
-  /* TOTAL PAGADO SOLO ACREDITADO */
-  const pagadoRes = await pool.query(
-    `
-    SELECT COALESCE(SUM(ap.monto_aplicado), 0) AS total_pagado
-    FROM aplicacion_pagos ap
-    JOIN facturas f ON f.id = ap.factura_id
-    JOIN pagos p ON p.id = ap.pago_id
-    WHERE f.cliente_id = $1
-      AND p.estado = 'acreditado'
-    `,
-    [id]
-  );
-
-  const total_pagado = parseFloat(pagadoRes.rows[0].total_pagado) || 0;
-  const saldo = totalFacturado - total_pagado;
-
-  res.json({
-    cliente: clienteCheck.rows[0],
-    total_facturado: totalFacturado,
-    total_pagado,
-    saldo
-  });
-});
-
-/* CUENTA CORRIENTE CLIENTE */
-router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, res) => {
-  const { id } = req.params;
-  const { desde, hasta } = req.query;
-
   try {
-    const clienteCheck = await pool.query(
-      'SELECT id, nombre FROM clientes WHERE id = $1',
-      [id]
+    const cliente = await pool.query(
+      'SELECT id, nombre FROM clientes WHERE id = $1', [req.params.id]
     );
+    if (!cliente.rows.length) return res.status(404).json({ error: 'Cliente no encontrado' });
 
-    if (!clienteCheck.rows.length)
-      return res.status(404).json({ error: 'Cliente no encontrado' });
-
-    let filtroFecha = '';
-    let params = [id];
-
-    if (desde) {
-      params.push(desde);
-      filtroFecha += ` AND fecha >= $${params.length}`;
-    }
-
-    if (hasta) {
-      params.push(hasta);
-      filtroFecha += ` AND fecha <= $${params.length}`;
-    }
-
-    const movimientosRes = await pool.query(
-      `
-      SELECT *
-      FROM (
-        -- FACTURAS
-        SELECT
-          f.fecha,
-          'FACTURA' AS tipo,
-          f.numero_factura AS numero,
-          f.total AS debe,
-          0 AS haber,
-          NULL AS estado_pago
-        FROM facturas f
-        WHERE f.cliente_id = $1
-
-        UNION ALL
-
-        -- NOTAS DE CREDITO
-        SELECT
-          nc.fecha,
-          'NOTA_CREDITO' AS tipo,
-          nc.numero_nota AS numero,
-          0 AS debe,
-          nc.total AS haber,
-          NULL AS estado_pago
-        FROM notas_credito nc
-        JOIN facturas f ON f.id = nc.factura_id
-        WHERE f.cliente_id = $1
-
-        UNION ALL
-
-        -- PAGOS
-        SELECT
-          p.fecha_recepcion AS fecha,
-          'PAGO' AS tipo,
-          p.id::text AS numero,
-          0 AS debe,
-          CASE
-            WHEN p.estado = 'acreditado'
-            THEN p.monto
-            ELSE 0
-          END AS haber,
-          p.estado AS estado_pago
-        FROM pagos p
-        WHERE p.cliente_id = $1
-      ) movimientos
-      WHERE 1=1
-      ${filtroFecha}
-      ORDER BY fecha, tipo
-      `,
-      params
-    );
-
-    let saldoAcumulado = 0;
-    const movimientosConSaldo = movimientosRes.rows.map(m => {
-      saldoAcumulado += parseFloat(m.debe) - parseFloat(m.haber);
-      return {
-        ...m,
-        saldo: saldoAcumulado
-      };
-    });
+    const totales = await resumenCliente(pool, req.params.id);
 
     res.json({
-      cliente: clienteCheck.rows[0],
-      filtros: { desde: desde || null, hasta: hasta || null },
-      movimientos: movimientosConSaldo
+      cliente: cliente.rows[0],
+      total_facturado: parseFloat(totales.total_facturado),
+      total_pagado: parseFloat(totales.total_cobrado),
+      saldo: parseFloat(totales.saldo),
+      // datos nuevos: lo que está vencido y lo que depende de un cheque
+      vencido: parseFloat(totales.vencido),
+      en_gestion: parseFloat(totales.en_gestion),
+      saldo_a_favor: parseFloat(totales.saldo_a_favor),
+      dias_atraso_max: totales.dias_atraso_max
     });
-
   } catch (err) {
-    console.error('Error cuenta corriente:', err);
+    console.error('Error obteniendo estado del cliente:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* CUENTA CORRIENTE DEL CLIENTE
+   Rompía siempre con "column p.monto does not exist" (la columna se llama
+   monto_total). Ahora usa el mismo servicio que el módulo de Cobros, así
+   los movimientos y el saldo acumulado coinciden con el panel de deuda. */
+router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, res) => {
+  try {
+    const cliente = await pool.query(
+      'SELECT id, nombre FROM clientes WHERE id = $1', [req.params.id]
+    );
+    if (!cliente.rows.length) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+    const movimientos = await cuentaCorriente(pool, req.params.id, req.query);
+
+    res.json({
+      cliente: cliente.rows[0],
+      filtros: { desde: req.query.desde || null, hasta: req.query.hasta || null },
+      movimientos
+    });
+  } catch (err) {
+    console.error('Error en cuenta corriente:', err);
     res.status(500).json({ error: err.message });
   }
 });

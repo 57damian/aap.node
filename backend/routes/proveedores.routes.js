@@ -104,19 +104,20 @@ router.post('/', verificarToken, authorize(['admin', 'control']), async (req, re
         
         const result = await pool.query(`
             INSERT INTO proveedores (
-                nombre, cuit, direccion, telefono, email, 
+                nombre, cuit, direccion, telefono, email,
                 contacto, condicion_iva, observaciones, activo
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
             RETURNING *
         `, [nombre, cuit, direccion, telefono, email, contacto, condicion_iva, observaciones]);
-        
-        // Insertar también en entidades
-        await pool.query(`
-            INSERT INTO entidades (tipo, entidad_id, nombre, cuit)
-            VALUES ('PROVEEDOR', $1, $2, $3)
-            ON CONFLICT (tipo, entidad_id) DO NOTHING
-        `, [result.rows[0].id, nombre, cuit]);
-        
+
+        // Nota (13/09/2026): antes acá se insertaba también en una tabla
+        // "entidades" que no existe en la base real. Como esa consulta se
+        // hacía después de este INSERT y sin una transacción que envolviera
+        // ambas, el proveedor quedaba creado igual pero el endpoint
+        // devolvía error 500 (nadie más en el sistema lee "entidades").
+        // Se sacó por completo — ver auditoría de Proveedores en el doc del
+        // proyecto.
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -163,15 +164,12 @@ router.put('/:id', verificarToken, authorize(['admin', 'control']), async (req, 
             WHERE id = $10
             RETURNING *
         `, [nombre, cuit, direccion, telefono, email, contacto, condicion_iva, observaciones, activo, req.params.id]);
-        
-        // Actualizar también en entidades
-        await pool.query(`
-            UPDATE entidades SET
-                nombre = COALESCE($1, nombre),
-                cuit = COALESCE($2, cuit)
-            WHERE tipo = 'PROVEEDOR' AND entidad_id = $3
-        `, [nombre, cuit, req.params.id]);
-        
+
+        // Nota (13/09/2026): ídem que en el POST de arriba — se sacó el
+        // UPDATE a la tabla "entidades" (no existe en la base real, hacía
+        // que cualquier edición de proveedor devolviera error 500 aunque el
+        // cambio ya hubiera quedado guardado en "proveedores").
+
         res.json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });

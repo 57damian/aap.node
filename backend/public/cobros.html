@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cobros y deuda de clientes</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    /* ---- Estilos propios de la pantalla de cobros ---- */
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
+    .kpi { background: var(--bg-primary); border: 1px solid var(--border-color); border-left: 4px solid var(--gray-400);
+           border-radius: var(--radius-lg); padding: var(--space-4); box-shadow: var(--shadow-sm); }
+    .kpi-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); font-weight: 600; }
+    .kpi-value { font-size: 1.5rem; font-weight: 700; margin-top: var(--space-1); line-height: 1.2; }
+    .kpi-sub   { font-size: .78rem; color: var(--text-muted); margin-top: var(--space-1); }
+    .kpi.total   { border-left-color: var(--primary-500); }
+    .kpi.vencido { border-left-color: var(--danger-500); }
+    .kpi.vencido .kpi-value { color: var(--danger-600); }
+    .kpi.porvencer { border-left-color: var(--warning-500); }
+    .kpi.gestion { border-left-color: var(--info-500); }
+    .kpi.afavor  { border-left-color: var(--success-500); }
+
+    .aging { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 2px;
+             border-radius: var(--radius-lg); overflow: hidden; margin-bottom: var(--space-6); border: 1px solid var(--border-color); }
+    .aging div { padding: var(--space-3) var(--space-4); background: var(--bg-primary); }
+    .aging .t { font-size: .72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .aging .v { font-size: 1.05rem; font-weight: 700; }
+    .aging .b0 { box-shadow: inset 0 -3px 0 var(--gray-300); }
+    .aging .b1 { box-shadow: inset 0 -3px 0 var(--warning-500); }
+    .aging .b2 { box-shadow: inset 0 -3px 0 #fd7e14; }
+    .aging .b3 { box-shadow: inset 0 -3px 0 var(--danger-500); }
+    .aging .b4 { box-shadow: inset 0 -3px 0 #7f1d1d; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-bottom: var(--space-4); }
+    .toolbar > * { flex: 0 0 auto; width: auto; margin: 0; }
+    .toolbar input[type=search], .toolbar input[type=text] { min-width: 260px; }
+    .toolbar label { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem;
+                     color: var(--text-secondary); white-space: nowrap; }
+    .toolbar label input { width: auto; }
+
+    table.data { width: 100%; border-collapse: collapse; background: var(--bg-primary);
+                 border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden; }
+    table.data th { background: var(--gray-50); text-align: left; font-size: .74rem; text-transform: uppercase;
+                    letter-spacing: .03em; color: var(--text-muted); padding: var(--space-3); border-bottom: 1px solid var(--border-color); }
+    table.data td { padding: var(--space-3); border-bottom: 1px solid var(--gray-100); font-size: .9rem; vertical-align: middle; }
+    table.data tbody tr:hover { background: var(--primary-50); }
+    table.data tr.clickable { cursor: pointer; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .fuerte { font-weight: 700; }
+    .rojo { color: var(--danger-600); }
+    .verde { color: var(--success-600); }
+    .gris { color: var(--text-muted); }
+
+    .chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .02em; }
+    .chip-pendiente { background: var(--gray-100); color: var(--gray-700); }
+    .chip-vencida   { background: #fee2e2; color: #991b1b; }
+    .chip-parcial   { background: #fef3c7; color: #92400e; }
+    .chip-gestion   { background: #cffafe; color: #155e75; }
+    .chip-cobrada   { background: #dcfce7; color: #166534; }
+    .chip-sobre_cobrada { background: #ede9fe; color: #5b21b6; }
+    .chip-en_cartera { background: #e0e7ff; color: #3730a3; }
+    .chip-depositado{ background: #cffafe; color: #155e75; }
+    .chip-acreditado{ background: #dcfce7; color: #166534; }
+    .chip-rechazado { background: #fee2e2; color: #991b1b; }
+    .chip-anulado   { background: var(--gray-200); color: var(--gray-600); }
+    .chip-a_cuenta  { background: #fef3c7; color: #92400e; }
+    .chip-imputado  { background: #dcfce7; color: #166534; }
+
+    .panel { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+             padding: var(--space-5); margin-bottom: var(--space-5); box-shadow: var(--shadow-sm); }
+    .panel-title { font-weight: 700; font-size: 1rem; margin-bottom: var(--space-4); display: flex;
+                   justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+    .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); }
+    .grid-form label { display: block; font-size: .78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+
+    .forma { display: grid; grid-template-columns: 150px 150px 1fr 40px; gap: var(--space-3); align-items: start;
+             padding: var(--space-3); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: var(--space-3); }
+    .forma .detalle { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-2); }
+    .forma .detalle input, .forma .detalle select { width: 100%; }
+    .forma .campo { display: flex; flex-direction: column; gap: 2px; }
+    .forma .campo span { font-size: .68rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+    .btn-x { background: transparent; border: 1px solid var(--border-color); color: var(--danger-600);
+             border-radius: var(--radius-md); cursor: pointer; height: 38px; font-weight: 700; }
+
+    .totales-cobro { display: flex; gap: var(--space-6); flex-wrap: wrap; padding: var(--space-4);
+                     background: var(--gray-50); border-radius: var(--radius-md); margin-top: var(--space-4); }
+    .totales-cobro div span { display: block; font-size: .75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+    .totales-cobro div strong { font-size: 1.25rem; }
+
+    .drawer-bg { position: fixed; inset: 0; background: rgba(17,24,39,.45); display: none; z-index: 900; }
+    .drawer-bg.open { display: block; }
+    .drawer { position: fixed; top: 0; right: 0; height: 100%; width: min(940px, 96vw); background: var(--bg-secondary);
+              box-shadow: var(--shadow-xl); z-index: 901; transform: translateX(100%); transition: transform .2s ease;
+              overflow-y: auto; padding: var(--space-6); }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); margin-bottom: var(--space-5); }
+    .drawer-head h2 { margin: 0; font-size: 1.3rem; }
+    .drawer-head .meta { color: var(--text-muted); font-size: .85rem; }
+
+    .aviso { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); margin-bottom: var(--space-4); font-size: .88rem; }
+    .aviso-info { background: #e0f2fe; color: #075985; }
+    .aviso-warn { background: #fef3c7; color: #92400e; }
+    .aviso-ok   { background: #dcfce7; color: #166534; }
+    .aviso-err  { background: #fee2e2; color: #991b1b; }
+
+    #flash { position: fixed; top: 130px; right: 18px; z-index: 1000; max-width: 420px; display: none; }
+    .vacio { text-align: center; padding: var(--space-8); color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<div class="navbar">
+  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
+  <div class="navbar-menu">
+    <button data-roles="admin,control" onclick="location.href='dashboard.html'">Dashboard</button>
+    <button data-roles="admin,control" onclick="location.href='ficha.html'">Fichas Tecnicas</button>
+    <button data-roles="admin,control" onclick="location.href='oc.html'">Ordenes de Compra</button>
+    <button data-roles="admin,control" onclick="location.href='ventas.html'">Ventas</button>
+    <button data-roles="admin,control" onclick="location.href='clientes.html'">Clientes</button>
+    <button data-roles="admin,control" onclick="location.href='proveedores.html'">Proveedores</button>
+    <button data-roles="admin,control" class="active" onclick="location.href='cobros.html'">Cobros</button>
+    <button data-roles="admin,control" onclick="location.href='pagos-proveedores.html'">Pagos Proveedores</button>
+    <button data-roles="admin,operario,empleado" onclick="location.href='produccion.html'">Produccion</button>
+    <button data-roles="admin" onclick="location.href='usuarios.html'">Usuarios</button>
+    <button data-roles="admin" onclick="location.href='precios.html'">Precios</button>
+  </div>
+  <button class="btn btn-danger btn-sm" onclick="cerrarSesion()">Salir</button>
+</div>
+
+<div id="flash"></div>
+
+<div class="container">
+
+  <div class="header">
+    <h1 class="header-title">Cobros y deuda de clientes</h1>
+  </div>
+
+  <!-- Tarjetas de situación -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- Antigüedad de la deuda -->
+  <div class="aging" id="aging"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="deuda">Quién nos debe</button>
+    <button class="tab" data-tab="cobrar">Registrar cobro</button>
+    <button class="tab" data-tab="cheques">Cheques</button>
+    <button class="tab" data-tab="historial">Cobros y recibos</button>
+  </div>
+
+  <!-- ============ TAB: DEUDA ============ -->
+  <div id="tab-deuda" class="tab-content active">
+    <div class="toolbar">
+      <input type="search" id="buscarCliente" placeholder="Buscar cliente por nombre o CUIT...">
+      <label><input type="checkbox" id="soloVencido"> Solo con deuda vencida</label>
+      <select id="ordenDeuda">
+        <option value="vencido">Ordenar por vencido</option>
+        <option value="saldo">Ordenar por saldo total</option>
+        <option value="atraso">Ordenar por días de atraso</option>
+        <option value="nombre">Ordenar por nombre</option>
+      </select>
+      <button class="btn btn-info btn-sm" onclick="cargarTodo()">Actualizar</button>
+    </div>
+
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Cliente</th>
+          <th class="num">Facturas</th>
+          <th class="num">Saldo</th>
+          <th class="num">Vencido</th>
+          <th class="num">Por vencer</th>
+          <th class="num">En gestión</th>
+          <th class="num">Atraso</th>
+          <th class="num">A favor</th>
+        </tr>
+      </thead>
+      <tbody id="tablaDeuda">
+        <tr><td colspan="8" class="vacio">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ TAB: REGISTRAR COBRO ============ -->
+  <div id="tab-cobrar" class="tab-content">
+    <div class="panel">
+      <div class="panel-title">1 · De quién es el cobro</div>
+      <div class="grid-form">
+        <div>
+          <label for="cobroCliente">Cliente *</label>
+          <select id="cobroCliente"><option value="">-- Seleccionar --</option></select>
+        </div>
+        <div>
+          <label for="cobroFecha">Fecha de recepción *</label>
+          <input type="date" id="cobroFecha">
+        </div>
+        <div>
+          <label for="cobroObs">Observaciones</label>
+          <input type="text" id="cobroObs" placeholder="Ej: entregado en planta">
+        </div>
+      </div>
+      <div id="cobroResumenCliente"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">
+        <span>2 · Con qué nos pagan</span>
+        <button class="btn btn-info btn-sm" onclick="agregarForma()">+ Agregar forma de cobro</button>
+      </div>
+      <div id="formasCobro"></div>
+      <div class="aviso aviso-info" id="avisoCheques" style="display:none;">
+        Los cheques no cancelan la factura hasta que se acrediten. Hasta entonces la factura
+        queda marcada <strong>en gestión de cobro</strong>.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">
+        <span>3 · A qué facturas se imputa</span>
+        <span>
+          <button class="btn btn-secondary btn-sm" onclick="imputarAutomatico()">Imputar a las más viejas</button>
+          <button class="btn btn-secondary btn-sm" onclick="limpiarImputacion()">Limpiar</button>
+        </span>
+      </div>
+      <table class="data">
+        <thead>
+          <tr>
+            <th style="width:40px"></th>
+            <th>Factura</th>
+            <th>Vencimiento</th>
+            <th class="num">Total</th>
+            <th class="num">Saldo</th>
+            <th class="num">En gestión</th>
+            <th>Estado</th>
+            <th class="num" style="width:160px">A imputar</th>
+          </tr>
+        </thead>
+        <tbody id="tablaFacturasCobro">
+          <tr><td colspan="8" class="vacio">Elegí un cliente para ver sus facturas pendientes</td></tr>
+        </tbody>
+      </table>
+
+      <div class="totales-cobro">
+        <div><span>Total del cobro</span><strong id="totCobro">$0</strong></div>
+        <div><span>Imputado a facturas</span><strong id="totImputado">$0</strong></div>
+        <div><span>Queda a cuenta</span><strong id="totACuenta">$0</strong></div>
+      </div>
+
+      <div style="margin-top:var(--space-5); display:flex; gap:var(--space-3); flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btnGuardarCobro" onclick="guardarCobro()">Registrar cobro</button>
+        <button class="btn btn-secondary" onclick="resetFormularioCobro()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: CHEQUES ============ -->
+  <div id="tab-cheques" class="tab-content">
+    <div class="toolbar">
+      <select id="filtroChequeEstado">
+        <option value="EN_CARTERA">En cartera</option>
+        <option value="DEPOSITADO">Depositados</option>
+        <option value="ACREDITADO">Acreditados</option>
+        <option value="RECHAZADO">Rechazados</option>
+        <option value="">Todos</option>
+      </select>
+      <select id="filtroChequeCliente"><option value="">Todos los clientes</option></select>
+      <button class="btn btn-info btn-sm" onclick="cargarCheques()">Filtrar</button>
+    </div>
+
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Cheque</th>
+          <th>Banco</th>
+          <th>Cliente</th>
+          <th class="num">Monto</th>
+          <th>Se cobra</th>
+          <th>Imputado a</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tablaCheques"><tr><td colspan="8" class="vacio">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- ============ TAB: HISTORIAL ============ -->
+  <div id="tab-historial" class="tab-content">
+    <div class="toolbar">
+      <select id="filtroHistCliente"><option value="">Todos los clientes</option></select>
+      <input type="date" id="filtroHistDesde">
+      <input type="date" id="filtroHistHasta">
+      <select id="filtroHistEstado">
+        <option value="">Todos</option>
+        <option value="A_CUENTA">Sin imputar (a cuenta)</option>
+        <option value="PARCIAL">Imputados en parte</option>
+        <option value="IMPUTADO">Totalmente imputados</option>
+        <option value="ANULADO">Anulados</option>
+      </select>
+      <button class="btn btn-info btn-sm" onclick="cargarHistorial()">Filtrar</button>
+    </div>
+
+    <table class="data">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Fecha</th>
+          <th>Cliente</th>
+          <th>Formas</th>
+          <th class="num">Monto</th>
+          <th class="num">Imputado</th>
+          <th class="num">Sin imputar</th>
+          <th>Recibo</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tablaHistorial"><tr><td colspan="10" class="vacio">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Panel lateral de detalle -->
+<div class="drawer-bg" id="drawerBg" onclick="cerrarDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div>
+      <h2 id="drawerTitulo">Cliente</h2>
+      <div class="meta" id="drawerMeta"></div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="cerrarDrawer()">Cerrar</button>
+  </div>
+  <div id="drawerCuerpo"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/roleGuard.js"></script>
+<script src="js/cobros.js"></script>
+<script>verificarRolPagina(['admin', 'control']);</script>
+</body>
+</html>
