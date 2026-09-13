@@ -47,7 +47,7 @@ function verificarPermisosUsuario() {
 // Función para cargar alertas de pagos pendientes
 async function cargarAlertasDashboard() {
   try {
-    const response = await apiRequest('GET', '/api/alertas/facturas-pendientes');
+    const response = await apiRequest('GET', '/api/pagos-proveedores/alertas/facturas-pendientes');
     
     if (response.success && response.data && response.data.length > 0) {
       const alertas = response.data;

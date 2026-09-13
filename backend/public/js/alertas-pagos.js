@@ -66,7 +66,7 @@ async function cargarProveedores() {
 async function cargarAlertas() {
     try {
         showLoading();
-        const response = await apiRequest('GET', '/api/alertas/facturas-pendientes');
+        const response = await apiRequest('GET', '/api/pagos-proveedores/alertas/facturas-pendientes');
         
         if (response.success) {
             alertasData = response.data;
