@@ -1,197 +1,190 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Orden de Compra | Transformadores ERP</title>
+  <title>Detalle de orden de compra — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div data-content>
 
-<div class="navbar">
-  <a href="dashboard.html" class="navbar-brand">
-    <i class="fas fa-bolt"></i> TRANSFORMADORES ERP
-  </a>
-  <div class="navbar-menu">
-    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='dashboard.html'"><i class="fas fa-tachometer-alt"></i> Dashboard</button>
-    <button data-roles="admin,control" onclick="window.location.href='ficha.html'"><i class="fas fa-file-alt"></i> Fichas Técnicas</button>
-    <button data-roles="admin,control" onclick="window.location.href='oc.html'" class="active"><i class="fas fa-shopping-cart"></i> Órdenes de Compra</button>
-    <button data-roles="admin,control" onclick="window.location.href='ventas.html'"><i class="fas fa-chart-line"></i> Ventas</button>
-    <button data-roles="admin,control" onclick="window.location.href='clientes.html'"><i class="fas fa-users"></i> Clientes</button>
-    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'"><i class="fas fa-truck"></i> Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='pagos.html'"><i class="fas fa-credit-card"></i> Pagos</button>
-    <button data-roles="admin,control" onclick="window.location.href='reportes.html'"><i class="fas fa-chart-bar"></i> Reportes</button>
-    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'"><i class="fas fa-industry"></i> Producción</button>
-    <button data-roles="admin" onclick="window.location.href='usuarios.html'"><i class="fas fa-user-cog"></i> Usuarios</button>
-    <button data-roles="admin" onclick="window.location.href='precios.html'"><i class="fas fa-tags"></i> Precios</button>
+  <div class="page-head">
+    <div>
+      <h1>Orden de compra <span id="oc-titulo">…</span></h1>
+      <p>Entregas, remitos y facturación de esta orden</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-ghost" id="btnVolver">← Volver</button>
+    </div>
   </div>
-  <button class="btn btn-danger btn-sm" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
-</div>
 
-<div class="container">
-  <div class="page-header">
-    <h1><i class="fas fa-file-invoice"></i> Detalle de Orden de Compra</h1>
-    <p id="oc-titulo" class="text-muted">Cargando...</p>
+  <!-- Resumen: antes era un <div id="resumen"> con 6 filas de "etiqueta: valor"
+       apiladas. Ahora son KPIs, igual que en el resto del sistema. -->
+  <div class="kpi-row" id="resumen">
+    <div class="kpi"><div class="kpi-k">Cargando…</div></div>
   </div>
-  
-  <!-- Resumen Card -->
-  <div class="card">
-    <div class="card-header">
-      <h2><i class="fas fa-chart-pie"></i> Resumen</h2>
-    </div>
-    <div class="card-body">
-      <div id="resumen" class="resumen-grid"></div>
-    </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="detalle">Detalle e items</button>
+    <button class="tab" data-tab="entrega">Registrar entrega</button>
+    <button class="tab" data-tab="remitos">Remitos</button>
+    <button class="tab" data-tab="facturas">Facturas y pagos</button>
   </div>
-  
-  <!-- Detalle de productos -->
-  <div class="card">
-    <div class="card-header">
-      <h2><i class="fas fa-boxes"></i> Detalle de Productos</h2>
-    </div>
-    <div class="card-body">
-      <!-- Formulario para agregar items -->
-      <div class="form-agregar-item">
-        <h3><i class="fas fa-plus-circle"></i> Agregar Ítem</h3>
-        <form id="itemForm" class="form-inline">
-          <div class="form-group">
-            <select id="ficha_id" required class="form-control">
-              <option value="">-- Seleccionar modelo --</option>
+
+  <!-- ============ DETALLE E ITEMS ============ -->
+  <div id="tab-detalle" class="tab-content active">
+    <div class="panel">
+      <div class="panel-head"><h2>Agregar ítem</h2></div>
+      <div class="panel-body">
+        <form id="itemForm" class="form-grid">
+          <div class="field">
+            <label for="ficha_id">Modelo</label>
+            <select class="input" id="ficha_id" required>
+              <option value="">Elegí un modelo…</option>
             </select>
           </div>
-          <div class="form-group">
-            <input type="number" id="cantidad_pedida" placeholder="Cantidad" required class="form-control" min="1" />
+          <div class="field">
+            <label for="cantidad_pedida">Cantidad</label>
+            <input class="input" type="number" id="cantidad_pedida" required min="1" placeholder="Ej: 10">
           </div>
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Agregar
-          </button>
+          <div class="field" style="align-self:end">
+            <button type="submit" class="b b-primary">Agregar</button>
+          </div>
         </form>
       </div>
-      
-      <!-- Tabla de detalle -->
-      <div class="table-responsive">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Modelo</th>
-              <th>Pedido</th>
-              <th>Entregado</th>
-              <th>Pendiente</th>
-            </tr>
-          </thead>
-          <tbody id="detalle"></tbody>
-        </table>
-      </div>
     </div>
+
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th class="num">Pedido</th>
+            <th class="num">Entregado</th>
+            <th class="num">Pendiente</th>
+          </tr>
+        </thead>
+        <tbody id="detalle">
+          <tr><td colspan="4" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
   </div>
-  
-  <!-- Registrar entrega parcial -->
-  <div class="card">
-    <div class="card-header">
-      <h2><i class="fas fa-truck"></i> Registrar Entrega Parcial</h2>
-    </div>
-    <div class="card-body">
-      <form id="entregaForm">
-        <div class="remito-info" style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
-          <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #333;">
-            <i class="fas fa-file-invoice"></i> Datos del Remito
-          </h3>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div class="form-group">
-              <label for="remito_numero"><i class="fas fa-hashtag"></i> N° Remito *</label>
-              <input type="text" id="remito_numero" class="form-control" required placeholder="Ej: R-2024-001">
+
+  <!-- ============ REGISTRAR ENTREGA ============ -->
+  <div id="tab-entrega" class="tab-content">
+    <form id="entregaForm">
+      <div class="panel">
+        <div class="panel-head"><h2>Datos del remito</h2></div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="field">
+              <label for="remito_numero">N° de remito</label>
+              <input class="input" type="text" id="remito_numero" required placeholder="Ej: R-2026-001">
             </div>
-            <div class="form-group">
-              <label for="remito_fecha"><i class="fas fa-calendar"></i> Fecha Remito *</label>
-              <input type="date" id="remito_fecha" class="form-control" required>
+            <div class="field">
+              <label for="remito_fecha">Fecha</label>
+              <input class="input" type="date" id="remito_fecha" required>
             </div>
-            <div class="form-group full-width" style="grid-column: 1 / -1;">
-              <label for="remito_observaciones"><i class="fas fa-sticky-note"></i> Observaciones</label>
-              <textarea id="remito_observaciones" class="form-control" rows="2" placeholder="Observaciones del remito..."></textarea>
+            <div class="field ancho-total">
+              <label for="remito_observaciones">Observaciones <span class="muted">(opcional)</span></label>
+              <input class="input" type="text" id="remito_observaciones" placeholder="Observaciones del remito…">
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="table-responsive">
-          <table class="table">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Items pendientes</h2>
+          <div class="page-head-actions">
+            <button type="button" id="btnRegistrarEntrega" class="b b-primary">Registrar entrega</button>
+          </div>
+        </div>
+        <div class="panel-body flush"><div class="table-wrap">
+          <table class="t">
             <thead>
               <tr>
                 <th>Modelo</th>
-                <th>Pendiente</th>
-                <th>Entregar ahora</th>
+                <th class="num">Pendiente</th>
+                <th class="num">Entregar ahora</th>
                 <th>Incluir</th>
               </tr>
             </thead>
-            <tbody id="entregaItems"></tbody>
+            <tbody id="entregaItems">
+              <tr><td colspan="4" class="muted">Cargando…</td></tr>
+            </tbody>
           </table>
-        </div>
-        
-        <div class="form-actions">
-          <button type="button" id="btnRegistrarEntrega" class="btn btn-success">
-            <i class="fas fa-check-circle"></i> Registrar Entrega con Remito
-          </button>
-        </div>
-      </form>
-    </div>
+        </div></div>
+      </div>
+    </form>
   </div>
 
-  <div class="card">
-    <div class="card-header">
-      <h2><i class="fas fa-file-invoice"></i> Remitos de Entrega</h2>
-    </div>
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>N° Remito</th>
-              <th>Fecha</th>
-              <th>Venta</th>
-              <th>Items</th>
-              <th>Observaciones</th>
-            </tr>
-          </thead>
-          <tbody id="remitosList"></tbody>
-        </table>
-      </div>
-    </div>
+  <!-- ============ REMITOS ============ -->
+  <div id="tab-remitos" class="tab-content">
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>N° remito</th>
+            <th>Fecha</th>
+            <th class="solo-escritorio">Venta</th>
+            <th>Items</th>
+            <th class="solo-escritorio">Observaciones</th>
+          </tr>
+        </thead>
+        <tbody id="remitosList">
+          <tr><td colspan="5" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
   </div>
-  
-  <!-- Facturas y pagos -->
-  <div class="card">
-    <div class="card-header">
-      <h2><i class="fas fa-file-invoice-dollar"></i> Facturas y Pagos</h2>
-    </div>
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Modelo / Factura</th>
-              <th>Cantidad</th>
-              <th>Precio Unit.</th>
-              <th>Subtotal</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="facturas"></tbody>
-        </table>
-      </div>
-    </div>
+
+  <!-- ============ FACTURAS Y PAGOS ============ -->
+  <div id="tab-facturas" class="tab-content">
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Modelo / Factura</th>
+            <th class="num">Cantidad</th>
+            <th class="num solo-escritorio">Precio unitario</th>
+            <th class="num">Subtotal</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="facturas">
+          <tr><td colspan="5" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
   </div>
-  
-  <!-- Botones de acción -->
-  <div class="action-buttons">
-    <button id="btnVolver" class="btn btn-secondary">
-      <i class="fas fa-arrow-left"></i> Volver
-    </button>
-  </div>
+
 </div>
 
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
 <script src="js/api.js"></script>
-<script src="js/oc_detalle.js"></script>
+<script>
+  Shell.montar({ titulo: 'Órdenes de compra', sub: 'Detalle de orden' });
+
+  document.querySelectorAll('.tab[data-tab]').forEach(boton => {
+    boton.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      boton.classList.add('active');
+      document.getElementById('tab-' + boton.dataset.tab)?.classList.add('active');
+    });
+  });
+</script>
 <script src="js/auth.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  // Pantalla de datos comerciales: solo admin.
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/oc_detalle.js"></script>
 </body>
 </html>

@@ -1,680 +1,291 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fichas Técnicas | Transformadores ERP</title>
+  <title>Fichas técnicas — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
-  <style>
-    /* Estilos adicionales específicos para la nueva interfaz de fichas */
-    :root {
-      --ficha-spacing: 2rem;
-      --ficha-card-bg: #ffffff;
-      --ficha-border-color: #edf2f7;
-      --ficha-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    }
-
-    /* Header de la página */
-    .ficha-page-header {
-      background: linear-gradient(135deg, #3182ce 0%, #5a67d8 100%);
-      color: white;
-      padding: 2rem;
-      border-radius: 1rem;
-      margin-bottom: 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: var(--ficha-shadow);
-    }
-    .ficha-page-header h1 {
-      color: white;
-      margin: 0;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-    .ficha-page-header .header-actions {
-      display: flex;
-      gap: 0.75rem;
-    }
-
-    /* Layout de dos columnas para el formulario */
-    .ficha-layout {
-      display: grid;
-      grid-template-columns: 1fr 1.2fr;
-      gap: var(--ficha-spacing);
-      align-items: start;
-    }
-
-    /* Estilo de las tarjetas de sección */
-    .ficha-card {
-      background: var(--ficha-card-bg);
-      border: 1px solid var(--ficha-border-color);
-      border-radius: 1rem;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      transition: all 0.2s;
-    }
-    .ficha-card:hover {
-      box-shadow: var(--ficha-shadow);
-    }
-    .ficha-card-header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1.5rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 2px solid #e2e8f0;
-    }
-    .ficha-card-header h3 {
-      margin: 0;
-      color: #2d3748;
-      font-weight: 600;
-      font-size: 1.25rem;
-    }
-    .card-icon {
-      background: #ebf4ff;
-      color: #3182ce;
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: 0.75rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-    }
-
-    /* Grids internos para los campos */
-    .ficha-grid-2 {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
-    }
-    .ficha-grid-4 {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-    }
-    .full-width {
-      grid-column: 1 / -1;
-    }
-
-    /* Estilo para los labels y campos */
-    .ficha-field {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-    .ficha-field label {
-      font-size: 0.8rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #4a5568;
-    }
-    .ficha-field input,
-    .ficha-field select,
-    .ficha-field textarea {
-      background: #f7fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.5rem;
-      padding: 0.65rem 0.75rem;
-      font-size: 0.95rem;
-      transition: all 0.2s;
-    }
-    .ficha-field input:focus,
-    .ficha-field select:focus,
-    .ficha-field textarea:focus {
-      background: white;
-      border-color: #3182ce;
-      box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
-      outline: none;
-    }
-    .field-with-unit {
-      display: flex;
-      align-items: center;
-      background: #f7fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.5rem;
-      overflow: hidden;
-    }
-    .field-with-unit input {
-      border: none;
-      flex: 1;
-      background: transparent;
-    }
-    .field-with-unit span {
-      padding: 0 0.75rem;
-      color: #718096;
-      font-weight: 500;
-      background: #edf2f7;
-      line-height: 2.5rem;
-    }
-
-    /* Panel derecho de resumen y foto */
-    .ficha-preview-panel {
-      background: #f7fafc;
-      border-radius: 1rem;
-      padding: 1.5rem;
-      position: sticky;
-      top: 2rem;
-    }
-    .ficha-preview-title {
-      font-weight: 600;
-      color: #2d3748;
-      margin-bottom: 1rem;
-      padding-bottom: 0.5rem;
-      border-bottom: 2px solid #cbd5e0;
-    }
-    .ficha-preview-content {
-      background: white;
-      border-radius: 0.75rem;
-      padding: 1rem;
-      min-height: 200px;
-      border: 1px dashed #cbd5e0;
-    }
-    .foto-upload-area {
-      border: 2px dashed #cbd5e0;
-      border-radius: 0.75rem;
-      padding: 1.5rem;
-      text-align: center;
-      background: white;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-top: 1rem;
-    }
-    .foto-upload-area:hover {
-      border-color: #3182ce;
-      background: #ebf8ff;
-    }
-    .foto-preview {
-      max-width: 100%;
-      max-height: 200px;
-      border-radius: 0.5rem;
-      margin-top: 1rem;
-      display: none;
-    }
-    .foto-preview.show {
-      display: block;
-    }
-
-    /* Botones de acción */
-    .action-buttons {
-      display: flex;
-      gap: 1rem;
-      margin-top: 2rem;
-      padding-top: 1.5rem;
-      border-top: 2px solid #e2e8f0;
-    }
-    .btn-ficha {
-      padding: 0.75rem 1.5rem;
-      border-radius: 0.5rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      border: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .btn-ficha-primary {
-      background: #3182ce;
-      color: white;
-    }
-    .btn-ficha-primary:hover {
-      background: #2c5282;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 6px -1px rgba(49, 130, 206, 0.3);
-    }
-    .btn-ficha-secondary {
-      background: white;
-      border: 1px solid #cbd5e0;
-      color: #4a5568;
-    }
-    .btn-ficha-secondary:hover {
-      background: #f7fafc;
-    }
-
-    /* Lista de fichas mejorada */
-    .ficha-list-container {
-      background: white;
-      border-radius: 1rem;
-      padding: 1.5rem;
-      margin-top: 2rem;
-    }
-    .ficha-list-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1.5rem;
-    }
-    .ficha-search {
-      display: flex;
-      gap: 0.5rem;
-    }
-    .ficha-search input {
-      padding: 0.5rem 1rem;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.5rem;
-      min-width: 250px;
-    }
-    .ficha-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0 0.5rem;
-    }
-    .ficha-table th {
-      text-align: left;
-      padding: 0.75rem;
-      color: #718096;
-      font-weight: 600;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .ficha-table td {
-      background: #f7fafc;
-      padding: 1rem 0.75rem;
-      border-radius: 0.5rem;
-    }
-    .modelo-badge {
-      background: #e2e8f0;
-      padding: 0.25rem 0.75rem;
-      border-radius: 2rem;
-      font-size: 0.85rem;
-      font-weight: 600;
-    }
-    .modelo-badge.generic {
-      background: #c6f6d5;
-      color: #22543d;
-    }
-    .modelo-badge.specific {
-      background: #fed7e2;
-      color: #702459;
-    }
-    .action-cell {
-      display: flex;
-      gap: 0.5rem;
-    }
-    .btn-icon {
-      padding: 0.5rem;
-      border-radius: 0.5rem;
-      background: white;
-      border: 1px solid #e2e8f0;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .btn-icon:hover {
-      background: #edf2f7;
-    }
-  </style>
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <!-- Navbar (sin cambios, igual a la que ya tienes) -->
-  <div class="navbar">
-    <a href="dashboard.html" class="navbar-brand">⚡ TRANSFORMADORES ERP</a>
-    <div class="navbar-menu">
-      <button data-roles="admin,control" onclick="window.location.href='dashboard.html'">Dashboard</button>
-      <button data-roles="admin,control" class="active" onclick="window.location.href='ficha.html'">Fichas Técnicas</button>
-      <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
-      <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
-      <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
-      <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-      <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
-      <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
-      <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
-      <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Fichas técnicas</h1>
+      <p>Modelos de transformador: datos eléctricos, devanados y foto</p>
     </div>
-    <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
   </div>
 
-  <div class="container">
-    <!-- Header de la página -->
-    <div class="ficha-page-header">
-      <h1>
-        <span>📋</span> 
-        Fichas Técnicas de Transformadores
-      </h1>
-      <div class="header-actions">
-        <button class="btn btn-secondary" onclick="showListView()">
-          👁️ Ver Lista
-        </button>
-        <button class="btn btn-primary" onclick="showCreateView()">
-          + Nueva Ficha
-        </button>
-      </div>
-    </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="crear" onclick="showTab('crear', event)">Nueva ficha</button>
+    <button class="tab" data-tab="listar" onclick="showTab('listar', event)">Modelos existentes</button>
+  </div>
 
-    <!-- Vista de creación/edición -->
-    <div id="createView" style="display: block;">
-      <form id="fichaForm" enctype="multipart/form-data">
-        <!-- Layout de 2 columnas -->
-        <div class="ficha-layout">
-          <!-- Columna izquierda: Formulario principal -->
-          <div>
-            <!-- Tarjeta: Información General -->
-            <div class="ficha-card">
-              <div class="ficha-card-header">
-                <div class="card-icon">📌</div>
-                <h3>Información General</h3>
-              </div>
-              <div class="ficha-grid-2">
-                <div class="ficha-field full-width">
-                  <label>Modelo *</label>
-                  <input type="text" id="modelo" name="modelo" placeholder="Ej: TR-1000-22" required>
+  <!-- ============ CREAR / EDITAR ============ -->
+  <div id="crear" class="tab-content active">
+    <form id="fichaForm" enctype="multipart/form-data">
+      <div class="layout-con-preview">
+
+        <!-- Columna principal: el formulario, agrupado en secciones -->
+        <div>
+          <div class="panel">
+            <div class="panel-head"><h2>Información general</h2></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field ancho-total">
+                  <label for="modelo">Modelo *</label>
+                  <input class="input" type="text" id="modelo" name="modelo" placeholder="Ej: TR-1000-22" required>
                 </div>
-                <div class="ficha-field full-width">
-                  <label>Cliente (opcional)</label>
-                  <select id="cliente_id" name="cliente_id">
-                    <option value="">-- Modelo Genérico (sin cliente) --</option>
+                <div class="field ancho-total">
+                  <label for="cliente_id">Cliente <span class="muted">(opcional)</span></label>
+                  <select class="input" id="cliente_id" name="cliente_id">
+                    <option value="">Modelo genérico, sin cliente</option>
                   </select>
                 </div>
               </div>
             </div>
+          </div>
 
-            <!-- Tarjeta: Especificaciones Eléctricas -->
-            <div class="ficha-card">
-              <div class="ficha-card-header">
-                <div class="card-icon">⚡</div>
-                <h3>Especificaciones Eléctricas</h3>
-              </div>
-              <div class="ficha-grid-4">
-                <div class="ficha-field">
-                  <label>V. Entrada</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="voltaje_entrada" step="0.1" placeholder="220">
-                    <span>V</span>
+          <div class="panel">
+            <div class="panel-head"><h2>Especificaciones eléctricas</h2></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="voltaje_entrada">V. entrada</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="voltaje_entrada" step="0.1" placeholder="220"><span>V</span>
                   </div>
                 </div>
-                <div class="ficha-field">
-                  <label>V. Salida</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="voltaje_salida" step="0.1" placeholder="12">
-                    <span>V</span>
+                <div class="field">
+                  <label for="voltaje_salida">V. salida</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="voltaje_salida" step="0.1" placeholder="12"><span>V</span>
                   </div>
                 </div>
-                <div class="ficha-field">
-                  <label>A. Entrada</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="amperaje_entrada" step="0.01" placeholder="5">
-                    <span>A</span>
+                <div class="field">
+                  <label for="amperaje_entrada">A. entrada</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="amperaje_entrada" step="0.01" placeholder="5"><span>A</span>
                   </div>
                 </div>
-                <div class="ficha-field">
-                  <label>A. Salida</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="amperaje_salida" step="0.01" placeholder="10">
-                    <span>A</span>
+                <div class="field">
+                  <label for="amperaje_salida">A. salida</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="amperaje_salida" step="0.01" placeholder="10"><span>A</span>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <!-- Tarjeta: Devanado Primario -->
-            <div class="ficha-card">
-              <div class="ficha-card-header">
-                <div class="card-icon">🔄</div>
-                <h3>Devanado Primario</h3>
-              </div>
-              <div class="ficha-grid-4">
-                <div class="ficha-field full-width">
-                  <label>Alambre</label>
-                  <input type="text" id="alambre_primario" placeholder="Ej: Esmaltado 1.5mm">
-                </div>
-                <div class="ficha-field">
-                  <label>Diámetro</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="diametro_primario_mm" step="0.01">
-                    <span>mm</span>
-                  </div>
-                </div>
-                <div class="ficha-field">
-                  <label>Espiras</label>
-                  <input type="number" id="espiras_primario">
-                </div>
-                <div class="ficha-field">
-                  <label>Pines</label>
-                  <input type="text" id="pines_primario" placeholder="1-2">
-                </div>
-                <div class="ficha-field">
-                  <label>Peso</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="peso_primario_kg" step="0.01">
-                    <span>kg</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Tarjeta: Devanado Secundario -->
-            <div class="ficha-card">
-              <div class="ficha-card-header">
-                <div class="card-icon">🔄</div>
-                <h3>Devanado Secundario</h3>
-              </div>
-              <div class="ficha-grid-4">
-                <div class="ficha-field full-width">
-                  <label>Alambre</label>
-                  <input type="text" id="alambre_secundario" placeholder="Ej: Esmaltado 2.0mm">
-                </div>
-                <div class="ficha-field">
-                  <label>Diámetro</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="diametro_secundario_mm" step="0.01">
-                    <span>mm</span>
-                  </div>
-                </div>
-                <div class="ficha-field">
-                  <label>Espiras</label>
-                  <input type="number" id="espiras_secundario">
-                </div>
-                <div class="ficha-field">
-                  <label>Pines</label>
-                  <input type="text" id="pines_secundario" placeholder="3-4">
-                </div>
-                <div class="ficha-field">
-                  <label>Peso</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="peso_secundario_kg" step="0.01">
-                    <span>kg</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Tarjeta: Características Físicas -->
-            <div class="ficha-card">
-              <div class="ficha-card-header">
-                <div class="card-icon">🔧</div>
-                <h3>Características Físicas</h3>
-              </div>
-              <div class="ficha-grid-2">
-                <div class="ficha-field">
-                  <label>Tipo Carretel</label>
-                  <input type="text" id="tipo_carretel" placeholder="Plástico / Madera">
-                </div>
-                <div class="ficha-field">
-                  <label>Laminación</label>
-                  <input type="text" id="laminacion" placeholder="Silicio / Hierro">
-                </div>
-                <div class="ficha-field">
-                  <label>Peso Laminación</label>
-                  <div class="field-with-unit">
-                    <input type="number" id="peso_laminacion_kg" step="0.1">
-                    <span>kg</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Tarjeta: Observaciones -->
-            <div class="ficha-card">
-              <div class="ficha-card-header">
-                <div class="card-icon">📝</div>
-                <h3>Observaciones</h3>
-              </div>
-              <div class="ficha-field">
-                <textarea id="observaciones" rows="4" placeholder="Notas adicionales sobre el modelo..."></textarea>
               </div>
             </div>
           </div>
 
-          <!-- Columna derecha: Panel de resumen y foto -->
-          <div class="ficha-preview-panel">
-            <div class="ficha-preview-title">📸 Vista Previa del Modelo</div>
-            <div class="ficha-preview-content" id="previewContent">
-              <p style="color: #718096; text-align: center;" id="previewModeloName">
-                Completa los datos para ver la vista previa
-              </p>
+          <div class="panel">
+            <div class="panel-head"><h2>Devanado primario</h2></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field ancho-total">
+                  <label for="alambre_primario">Alambre</label>
+                  <input class="input" type="text" id="alambre_primario" placeholder="Ej: Esmaltado 1.5mm">
+                </div>
+                <div class="field">
+                  <label for="diametro_primario_mm">Diámetro</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="diametro_primario_mm" step="0.01"><span>mm</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="espiras_primario">Espiras</label>
+                  <input class="input" type="number" id="espiras_primario">
+                </div>
+                <div class="field">
+                  <label for="pines_primario">Pines</label>
+                  <input class="input" type="text" id="pines_primario" placeholder="1-2">
+                </div>
+                <div class="field">
+                  <label for="peso_primario_kg">Peso</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="peso_primario_kg" step="0.01"><span>kg</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            
-            <!-- Área de carga de foto -->
-            <div class="foto-upload-area" onclick="document.getElementById('foto').click()">
-              <span style="font-size: 2rem;">📷</span>
-              <p style="font-weight: 500; margin: 0.5rem 0;">Haz clic para subir una foto</p>
-              <p style="color: #718096; font-size: 0.8rem; margin: 0;">PNG, JPG hasta 5MB</p>
-              <input type="file" id="foto" name="foto" accept="image/*" style="display: none;" onchange="previewFoto()">
-            </div>
-            <img id="fotoPreview" class="foto-preview" src="#" alt="Vista previa de la foto">
+          </div>
 
-            <div style="margin-top: 2rem; color: #4a5568; font-size: 0.9rem;">
-              <p style="display: flex; align-items: center; gap: 0.5rem;">
-                <span>✅</span> Los campos marcados con * son obligatorios
-              </p>
-              <p style="display: flex; align-items: center; gap: 0.5rem;">
-                <span>ℹ️</span> Deja cliente vacío para modelos genéricos
+          <div class="panel">
+            <div class="panel-head"><h2>Devanado secundario</h2></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field ancho-total">
+                  <label for="alambre_secundario">Alambre</label>
+                  <input class="input" type="text" id="alambre_secundario" placeholder="Ej: Esmaltado 2.0mm">
+                </div>
+                <div class="field">
+                  <label for="diametro_secundario_mm">Diámetro</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="diametro_secundario_mm" step="0.01"><span>mm</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="espiras_secundario">Espiras</label>
+                  <input class="input" type="number" id="espiras_secundario">
+                </div>
+                <div class="field">
+                  <label for="pines_secundario">Pines</label>
+                  <input class="input" type="text" id="pines_secundario" placeholder="3-4">
+                </div>
+                <div class="field">
+                  <label for="peso_secundario_kg">Peso</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="peso_secundario_kg" step="0.01"><span>kg</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Características físicas</h2></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="tipo_carretel">Tipo de carretel</label>
+                  <input class="input" type="text" id="tipo_carretel" placeholder="Plástico / Madera">
+                </div>
+                <div class="field">
+                  <label for="laminacion">Laminación</label>
+                  <input class="input" type="text" id="laminacion" placeholder="Silicio / Hierro">
+                </div>
+                <div class="field">
+                  <label for="peso_laminacion_kg">Peso laminación</label>
+                  <div class="field-unit">
+                    <input class="input" type="number" id="peso_laminacion_kg" step="0.1"><span>kg</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Observaciones</h2></div>
+            <div class="panel-body">
+              <textarea class="input" id="observaciones" rows="4" placeholder="Notas adicionales sobre el modelo…"></textarea>
+            </div>
+          </div>
+
+          <div class="page-head-actions" style="margin-top:16px">
+            <button type="button" class="b b-ghost" onclick="resetForm()">Limpiar formulario</button>
+            <button type="submit" class="b b-primary">Guardar ficha técnica</button>
+          </div>
+        </div>
+
+        <!-- Columna lateral: vista previa y foto -->
+        <div>
+          <div class="panel">
+            <div class="panel-head"><h2>Vista previa</h2></div>
+            <div class="panel-body">
+              <div id="previewContent">
+                <p class="muted" id="previewModeloName">Completá los datos para ver la vista previa</p>
+              </div>
+
+              <div class="foto-upload" onclick="document.getElementById('foto').click()" style="margin-top:16px">
+                <p style="font-weight:500;margin:0 0 4px">Tocá para subir una foto</p>
+                <p class="muted" style="margin:0;font-size:.8rem">PNG, JPG hasta 5MB</p>
+                <input type="file" id="foto" name="foto" accept="image/*" hidden onchange="previewFoto()">
+              </div>
+              <img id="fotoPreview" class="foto-preview" src="#" alt="Vista previa de la foto">
+
+              <p class="muted" style="margin-top:16px;font-size:.85rem">
+                Los campos con * son obligatorios. Dejá el cliente vacío para modelos genéricos.
               </p>
             </div>
           </div>
         </div>
 
-        <!-- Botones de acción -->
-        <div class="action-buttons">
-          <button type="button" class="btn-ficha btn-ficha-secondary" onclick="resetForm()">
-            <span>🗑️</span> Limpiar formulario
-          </button>
-          <button type="submit" class="btn-ficha btn-ficha-primary">
-            <span>💾</span> Guardar Ficha Técnica
-          </button>
-        </div>
-      </form>
+      </div>
+    </form>
+  </div>
+
+  <!-- ============ LISTADO ============ -->
+  <div id="listar" class="tab-content">
+    <div class="filters">
+      <div class="field grow">
+        <label for="searchModelo">Buscar modelo</label>
+        <input class="input" type="text" id="searchModelo" placeholder="Nombre del modelo…">
+      </div>
+      <div class="filters-actions">
+        <button class="b b-primary" onclick="cargarFichas()">Buscar</button>
+      </div>
     </div>
 
-    <!-- Vista de listado -->
-    <div id="listView" class="ficha-list-container" style="display: none;">
-      <div class="ficha-list-header">
-        <h2 style="margin: 0;">📋 Modelos Existentes</h2>
-        <div class="ficha-search">
-          <input type="text" id="searchModelo" placeholder="Buscar por modelo...">
-          <button class="btn btn-primary" onclick="cargarFichas()">Buscar</button>
-        </div>
-      </div>
-
-      <!-- Tabla de fichas -->
-      <table class="ficha-table">
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
         <thead>
           <tr>
             <th>Modelo</th>
             <th>Tipo</th>
-            <th>Voltaje (E/S)</th>
-            <th>Amperaje (E/S)</th>
-            <th>Cliente</th>
-            <th>Acciones</th>
+            <th class="num solo-escritorio">Voltaje E/S</th>
+            <th class="num solo-escritorio">Amperaje E/S</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="fichasList">
-          <tr>
-            <td colspan="6" style="text-align: center; padding: 2rem; background: transparent;">
-              <p style="color: #718096;">Cargando modelos...</p>
-            </td>
-          </tr>
+          <tr><td colspan="5" class="muted">Cargando modelos…</td></tr>
         </tbody>
       </table>
-
-      <!-- Paginación simple -->
-      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
-        <button class="btn btn-secondary btn-sm" disabled>Anterior</button>
-        <span style="padding: 0.5rem;">Página 1 de 1</span>
-        <button class="btn btn-secondary btn-sm" disabled>Siguiente</button>
-      </div>
-    </div>
+    </div></div></div>
   </div>
 
-  <!-- MODAL DETALLE (mejorado) -->
-  <div id="detailModal" class="modal">
-    <div class="modal-content" style="max-width: 900px;">
-      <div class="modal-header">
-        <h2 class="detail-title" id="detailModelo">🔋 Especificaciones Técnicas</h2>
-        <span class="close" onclick="closeDetailModal()">&times;</span>
-      </div>
-      
-      <div id="detailContent" style="padding: 1rem;">
-        <!-- Se llena dinámicamente -->
-      </div>
-      
-      <div style="display: flex; justify-content: flex-end; gap: 1rem; padding: 1rem; border-top: 1px solid #e2e8f0;">
-        <button class="btn btn-primary" onclick="exportarPDF()">📄 Exportar a PDF</button>
-        <button class="btn btn-secondary" onclick="closeDetailModal()">Cerrar</button>
+  <!-- ================= Ventana: detalle de la ficha =================
+       Va adentro de [data-content] a propósito: Shell.montar() reemplaza el
+       body y solo conserva lo que está adentro de ese contenedor. -->
+  <dialog id="detailModal" class="panel">
+    <div class="panel-head">
+      <h2 id="detailModelo">Especificaciones técnicas</h2>
+      <div class="page-head-actions">
+        <button class="b b-ghost b-sm" data-cerrar="detailModal">Cerrar</button>
       </div>
     </div>
-  </div>
+    <div class="panel-body" id="detailContent"></div>
+    <div class="panel-body" style="padding-top:0">
+      <div class="page-head-actions">
+        <button class="b b-primary" onclick="exportarPDF()">Exportar a PDF</button>
+      </div>
+    </div>
+  </dialog>
 
-  <!-- Scripts -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/ficha.js"></script>
-  <script>
-    // Funciones adicionales para la nueva UI
-    function showCreateView() {
-      document.getElementById('createView').style.display = 'block';
-      document.getElementById('listView').style.display = 'none';
-    }
+</div>
 
-    function showListView() {
-      document.getElementById('createView').style.display = 'none';
-      document.getElementById('listView').style.display = 'block';
-      cargarFichas(); // Recarga la lista al mostrarla
-    }
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Fichas técnicas', sub: 'Modelos de transformador' });
 
-    // Preview de modelo en tiempo real
-    document.getElementById('modelo').addEventListener('input', function(e) {
-      const preview = document.getElementById('previewModeloName');
-      if (e.target.value) {
-        preview.innerHTML = `<strong>${e.target.value}</strong><br><span style="color: #a0aec0;">Vista previa del modelo</span>`;
-      } else {
-        preview.innerHTML = 'Completa los datos para ver la vista previa';
-      }
-    });
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
 
-    // Preview de foto mejorado
-    function previewFoto() {
-      const fotoInput = document.getElementById('foto');
-      const preview = document.getElementById('fotoPreview');
-      
-      if (fotoInput.files && fotoInput.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          preview.src = e.target.result;
-          preview.classList.add('show');
-        };
-        reader.readAsDataURL(fotoInput.files[0]);
-      } else {
-        preview.classList.remove('show');
-      }
-    }
+  // Preview del nombre de modelo en tiempo real.
+  document.getElementById('modelo').addEventListener('input', function (e) {
+    const preview = document.getElementById('previewModeloName');
+    preview.innerHTML = e.target.value
+      ? `<strong>${e.target.value}</strong><div class="muted">Vista previa del modelo</div>`
+      : 'Completá los datos para ver la vista previa';
+  });
 
-    // Inicialización: ocultar la vista de creación y mostrar la lista
-    document.addEventListener('DOMContentLoaded', function() {
-      showListView(); // Por defecto mostramos la lista
-      cargarClientes(); // Para llenar el select de clientes
-    });
-  </script>
-  <script src="js/dashboard.js"></script>
-  <script src="js/roleGuard.js"></script>
-  <script>
-    verificarRolPagina(['admin', 'control']);
-  </script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Arranca en la lista, como antes. Se dispara el click del botón (en vez
+    // de llamar showTab a mano) para que también quede marcado como activo.
+    document.querySelector('.tab[data-tab="listar"]').click();
+    cargarClientes();
+  });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/ficha.js"></script>
 </body>
 </html>

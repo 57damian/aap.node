@@ -1,454 +1,98 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Proveedores | Transformadores ERP</title>
+  <title>Proveedores — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <style>
-    /* ========== ESTILOS UNIFICADOS (igual a precios.html) ========== */
-    :root {
-      --primary-color: #4361ee;
-      --success-color: #2ecc71;
-      --warning-color: #f39c12;
-      --danger-color: #e74c3c;
-      --dark-color: #2c3e50;
-      --light-bg: #f8f9fa;
-      --border-radius: 12px;
-      --box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-      --transition: all 0.3s ease;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      color: #333;
-    }
-
-    /* Navbar (idéntico al resto) */
-    .navbar {
-      background: white;
-      padding: 1rem 2rem;
-      box-shadow: 0 2px 20px rgba(0,0,0,0.1);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-
-    .navbar-brand {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--primary-color);
-      text-decoration: none;
-      letter-spacing: -0.5px;
-    }
-
-    .navbar-menu {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .navbar-menu button {
-      padding: 0.6rem 1.2rem;
-      border: none;
-      background: transparent;
-      color: #666;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: var(--transition);
-    }
-
-    .navbar-menu button:hover {
-      background: var(--light-bg);
-      color: var(--primary-color);
-    }
-
-    .navbar-menu button.active {
-      background: var(--primary-color);
-      color: white;
-    }
-
-    .container {
-      max-width: 1400px;
-      margin: 2rem auto;
-      padding: 2rem;
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: var(--border-radius);
-      box-shadow: var(--box-shadow);
-    }
-
-    h2 {
-      font-size: 2rem;
-      margin-bottom: 1.5rem;
-      color: var(--dark-color);
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    h2 i { color: var(--primary-color); }
-
-    /* Stats cards */
-    .stats-grid {
-      display: flex;
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-      flex-wrap: wrap;
-    }
-    .stat-card {
-      background: white;
-      border-radius: var(--border-radius);
-      padding: 1.5rem;
-      flex: 1;
-      min-width: 180px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-      transition: var(--transition);
-    }
-    .stat-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 15px 30px rgba(0,0,0,0.1);
-    }
-    .stat-card .stat-icon { font-size: 2rem; margin-bottom: 0.5rem; }
-    .stat-card .stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem; }
-    .stat-card .stat-label { color: #666; font-size: 0.9rem; }
-
-    /* Filtros */
-    .filtros-container {
-      background: white;
-      border-radius: var(--border-radius);
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .filtros-row {
-      display: flex;
-      gap: 1rem;
-      flex-wrap: wrap;
-      align-items: flex-end;
-    }
-    .filtro-group {
-      flex: 1;
-      min-width: 200px;
-    }
-    .filtro-group label {
-      display: block;
-      margin-bottom: 0.5rem;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #555;
-    }
-    .filtro-group input,
-    .filtro-group select {
-      width: 100%;
-      padding: 0.8rem;
-      border: 2px solid #e0e0e0;
-      border-radius: 10px;
-      font-size: 0.9rem;
-      transition: var(--transition);
-    }
-    .filtro-group input:focus,
-    .filtro-group select:focus {
-      border-color: var(--primary-color);
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
-    }
-    .filtros-acciones {
-      display: flex;
-      gap: 1rem;
-      justify-content: flex-end;
-      margin-top: 1rem;
-    }
-
-    /* Botones */
-    .btn {
-      padding: 0.8rem 1.5rem;
-      border: none;
-      border-radius: 10px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: var(--transition);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .btn-primary { background: var(--primary-color); color: white; }
-    .btn-primary:hover { background: #3651d4; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(67,97,238,0.3); }
-    .btn-success { background: var(--success-color); color: white; }
-    .btn-success:hover { background: #27ae60; transform: translateY(-2px); }
-    .btn-warning { background: var(--warning-color); color: white; }
-    .btn-warning:hover { background: #e67e22; }
-    .btn-danger { background: var(--danger-color); color: white; }
-    .btn-danger:hover { background: #c0392b; }
-    .btn-secondary { background: #95a5a6; color: white; }
-    .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
-
-    /* Tabla */
-    .table-container {
-      overflow-x: auto;
-      border-radius: var(--border-radius);
-      background: white;
-      box-shadow: var(--box-shadow);
-    }
-    .proveedores-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .proveedores-table th {
-      background: var(--light-bg);
-      color: var(--dark-color);
-      font-weight: 600;
-      text-transform: uppercase;
-      font-size: 0.85rem;
-      letter-spacing: 0.5px;
-      padding: 1rem;
-      text-align: left;
-    }
-    .proveedores-table td {
-      padding: 1rem;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    .proveedores-table tr:last-child td { border-bottom: none; }
-    .proveedores-table tbody tr:hover { background: rgba(67, 97, 238, 0.02); }
-
-    .badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      font-weight: 500;
-    }
-    .badge-success { background: rgba(46,204,113,0.1); color: #27ae60; }
-    .badge-danger { background: rgba(231,76,60,0.1); color: #c0392b; }
-    .badge-warning { background: rgba(243,156,18,0.1); color: #f39c12; }
-
-    /* Colores de texto */
-    .text-danger { color: var(--danger-color); }
-    .text-success { color: var(--success-color); }
-
-    /* Modales personalizados */
-    .modal {
-      display: none;
-      position: fixed;
-      z-index: 2000;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0,0,0,0.5);
-      animation: fadeIn 0.2s;
-    }
-    .modal-content {
-      background: white;
-      margin: 5% auto;
-      max-width: 600px;
-      border-radius: var(--border-radius);
-      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
-      animation: slideDown 0.3s;
-    }
-    .modal-header {
-      padding: 1.5rem;
-      border-bottom: 1px solid #eee;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-header h3 { font-size: 1.5rem; color: var(--dark-color); }
-    .close-modal {
-      font-size: 1.8rem;
-      cursor: pointer;
-      color: #999;
-      transition: var(--transition);
-    }
-    .close-modal:hover { color: var(--danger-color); }
-    .modal-body { padding: 1.5rem; }
-    .modal-footer {
-      padding: 1rem 1.5rem;
-      border-top: 1px solid #eee;
-      display: flex;
-      justify-content: flex-end;
-      gap: 1rem;
-    }
-
-    /* Formularios */
-    .form-group {
-      margin-bottom: 1.2rem;
-    }
-    .form-group label {
-      display: block;
-      margin-bottom: 0.5rem;
-      font-weight: 500;
-      color: #555;
-    }
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-      width: 100%;
-      padding: 0.8rem;
-      border: 2px solid #e0e0e0;
-      border-radius: 10px;
-      font-size: 0.9rem;
-      transition: var(--transition);
-    }
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-      border-color: var(--primary-color);
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(67,97,238,0.1);
-    }
-
-    /* Alertas y utilidades */
-    .alert {
-      position: fixed;
-      top: 2rem;
-      right: 2rem;
-      padding: 1rem 2rem;
-      border-radius: 10px;
-      background: white;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-      display: none;
-      z-index: 3000;
-      animation: slideIn 0.3s ease;
-    }
-    .alert-success { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
-    .alert-error { background: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
-
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes slideDown {
-      from { transform: translateY(-50px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-
-    .loading-spinner {
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 3px solid rgba(0,0,0,0.1);
-      border-radius: 50%;
-      border-top-color: var(--primary-color);
-      animation: spin 1s ease-in-out infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .text-center { text-align: center; }
-    .empty-state { padding: 3rem; color: #999; text-align: center; }
-    .flex { display: flex; gap: 0.5rem; }
-  </style>
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div data-content>
 
-<div class="navbar">
-  <a href="dashboard.html" class="navbar-brand"><i class="fas fa-bolt"></i> TRANSFORMADORES ERP</a>
-  <div class="navbar-menu">
-    <button onclick="window.location.href='dashboard.html'">Dashboard</button>
-    <button onclick="window.location.href='ficha.html'">Fichas Técnicas</button>
-    <button onclick="window.location.href='oc.html'">Órdenes de Compra</button>
-    <button onclick="window.location.href='ventas.html'">Ventas</button>
-    <button onclick="window.location.href='clientes.html'">Clientes</button>
-    <button class="active" onclick="window.location.href='proveedores.html'">Proveedores</button>
-    <button onclick="window.location.href='facturas-compra.html'">Facturas</button>
-    <button onclick="window.location.href='pagos-proveedores.html'">Pagos</button>
-    <button onclick="window.location.href='stock.html'">Stock</button>
-    <button onclick="window.location.href='reportes.html'">Reportes</button>
-    <button onclick="window.location.href='produccion.html'">Producción</button>
-    <button onclick="window.location.href='usuarios.html'">Usuarios</button>
-    <button onclick="window.location.href='precios.html'">Precios</button>
-  </div>
-  <button class="btn btn-danger btn-sm" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
-</div>
-
-<div class="container">
-  <h2><i class="fas fa-truck"></i> Proveedores</h2>
-
-  <!-- Tarjetas de estadísticas -->
-  <div class="stats-grid">
-    <div class="stat-card"><div class="stat-icon"><i class="fas fa-users"></i></div><div class="stat-value" id="totalProveedores">0</div><div class="stat-label">Total Proveedores</div></div>
-    <div class="stat-card"><div class="stat-icon"><i class="fas fa-check-circle"></i></div><div class="stat-value" id="proveedoresActivos">0</div><div class="stat-label">Activos</div></div>
-    <div class="stat-card"><div class="stat-icon"><i class="fas fa-credit-card"></i></div><div class="stat-value" id="deudaTotal">$0</div><div class="stat-label">Deuda Total</div></div>
-    <div class="stat-card"><div class="stat-icon"><i class="fas fa-chart-line"></i></div><div class="stat-value" id="totalCompras">0</div><div class="stat-label">Total Compras</div></div>
-  </div>
-
-  <!-- Filtros -->
-  <div class="filtros-container">
-    <div class="filtros-row">
-      <div class="filtro-group"><label><i class="fas fa-search"></i> Buscar</label><input type="text" id="searchInput" placeholder="Nombre, CUIT, email..."></div>
-      <div class="filtro-group"><label><i class="fas fa-filter"></i> Estado</label><select id="filtroEstado"><option value="activos">Activos</option><option value="inactivos">Inactivos</option><option value="todos">Todos</option></select></div>
-      <div class="filtro-group"><label><i class="fas fa-chart-simple"></i> Deuda</label><select id="filtroDeuda"><option value="todos">Todos</option><option value="con-deuda">Con deuda</option><option value="sin-deuda">Sin deuda</option></select></div>
+  <div class="page-head">
+    <div>
+      <h1>Proveedores</h1>
+      <p>Alta y datos de contacto de los proveedores</p>
     </div>
-    <div class="filtros-acciones">
-      <button class="btn btn-secondary" onclick="limpiarFiltros()"><i class="fas fa-times"></i> Limpiar</button>
-      <button class="btn btn-primary" onclick="cargarProveedores()"><i class="fas fa-search"></i> Buscar</button>
-      <button class="btn btn-success" onclick="abrirModalProveedor()"><i class="fas fa-plus"></i> Nuevo Proveedor</button>
+    <div class="page-head-actions">
+      <button class="b b-primary" id="btnNuevoProveedor">+ Nuevo proveedor</button>
     </div>
   </div>
 
-  <!-- Tabla -->
-  <div class="table-container">
-    <table class="proveedores-table">
-      <thead><tr><th>Proveedor</th><th>Contacto</th><th>Compras</th><th>Deuda</th><th>Estado</th><th>Acciones</th></tr></thead>
-      <tbody id="proveedoresTableBody"><tr class="loading-row"><td colspan="6" class="text-center"><div class="loading-spinner"></div> Cargando...</td></tr></tbody>
-    </table>
-  </div>
-</div>
+  <div class="kpi-row" id="kpis"></div>
 
-<!-- Modal para crear/editar proveedor -->
-<div id="proveedorModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header"><h3 id="modalTitle">Nuevo Proveedor</h3><span class="close-modal" onclick="cerrarModal()">&times;</span></div>
-    <div class="modal-body">
-      <form id="proveedorForm">
-        <input type="hidden" id="proveedorId">
-        <div class="form-group"><label>Nombre *</label><input type="text" id="nombre" required></div>
-        <div class="form-group"><label>CUIT</label><input type="text" id="cuit" placeholder="XX-XXXXXXXX-X"></div>
-        <div class="form-group"><label>Teléfono</label><input type="text" id="telefono"></div>
-        <div class="form-group"><label>Email</label><input type="email" id="email"></div>
-        <div class="form-group"><label>Dirección</label><input type="text" id="direccion"></div>
-        <div class="form-group"><label>Contacto</label><input type="text" id="contacto"></div>
-        <div class="form-group"><label>Condición IVA</label><select id="condicion_iva"><option>RESPONSABLE INSCRIPTO</option><option>MONOTRIBUTO</option><option>EXENTO</option><option>CONSUMIDOR FINAL</option></select></div>
-        <div class="form-group"><label>Observaciones</label><textarea id="observaciones" rows="2"></textarea></div>
-        <div class="form-group" id="estadoField" style="display:none;"><label>Estado</label><select id="activo"><option value="true">Activo</option><option value="false">Inactivo</option></select></div>
-      </form>
+  <div class="filters">
+    <div class="field grow">
+      <label for="searchInput">Buscar</label>
+      <input class="input" type="search" id="searchInput" placeholder="Nombre, CUIT, email...">
     </div>
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarProveedor()">Guardar</button></div>
+    <div class="field">
+      <label for="filtroEstado">Estado</label>
+      <select class="select" id="filtroEstado">
+        <option value="activos">Activos</option>
+        <option value="inactivos">Inactivos</option>
+        <option value="todos">Todos</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="filtroDeuda">Deuda</label>
+      <select class="select" id="filtroDeuda">
+        <option value="todos">Todos</option>
+        <option value="con-deuda">Con deuda</option>
+        <option value="sin-deuda">Sin deuda</option>
+      </select>
+    </div>
+    <div class="filters-actions">
+      <button class="b b-ghost b-sm" id="btnLimpiarFiltros">Limpiar</button>
+      <button class="b b-primary b-sm" id="btnBuscar">Buscar</button>
+    </div>
   </div>
+
+  <div class="panel" style="margin-top:var(--space-3)">
+    <div class="panel-body flush">
+      <div class="table-wrap">
+        <table class="t">
+          <thead>
+            <tr>
+              <th>Proveedor</th>
+              <th>Contacto</th>
+              <th class="num">Compras</th>
+              <th class="num">Deuda</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="proveedoresTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel lateral: alta/edición de proveedor y ficha de detalle. Va DENTRO
+       de [data-content] (Shell.montar reconstruye <body> a partir de esto y
+       descarta lo que quede afuera). Un único drawer para las tres acciones
+       (Nuevo / Editar / Ver) — cambia solo el contenido que se le carga. -->
+  <div class="drawer-scrim" id="drawerBg"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawerTitulo">Proveedor</h2>
+        <div class="meta" id="drawerMeta"></div>
+      </div>
+      <button class="b b-ghost b-sm" id="btnCerrarDrawer">Cerrar</button>
+    </div>
+    <div id="drawerCuerpo"></div>
+  </div>
+
 </div>
 
-<!-- Modal de detalle / cuenta corriente -->
-<div id="detalleModal" class="modal">
-  <div class="modal-content" style="max-width: 800px;">
-    <div class="modal-header"><h3>Detalle del Proveedor</h3><span class="close-modal" onclick="cerrarDetalleModal()">&times;</span></div>
-    <div class="modal-body" id="detalleContent">Cargando...</div>
-  </div>
-</div>
-
-<div id="alert" class="alert"></div>
-
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
 <script src="js/api.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/proveedores-nuevo.js"></script>
+<script>Shell.montar({ titulo: 'Proveedores' });</script>
 <script src="js/roleGuard.js"></script>
-<script>verificarRolPagina(['admin', 'control']);</script>
+<script src="js/proveedores-nuevo.js"></script>
+<script>verificarRolPagina(['admin']);</script>
 </body>
 </html>

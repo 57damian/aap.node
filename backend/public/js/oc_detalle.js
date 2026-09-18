@@ -6,14 +6,14 @@ const usuario = (() => {
   const userStr = localStorage.getItem('usuario');
 
   if (!token || !userStr) {
-    window.location.href = 'index.html';
+    window.location.href = 'login.html';
     return null;
   }
 
   try {
     return JSON.parse(userStr);
   } catch {
-    window.location.href = 'index.html';
+    window.location.href = 'login.html';
     return null;
   }
 })();
@@ -30,22 +30,10 @@ let ocId = null;
 // =====================
 // NOTIFICACIONES
 // =====================
+// Antes esta pantalla armaba su propio div flotante. Ahora usa el toast del
+// shell, igual que el resto del sistema.
 function mostrarNotificacion(mensaje, tipo = 'info') {
-  let notificacion = document.querySelector('.notificacion');
-
-  if (!notificacion) {
-    notificacion = document.createElement('div');
-    notificacion.className = 'notificacion';
-    document.body.appendChild(notificacion);
-  }
-
-  notificacion.className = `notificacion notificacion-${tipo}`;
-  notificacion.textContent = mensaje;
-  notificacion.style.display = 'block';
-
-  setTimeout(() => {
-    notificacion.style.display = 'none';
-  }, 3000);
+  Shell.toast(tipo === 'error' ? 'err' : 'ok', mensaje);
 }
 
 function formatMoney(value) {
@@ -98,49 +86,32 @@ async function cargarResumen() {
 
     const titulo = document.getElementById('oc-titulo');
     if (titulo) {
-      titulo.innerHTML = `
-        <i class="fas fa-hashtag"></i> ${data.numero_oc || '-'} |
-        <i class="fas fa-user"></i> ${data.cliente || '-'}
-      `;
-    }
-
-    let estadoClass = 'estado-pendiente';
-    let estadoIcon = 'fa-clock';
-    if (data.estado === 'completa') {
-      estadoClass = 'estado-completa';
-      estadoIcon = 'fa-check-circle';
-    } else if (data.estado === 'parcial') {
-      estadoClass = 'estado-parcial';
-      estadoIcon = 'fa-truck-loading';
+      titulo.textContent = `${data.numero_oc || '—'} · ${data.cliente || '—'}`;
     }
 
     const resumen = document.getElementById('resumen');
     if (!resumen) return;
 
+    const saldoPositivo = Number(data.saldo) > 0;
+
+    // Antes era una lista de 6 filas "etiqueta: valor" apiladas. Ahora son
+    // KPIs, el mismo componente que usa el resto del sistema.
     resumen.innerHTML = `
-      <div class="resumen-item">
-        <span class="resumen-label"><i class="fas fa-hashtag"></i> N° OC:</span>
-        <span class="resumen-value">${data.numero_oc || '-'}</span>
+      <div class="kpi">
+        <div class="kpi-k">Estado</div>
+        <div class="kpi-v" style="font-size:1.1rem">${Shell.pill(data.estado || 'pendiente')}</div>
       </div>
-      <div class="resumen-item">
-        <span class="resumen-label"><i class="fas fa-user"></i> Cliente:</span>
-        <span class="resumen-value">${data.cliente || '-'}</span>
+      <div class="kpi">
+        <div class="kpi-k">Total facturado</div>
+        <div class="kpi-v">${Shell.money(data.total_facturado)}</div>
       </div>
-      <div class="resumen-item">
-        <span class="resumen-label"><i class="fas fa-tag"></i> Estado:</span>
-        <span class="resumen-value"><span class="estado-badge ${estadoClass}"><i class="fas ${estadoIcon}"></i> ${data.estado || 'pendiente'}</span></span>
+      <div class="kpi">
+        <div class="kpi-k">Total cobrado</div>
+        <div class="kpi-v">${Shell.money(data.total_cobrado)}</div>
       </div>
-      <div class="resumen-item">
-        <span class="resumen-label"><i class="fas fa-dollar-sign"></i> Total facturado:</span>
-        <span class="resumen-value">$${formatMoney(data.total_facturado)}</span>
-      </div>
-      <div class="resumen-item">
-        <span class="resumen-label"><i class="fas fa-check-circle"></i> Total cobrado:</span>
-        <span class="resumen-value">$${formatMoney(data.total_cobrado)}</span>
-      </div>
-      <div class="resumen-item">
-        <span class="resumen-label"><i class="fas fa-clock"></i> Saldo:</span>
-        <span class="resumen-value ${Number(data.saldo) > 0 ? 'text-warning' : 'text-success'}">$${formatMoney(data.saldo)}</span>
+      <div class="kpi ${saldoPositivo ? 'is-warning' : 'is-success'}">
+        <div class="kpi-k">Saldo</div>
+        <div class="kpi-v">${Shell.money(data.saldo)}</div>
       </div>
     `;
   } catch (err) {
@@ -159,18 +130,20 @@ async function cargarDetalle() {
 
     tbody.innerHTML = '';
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-table"><i class="fas fa-box-open"></i> No hay items en esta orden</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4">${Shell.vacio(
+        'Esta orden no tiene items',
+        'Agregá el primero con el formulario de arriba.')}</td></tr>`;
       return;
     }
 
     items.forEach((item) => {
       const tr = document.createElement('tr');
-      const pendienteClass = Number(item.pendiente) > 0 ? 'text-warning' : 'text-success';
+      const pendienteClass = Number(item.pendiente) > 0 ? 'neg' : 'pos';
       tr.innerHTML = `
         <td><strong>${item.modelo}</strong></td>
-        <td class="text-center">${item.cantidad_pedida}</td>
-        <td class="text-center">${item.cantidad_entregada}</td>
-        <td class="text-center ${pendienteClass}"><strong>${item.pendiente}</strong></td>
+        <td class="num" data-label="Pedido">${item.cantidad_pedida}</td>
+        <td class="num muted" data-label="Entregado">${item.cantidad_entregada}</td>
+        <td class="num ${pendienteClass}" data-label="Pendiente"><strong>${item.pendiente}</strong></td>
       `;
       tbody.appendChild(tr);
     });
@@ -192,7 +165,9 @@ async function cargarEntregaItems() {
     const pendientes = items.filter((item) => Number(item.pendiente) > 0);
 
     if (!pendientes.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-table"><i class="fas fa-check-circle"></i> No hay items pendientes para entregar</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4">${Shell.vacio(
+        'No hay nada pendiente de entrega',
+        'Todos los items de esta orden ya se entregaron.')}</td></tr>`;
       return;
     }
 
@@ -200,20 +175,22 @@ async function cargarEntregaItems() {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${item.modelo}</strong></td>
-        <td class="text-center"><span class="badge badge-warning">${item.pendiente}</span></td>
-        <td>
+        <td class="num" data-label="Pendiente">${item.pendiente}</td>
+        <td data-label="Entregar ahora">
           <input
             type="number"
             min="1"
             max="${item.pendiente}"
             value="${item.pendiente}"
             data-ficha-id="${item.ficha_id}"
-            class="entrega-cantidad form-control form-control-sm"
+            class="entrega-cantidad input"
             placeholder="Cantidad"
           />
         </td>
-        <td class="text-center">
-          <input type="checkbox" class="entrega-check" data-ficha-id="${item.ficha_id}" checked />
+        <td data-label="Incluir">
+          <label class="check">
+            <input type="checkbox" class="entrega-check" data-ficha-id="${item.ficha_id}" checked><span></span>
+          </label>
         </td>
       `;
       tbody.appendChild(tr);
@@ -234,21 +211,20 @@ async function cargarFacturas() {
 
     tbody.innerHTML = '';
     if (!facturas.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-table"><i class="fas fa-file-invoice"></i> No hay facturas asociadas</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'Todavía no hay facturas',
+        'Van a aparecer acá cuando factures una venta de esta orden.')}</td></tr>`;
       return;
     }
 
     facturas.forEach((factura) => {
       const tr = document.createElement('tr');
-      tr.className = 'factura-header';
       tr.innerHTML = `
-        <td colspan="5">
-          <div class="factura-info">
-            <span><i class="fas fa-file-invoice"></i> <strong>Factura: ${factura.numero_factura || '-'}</strong></span>
-            <span><i class="fas fa-calendar"></i> ${formatDate(factura.fecha_factura)}</span>
-            <span><i class="fas fa-dollar-sign"></i> Total: $${formatMoney(factura.total_factura)}</span>
-            <span><i class="fas fa-check-circle"></i> Cobrado: $${formatMoney(factura.total_cobrado)}</span>
-          </div>
+        <td colspan="5" class="muted" style="background:var(--gray-50,#f8fafc)">
+          <strong>Factura ${factura.numero_factura || '—'}</strong>
+          · ${Shell.fecha(factura.fecha_factura)}
+          · Total ${Shell.money(factura.total_factura)}
+          · Cobrado ${Shell.money(factura.total_cobrado)}
         </td>
       `;
       tbody.appendChild(tr);
@@ -256,24 +232,18 @@ async function cargarFacturas() {
       if (factura.items && factura.items.length) {
         factura.items.forEach((item) => {
           const itemRow = document.createElement('tr');
-          itemRow.className = 'factura-item';
           itemRow.innerHTML = `
-            <td><i class="fas fa-arrow-right"></i> ${item.modelo}</td>
-            <td class="text-center">${item.cantidad}</td>
-            <td class="text-right">$${formatMoney(item.precio_unitario)}</td>
-            <td class="text-right">$${formatMoney(item.subtotal)}</td>
-            <td class="text-center">
-              <button class="btn-icon" title="Ver detalle" onclick="alert('Detalle de factura en construcción')">
-                <i class="fas fa-eye"></i>
-              </button>
-            </td>
+            <td>${item.modelo}</td>
+            <td class="num" data-label="Cantidad">${item.cantidad}</td>
+            <td class="num muted solo-escritorio" data-label="Precio unitario">${Shell.money(item.precio_unitario)}</td>
+            <td class="num" data-label="Subtotal">${Shell.money(item.subtotal)}</td>
+            <td></td>
           `;
           tbody.appendChild(itemRow);
         });
       } else {
         const emptyRow = document.createElement('tr');
-        emptyRow.className = 'factura-item';
-        emptyRow.innerHTML = '<td colspan="5" class="text-muted"><i class="fas fa-arrow-right"></i> Sin items</td>';
+        emptyRow.innerHTML = '<td colspan="5" class="muted">Sin items</td>';
         tbody.appendChild(emptyRow);
       }
     });
@@ -293,14 +263,11 @@ async function cargarRemitos() {
 
     tbody.innerHTML = '';
 
-    if (!ventas || !ventas.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-table"><i class="fas fa-file-invoice"></i> No hay remitos asociados</td></tr>';
-      return;
-    }
-
-    const ventasConRemito = ventas.filter((v) => v.remito_numero);
+    const ventasConRemito = (ventas || []).filter((v) => v.remito_numero);
     if (!ventasConRemito.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-table"><i class="fas fa-file-invoice"></i> No hay remitos asociados</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'Todavía no hay remitos',
+        'Se registran al entregar items en la pestaña "Registrar entrega".')}</td></tr>`;
       return;
     }
 
@@ -315,14 +282,14 @@ async function cargarRemitos() {
       const tr = document.createElement('tr');
       const itemsHtml = items.length
         ? items.map((item) => `${item.cantidad} x ${item.modelo}`).join('<br>')
-        : '-';
+        : '—';
 
       tr.innerHTML = `
         <td><strong>${venta.remito_numero}</strong></td>
-        <td>${formatDate(venta.remito_fecha)}</td>
-        <td>#${venta.id}</td>
-        <td>${itemsHtml}</td>
-        <td>${venta.remito_observaciones || '-'}</td>
+        <td data-label="Fecha">${Shell.fecha(venta.remito_fecha)}</td>
+        <td class="muted solo-escritorio" data-label="Venta">#${venta.id}</td>
+        <td data-label="Items">${itemsHtml}</td>
+        <td class="muted solo-escritorio" data-label="Observaciones">${venta.remito_observaciones || '—'}</td>
       `;
       tbody.appendChild(tr);
     });

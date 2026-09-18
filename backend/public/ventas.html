@@ -1,83 +1,68 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ventas / Entregas - Transformadores</title>
+  <title>Ventas y entregas — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div data-content>
 
-<div class="navbar">
-  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
-  <div class="navbar-menu">
-    <button data-roles="admin,control" onclick="window.location.href='dashboard.html'">Dashboard</button>
-    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Técnicas</button>
-    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Órdenes de Compra</button>
-    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
-    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
-    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
-    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
-    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
-    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
-    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
-  </div>
-  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
-</div>
-
-<div class="container">
-  <div class="header">
-    <h2>🚚 Ventas / Entregas</h2>
-    <button class="btn btn-primary" onclick="window.location.href='dashboard.html'">
-      ← Volver al Dashboard
-    </button>
+  <div class="page-head">
+    <div>
+      <h1>Ventas y entregas</h1>
+      <p>Qué se entregó, qué falta facturar</p>
+    </div>
   </div>
 
-  <div class="filtros">
-    <div class="filtro-group">
-      <label for="filtroCliente">Cliente:</label>
-      <select id="filtroCliente" class="form-control">
-        <option value="">Todos los clientes</option>
+  <div class="filters">
+    <div class="field grow">
+      <label for="filtroCliente">Cliente</label>
+      <select class="input" id="filtroCliente">
+        <option value="">Todos</option>
       </select>
     </div>
-    <button class="btn btn-primary" onclick="cargarVentas()">
-      Filtrar
-    </button>
+    <div class="filters-actions">
+      <label class="check">
+        <input type="checkbox" id="filtroSinFacturar"><span>Solo sin facturar</span>
+      </label>
+      <button class="b b-primary" onclick="cargarVentas()">Aplicar</button>
+    </div>
   </div>
 
-  <hr>
-
-  <div class="table-responsive">
-    <table class="table">
+  <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+    <table class="t">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Fecha</th>
           <th>Cliente</th>
-          <th>OC</th>
-          <th>Factura</th>
+          <th>Fecha</th>
+          <th class="solo-escritorio">Orden de compra</th>
+          <th class="solo-escritorio">Factura</th>
           <th>Estado</th>
-          <th>Acciones</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="tablaVentas">
-        <tr>
-          <td colspan="7" style="text-align:center; padding: 40px;">
-            <div class="loading">Cargando ventas...</div>
-          </td>
-        </tr>
+        <tr><td colspan="6" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
-  </div>
+  </div></div></div>
+
 </div>
 
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
 <script src="js/api.js"></script>
-<script src="js/ventas.js"></script>
+<script>
+  Shell.montar({ titulo: 'Ventas', sub: 'Entregas y facturación' });
+</script>
 <script src="js/auth.js"></script>
 <script src="js/roleGuard.js"></script>
 <script>
-  verificarRolPagina(['admin', 'control']);
+  verificarRolPagina(['admin']);
 </script>
+<script src="js/ventas.js"></script>
 </body>
 </html>

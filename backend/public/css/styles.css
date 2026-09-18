@@ -1240,6 +1240,14 @@ body:has(.login-container) {
   display: none !important;
 }
 
+/* El atributo hidden tiene que ganarle a cualquier display de una clase.
+   Sin esto, un elemento con hidden pero con .login-form (display:flex),
+   .panel, etc. se sigue viendo: la regla del navegador para [hidden] pierde
+   por especificidad contra cualquier regla de clase. */
+[hidden] {
+  display: none !important;
+}
+
 @media (min-width: 1024px) {
   .ficha-grid {
     grid-template-columns: repeat(3, 1fr);

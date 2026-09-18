@@ -81,12 +81,10 @@ async function cargarStock() {
         
         renderizarTablaStock(stock);
         actualizarEstadisticas(stock);
-        renderizarStockBajo(stock);
-        renderizarStockCritico(stock);
         cargarMovimientos();
     } catch (err) {
         console.error('Error cargando stock:', err);
-        alert(err.error || 'Error al cargar stock');
+        Shell.error(err, 'No se pudo cargar el stock');
     }
 }
 
@@ -95,141 +93,56 @@ async function cargarStock() {
 // directamente en el listado, no solo al abrir el historial de precios).
 function renderizarVariacionPrecio(s) {
     const variacion = s.variacion_precio;
-
-    if (variacion === null || variacion === undefined) {
-        return '<span class="text-muted">—</span>';
-    }
+    if (variacion === null || variacion === undefined) return '';
 
     const valor = parseFloat(variacion);
-    if (isNaN(valor) || Math.abs(valor) < 0.01) {
-        return '<span class="text-muted">sin cambios</span>';
-    }
+    if (isNaN(valor) || Math.abs(valor) < 0.01) return '';
 
-    if (valor > 0) {
-        // Subió de precio respecto a la última compra a este proveedor
-        return `<span class="badge bg-danger" title="Antes: ${formatearMoneda(s.variacion_precio_anterior || 0)}">
-            <i class="fas fa-arrow-up"></i> ${valor.toFixed(1)}%
-        </span>`;
-    }
-
-    // Bajó de precio respecto a la última compra a este proveedor
-    return `<span class="badge bg-success" title="Antes: ${formatearMoneda(s.variacion_precio_anterior || 0)}">
-        <i class="fas fa-arrow-down"></i> ${Math.abs(valor).toFixed(1)}%
-    </span>`;
+    // Subió = rojo (nos cuesta más), bajó = verde. El título muestra contra
+    // qué precio se compara, que es el de la compra anterior al mismo proveedor.
+    const clase = valor > 0 ? 'neg' : 'pos';
+    const signo = valor > 0 ? '▲' : '▼';
+    const antes = formatearMoneda(s.variacion_precio_anterior || 0);
+    return ` <span class="${clase}" title="Antes: ${antes}">${signo} ${Math.abs(valor).toFixed(1)}%</span>`;
 }
 
 // Renderizar tabla de stock
 function renderizarTablaStock(stock) {
     const tbody = document.getElementById('stockTableBody');
-    
+
     if (!stock || stock.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No hay artículos</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+            'No hay materiales para este filtro',
+            'Probá limpiar los filtros o cargá materiales nuevos.',
+            { txt: 'Administrar materiales', url: 'stock-mp.html' })}</td></tr>`;
         return;
     }
-    
+
     tbody.innerHTML = stock.map(s => {
-        let estadoBadge = '';
-        let rowClass = '';
-        
-        if (s.stock_actual === 0) {
-            estadoBadge = '<span class="badge bg-danger">SIN STOCK</span>';
-            rowClass = 'table-danger';
-        } else if (s.stock_actual <= s.stock_minimo) {
-            estadoBadge = '<span class="badge bg-warning">BAJO</span>';
-            rowClass = 'table-warning';
-        } else {
-            estadoBadge = '<span class="badge bg-success">NORMAL</span>';
-        }
-        
+        const actual = Number(s.stock_actual) || 0;
+        const minimo = Number(s.stock_minimo) || 0;
+        const unidad = s.unidad_medida || '';
+        const estado = actual === 0 ? 'SIN STOCK' : (actual <= minimo ? 'FALTA' : 'OK');
+        const nombreSeguro = String(s.nombre || '').replace(/'/g, "\'");
+
         return `
-            <tr class="${rowClass}">
-                <td>${s.codigo || '-'}</td>
-                <td>${s.nombre}</td>
-                <td>${s.proveedor_nombre || '-'}</td>
-                <td>${s.stock_actual || 0} ${s.unidad_medida || 'UNI'}</td>
-                <td>${s.stock_minimo || 0} ${s.unidad_medida || 'UNI'}</td>
-                <td>${s.ubicacion || '-'}</td>
-                <td>${formatearMoneda(s.ultimo_precio || 0)}</td>
-                <td>${renderizarVariacionPrecio(s)}</td>
-                <td>${s.fecha_ultima_compra || '-'}</td>
-                <td>${estadoBadge}</td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="abrirModalAjuste(${s.articulo_id}, '${s.nombre}', ${s.stock_actual})">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn btn-sm btn-info" onclick="verHistorial(${s.articulo_id})">
-                        <i class="fas fa-history"></i>
-                    </button>
-                    <button class="btn btn-sm btn-secondary" onclick="verPrecios(${s.articulo_id})">
-                        <i class="fas fa-chart-line"></i>
-                    </button>
+            <tr>
+                <td><strong>${s.nombre || '—'}</strong>${s.codigo ? ' <span class="muted">' + s.codigo + '</span>' : ''}</td>
+                <td class="num ${actual === 0 ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')} ${unidad}</td>
+                <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
+                <td class="num" data-label="Último precio">${formatearMoneda(s.ultimo_precio || 0)}${renderizarVariacionPrecio(s)}</td>
+                <td class="muted solo-escritorio" data-label="Proveedor">${s.proveedor_nombre || '—'}</td>
+                <td data-label="Estado">${Shell.pill(estado)}</td>
+                <td class="num">
+                    <button class="b b-ghost b-sm" onclick="abrirModalAjuste(${s.articulo_id}, '${nombreSeguro}', ${actual})">Ajustar</button>
+                    <button class="b b-ghost b-sm solo-escritorio" onclick="verHistorial(${s.articulo_id})">Movimientos</button>
+                    <button class="b b-ghost b-sm solo-escritorio" onclick="verPrecios(${s.articulo_id})">Precios</button>
                 </td>
-            </tr>
-        `;
+            </tr>`;
     }).join('');
 }
 
 // Renderizar stock bajo
-function renderizarStockBajo(stock) {
-    const tbody = document.getElementById('bajoTableBody');
-    
-    const bajo = stock.filter(s => s.stock_actual > 0 && s.stock_actual <= s.stock_minimo);
-    
-    if (bajo.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No hay artículos con stock bajo</td></tr>';
-        return;
-    }
-    
-    tbody.innerHTML = bajo.map(s => {
-        const diferencia = s.stock_minimo - s.stock_actual;
-        return `
-            <tr class="table-warning">
-                <td>${s.codigo || '-'}</td>
-                <td>${s.nombre}</td>
-                <td>${s.proveedor_nombre || '-'}</td>
-                <td>${s.stock_actual} ${s.unidad_medida || 'UNI'}</td>
-                <td>${s.stock_minimo} ${s.unidad_medida || 'UNI'}</td>
-                <td><span class="badge bg-warning">${diferencia} falta</span></td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="abrirModalAjuste(${s.articulo_id}, '${s.nombre}', ${s.stock_actual})">
-                        <i class="fas fa-edit"></i> Ajustar
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-}
-
-// Renderizar stock crítico
-function renderizarStockCritico(stock) {
-    const tbody = document.getElementById('criticoTableBody');
-    
-    const critico = stock.filter(s => s.stock_actual === 0);
-    
-    if (critico.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay artículos sin stock</td></tr>';
-        return;
-    }
-    
-    tbody.innerHTML = critico.map(s => {
-        return `
-            <tr class="table-danger">
-                <td>${s.codigo || '-'}</td>
-                <td>${s.nombre}</td>
-                <td>${s.proveedor_nombre || '-'}</td>
-                <td>${s.fecha_ultima_compra || '-'}</td>
-                <td>${formatearMoneda(s.ultimo_precio || 0)}</td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="abrirModalAjuste(${s.articulo_id}, '${s.nombre}', 0)">
-                        <i class="fas fa-edit"></i> Ajustar
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-}
-
-// Cargar movimientos
 async function cargarMovimientos() {
     try {
         const movimientos = await apiFetch('/api/stock/movimientos');
@@ -301,8 +214,7 @@ function abrirModalAjuste(articuloId, articuloNombre, stockActual) {
     document.getElementById('ajuste_motivo').value = '';
     document.getElementById('ajuste_fecha').valueAsDate = new Date();
     
-    const modal = new bootstrap.Modal(document.getElementById('ajusteModal'));
-    modal.show();
+    document.getElementById('ajusteModal').showModal();
 }
 
 // Guardar ajuste
@@ -316,12 +228,12 @@ async function guardarAjuste() {
         const fecha = document.getElementById('ajuste_fecha').value;
         
         if (!tipo) {
-            alert('Debe seleccionar tipo de ajuste');
+            Shell.toast('err', 'Elegí el tipo de ajuste');
             return;
         }
         
         if (!motivo) {
-            alert('Debe ingresar motivo del ajuste');
+            Shell.toast('err', 'Escribí el motivo del ajuste');
             return;
         }
         
@@ -341,13 +253,13 @@ async function guardarAjuste() {
             body: JSON.stringify(payload)
         });
         
-        alert('Ajuste registrado correctamente');
-        bootstrap.Modal.getInstance(document.getElementById('ajusteModal')).hide();
+        Shell.toast('ok', 'Ajuste registrado');
+        document.getElementById('ajusteModal').close();
         cargarStock();
         
     } catch (err) {
         console.error('Error guardando ajuste:', err);
-        alert(err.error || 'Error al guardar ajuste');
+        Shell.error(err, 'No se pudo guardar el ajuste');
     }
 }
 
@@ -373,12 +285,11 @@ async function verHistorial(articuloId) {
             `).join('');
         }
         
-        const modal = new bootstrap.Modal(document.getElementById('historialModal'));
-        modal.show();
+        document.getElementById('historialModal').showModal();
         
     } catch (err) {
         console.error('Error cargando historial:', err);
-        alert('Error al cargar historial');
+        Shell.error(err, 'No se pudo cargar el historial');
     }
 }
 
@@ -405,12 +316,11 @@ async function verPrecios(articuloId) {
             `).join('');
         }
         
-        const modal = new bootstrap.Modal(document.getElementById('preciosModal'));
-        modal.show();
+        document.getElementById('preciosModal').showModal();
         
     } catch (err) {
         console.error('Error cargando precios:', err);
-        alert('Error al cargar historial de precios');
+        Shell.error(err, 'No se pudo cargar el historial de precios');
     }
 }
 
@@ -427,3 +337,39 @@ function verificarRol(rolesPermitidos) {
     const rolUsuario = localStorage.getItem('rol');
     return rolesPermitidos.includes(rolUsuario);
 }
+
+
+// ============================================
+// PESTAÑAS Y ATAJOS
+// ============================================
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab[data-tab]').forEach(boton => {
+    boton.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      boton.classList.add('active');
+      document.getElementById('tab-' + boton.dataset.tab)?.classList.add('active');
+      if (boton.dataset.tab === 'movimientos') cargarMovimientos();
+    });
+  });
+
+  // Tocar una tarjeta aplica su filtro: es el reemplazo de las dos pestañas
+  // que antes repetían la misma tabla.
+  document.querySelectorAll('.kpi[data-filtro]').forEach(tarjeta => {
+    tarjeta.style.cursor = 'pointer';
+    tarjeta.addEventListener('click', () => {
+      document.getElementById('filtroEstadoStock').value = tarjeta.dataset.filtro;
+      cargarStock();
+    });
+  });
+
+  // Buscar con Enter, sin tener que ir hasta el botón
+  document.getElementById('searchInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); cargarStock(); }
+  });
+
+  // Cerrar las ventanas
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+});

@@ -10,14 +10,14 @@ const usuario = (() => {
   const userStr = localStorage.getItem('usuario');
   
   if (!token || !userStr) {
-    window.location.href = 'index.html';
+    window.location.href = 'login.html';
     return null;
   }
   
   try {
     return JSON.parse(userStr);
   } catch {
-    window.location.href = 'index.html';
+    window.location.href = 'login.html';
     return null;
   }
 })();
@@ -35,13 +35,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   ventaId = params.get('id');
 
   if (!ventaId) {
-    alert('Venta no especificada');
     window.location.href = 'ventas.html';
     return;
   }
 
   document.getElementById('ventaId').textContent = ventaId;
-  
+
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+
   // Setear fecha actual en el modal
   const hoy = new Date().toISOString().split('T')[0];
   document.getElementById('factura_fecha').value = hoy;
@@ -89,18 +92,14 @@ function cargarItemsTabla(items) {
   tbody.innerHTML = '';
 
   if (!items || items.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="5" style="text-align: center; padding: 40px; color: #666;">
-          No hay items en esta venta
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+      'Esta venta no tiene items',
+      'Puede ser un problema de carga: revisá la orden de compra original.')}</td></tr>`;
     return;
   }
 
   let totalGeneral = 0;
-  
+
   items.forEach(item => {
     const subtotal = item.cantidad * item.precio_unitario_pesos;
     totalGeneral += subtotal;
@@ -108,20 +107,19 @@ function cargarItemsTabla(items) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>${item.modelo || 'Sin modelo'}</strong></td>
-      <td>${item.cantidad}</td>
-      <td>USD ${Number(item.precio_unitario_usd).toFixed(2)}</td>
-      <td>$${Number(item.precio_unitario_pesos).toFixed(2)}</td>
-      <td>$${Number(subtotal).toFixed(2)}</td>
+      <td class="num" data-label="Cantidad">${item.cantidad}</td>
+      <td class="num muted solo-escritorio" data-label="Precio USD">US$ ${Number(item.precio_unitario_usd).toFixed(2)}</td>
+      <td class="num" data-label="Precio pesos">${Shell.money(item.precio_unitario_pesos)}</td>
+      <td class="num" data-label="Subtotal"><strong>${Shell.money(subtotal)}</strong></td>
     `;
     tbody.appendChild(tr);
   });
 
   // Fila de total
   const trTotal = document.createElement('tr');
-  trTotal.className = 'total-row';
   trTotal.innerHTML = `
-    <td colspan="4" style="text-align: right;">TOTAL VENTA:</td>
-    <td>$${Number(totalGeneral).toFixed(2)}</td>
+    <td colspan="4" class="num"><strong>Total venta</strong></td>
+    <td class="num" data-label="Total"><strong>${Shell.money(totalGeneral)}</strong></td>
   `;
   tbody.appendChild(trTotal);
   
@@ -158,37 +156,29 @@ async function cargarEstadoFacturacion() {
     
     if (estado.facturada) {
       divEstado.innerHTML = `
-        <div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 24px;">✅</span>
-            <div>
-              <strong style="font-size: 16px;">Venta Facturada</strong>
-              <div style="font-size: 14px; margin-top: 5px;">Esta venta ya tiene una factura asociada</div>
-            </div>
+        <div class="notice notice-ok" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong>Venta facturada</strong>
+            <div class="muted">Esta venta ya tiene una factura asociada</div>
           </div>
-          <span class="badge badge-facturada">FACTURADA</span>
+          ${Shell.pill('FACTURADA')}
         </div>
       `;
-      
+
       // Bloquear remito
       bloquearCamposRemito(true);
-      
+
     } else {
       divEstado.innerHTML = `
-        <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 24px;">⚠️</span>
-            <div>
-              <strong style="font-size: 16px;">Pendiente de Facturación</strong>
-              <div style="font-size: 14px; margin-top: 5px;">Esta venta aún no ha sido facturada</div>
-            </div>
+        <div class="notice notice-warn" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong>Pendiente de facturación</strong>
+            <div class="muted">Esta venta todavía no tiene factura</div>
           </div>
-          <button class="btn btn-success" onclick="abrirModalFactura()">
-            🧾 Facturar Venta
-          </button>
+          <button class="b b-primary" onclick="abrirModalFactura()">Facturar venta</button>
         </div>
       `;
-      
+
       bloquearCamposRemito(false);
     }
   } catch (err) {
@@ -209,37 +199,14 @@ async function cargarFacturaAsociada() {
       document.getElementById('facturaAsociada').style.display = 'block';
       
       document.getElementById('detalleFactura').innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-          <div>
-            <div class="factura-label">Número</div>
-            <div style="font-size: 18px; font-weight: bold;">${factura.numero_factura || '-'}</div>
-          </div>
-          <div>
-            <div class="factura-label">Tipo</div>
-            <div>Factura ${factura.tipo_factura || '-'}</div>
-          </div>
-          <div>
-            <div class="factura-label">Fecha</div>
-            <div>${factura.fecha ? factura.fecha.split('T')[0] : '-'}</div>
-          </div>
-          <div>
-            <div class="factura-label">Total</div>
-            <div style="font-size: 18px; color: #28a745; font-weight: bold;">$${Number(factura.total || 0).toFixed(2)}</div>
-          </div>
-          <div>
-            <div class="factura-label">Subtotal</div>
-            <div>$${Number(factura.subtotal_sin_iva || 0).toFixed(2)}</div>
-          </div>
-          <div>
-            <div class="factura-label">IVA 21%</div>
-            <div>$${Number(factura.iva_21 || 0).toFixed(2)}</div>
-          </div>
-          ${factura.dias_credito ? `
-            <div>
-              <div class="factura-label">Días Crédito</div>
-              <div>${factura.dias_credito} días</div>
-            </div>
-          ` : ''}
+        <div class="form-grid">
+          <div class="field"><label>Número</label><div><strong>${factura.numero_factura || '—'}</strong></div></div>
+          <div class="field"><label>Tipo</label><div>Factura ${factura.tipo_factura || '—'}</div></div>
+          <div class="field"><label>Fecha</label><div>${Shell.fecha(factura.fecha)}</div></div>
+          <div class="field"><label>Total</label><div class="pos"><strong>${Shell.money(factura.total || 0)}</strong></div></div>
+          <div class="field"><label>Subtotal</label><div>${Shell.money(factura.subtotal_sin_iva || 0)}</div></div>
+          <div class="field"><label>IVA 21%</label><div>${Shell.money(factura.iva_21 || 0)}</div></div>
+          ${factura.dias_credito ? `<div class="field"><label>Días de crédito</label><div>${factura.dias_credito} días</div></div>` : ''}
         </div>
       `;
     }
@@ -262,11 +229,11 @@ function abrirModalFactura() {
   const hoy = new Date().toISOString().split('T')[0];
   document.getElementById('factura_fecha').value = hoy;
   
-  document.getElementById('facturaModal').style.display = 'block';
+  document.getElementById('facturaModal').showModal();
 }
 
 function cerrarModalFactura() {
-  document.getElementById('facturaModal').style.display = 'none';
+  document.getElementById('facturaModal').close();
   
   // Limpiar formulario
   document.getElementById('factura_numero').value = '';
@@ -384,14 +351,7 @@ function bloquearCamposRemito(bloquear) {
    MOSTRAR ALERTA
 ===================== */
 function mostrarAlerta(mensaje, tipo) {
-  const alertDiv = document.getElementById('alert');
-  alertDiv.textContent = mensaje;
-  alertDiv.className = `alert alert-${tipo}`;
-  alertDiv.style.display = 'block';
-  
-  setTimeout(() => {
-    alertDiv.style.display = 'none';
-  }, 5000);
+  Shell.toast(tipo === 'error' ? 'err' : 'ok', mensaje);
 }
 
 /* =====================
@@ -399,5 +359,5 @@ function mostrarAlerta(mensaje, tipo) {
 ===================== */
 function logout() {
   localStorage.clear();
-  window.location.href = 'index.html';
+  window.location.href = 'login.html';
 }

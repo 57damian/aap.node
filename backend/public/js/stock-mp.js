@@ -23,59 +23,46 @@ async function cargarMateriasPrimas() {
         renderizarTablaMateriasPrimas(materiasPrimas);
     } catch (err) {
         console.error('Error cargando materias primas:', err);
-        alert(err.error || 'Error al cargar materias primas');
+        Shell.error(err, 'No se pudieron cargar los materiales');
     }
 }
 
 // Renderizar tabla de materias primas
 function renderizarTablaMateriasPrimas(materiasPrimas) {
     const tbody = document.getElementById('materiasPrimasTableBody');
-    
+
     if (!materiasPrimas || materiasPrimas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No hay materias primas registradas</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+            'Todavía no hay materiales',
+            'Cargá el primero con el botón "Nuevo material".')}</td></tr>`;
         return;
     }
-    
+
     tbody.innerHTML = materiasPrimas.map(mp => {
-        let estadoBadge = mp.activo 
-            ? '<span class="badge bg-success">ACTIVO</span>' 
-            : '<span class="badge bg-secondary">INACTIVO</span>';
-        
-        let stockClass = '';
-        if (mp.stock_actual === 0) {
-            stockClass = 'text-danger';
-        } else if (mp.stock_actual <= mp.stock_minimo) {
-            stockClass = 'text-warning';
-        }
-        
+        const actual = Number(mp.stock_actual) || 0;
+        const minimo = Number(mp.stock_minimo) || 0;
+        const faltante = actual === 0 || actual <= minimo;
+
         return `
             <tr>
-                <td>${mp.codigo || '-'}</td>
-                <td>${mp.nombre}</td>
-                <td>${mp.unidad_medida || 'UNI'}</td>
-                <td class="${stockClass}">${mp.stock_actual || 0}</td>
-                <td>${mp.stock_minimo || 0}</td>
-                <td>${mp.ubicacion || '-'}</td>
-                <td>${estadoBadge}</td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="abrirModalEditar(${mp.id})">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn btn-sm btn-info" onclick="verHistorialPrecios(${mp.id})">
-                        <i class="fas fa-chart-line"></i>
-                    </button>
-                    <button class="btn btn-sm btn-danger" onclick="eliminarMateriaPrima(${mp.id})">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                <td><strong>${mp.nombre}</strong>${mp.codigo ? ' <span class="muted">' + mp.codigo + '</span>' : ''}</td>
+                <td class="muted solo-escritorio" data-label="Unidad">${mp.unidad_medida || 'UNI'}</td>
+                <td class="num ${faltante ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')}</td>
+                <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
+                <td class="muted solo-escritorio" data-label="Ubicación">${mp.ubicacion || '—'}</td>
+                <td data-label="Estado">${Shell.pill(mp.activo ? 'ACTIVO' : 'INACTIVO')}</td>
+                <td class="num">
+                    <button class="b b-ghost b-sm" onclick="abrirModalEditar(${mp.id})">Editar</button>
+                    <button class="b b-ghost b-sm solo-escritorio" onclick="verHistorialPrecios(${mp.id})">Precios</button>
+                    <button class="b b-ghost b-sm solo-escritorio" onclick="eliminarMateriaPrima(${mp.id})">Desactivar</button>
                 </td>
-            </tr>
-        `;
+            </tr>`;
     }).join('');
 }
 
 // Abrir modal para crear nueva materia prima
 function abrirModalCrear() {
-    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box"></i> Nueva Materia Prima';
+    document.getElementById('modalTitle').textContent = 'Nuevo material';
     document.getElementById('materia_prima_id').value = '';
     document.getElementById('codigo').value = '';
     document.getElementById('nombre').value = '';
@@ -86,10 +73,9 @@ function abrirModalCrear() {
     document.getElementById('precio_referencia').value = '';
     document.getElementById('activo').checked = true;
     // Al crear todavía no hay stock cargado (entra por factura de compra o ajuste manual)
-    document.getElementById('stockActualGroup').style.display = 'none';
+    document.getElementById('stockActualGroup').hidden = true;
 
-    const modal = new bootstrap.Modal(document.getElementById('materiaPrimaModal'));
-    modal.show();
+    document.getElementById('materiaPrimaModal').showModal();
 }
 
 // Abrir modal para editar materia prima
@@ -97,7 +83,7 @@ async function abrirModalEditar(id) {
     try {
         const materiaPrima = await apiFetch(`/api/materias-primas/${id}`);
         
-        document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box"></i> Editar Materia Prima';
+        document.getElementById('modalTitle').textContent = 'Editar material';
         document.getElementById('materia_prima_id').value = materiaPrima.id;
         document.getElementById('codigo').value = materiaPrima.codigo || '';
         document.getElementById('nombre').value = materiaPrima.nombre || '';
@@ -109,14 +95,13 @@ async function abrirModalEditar(id) {
         document.getElementById('activo').checked = materiaPrima.activo !== false;
         // Al editar se muestra el stock actual solo como referencia (de solo lectura):
         // se carga por factura de compra o por ajuste en stock.html, nunca desde acá.
-        document.getElementById('stockActualGroup').style.display = '';
+        document.getElementById('stockActualGroup').hidden = false;
         document.getElementById('stock_actual_display').value = `${materiaPrima.stock_actual || 0} ${materiaPrima.unidad_medida || ''}`.trim();
 
-        const modal = new bootstrap.Modal(document.getElementById('materiaPrimaModal'));
-        modal.show();
+        document.getElementById('materiaPrimaModal').showModal();
     } catch (err) {
         console.error('Error cargando materia prima:', err);
-        alert('Error al cargar materia prima');
+        Shell.error(err, 'No se pudo abrir el material');
     }
 }
 
@@ -135,19 +120,19 @@ async function guardarMateriaPrima() {
         
         // Validaciones
         if (!codigo) {
-            alert('El código es obligatorio');
+            Shell.toast('err', 'Falta el código');
             return;
         }
         if (!nombre) {
-            alert('El nombre es obligatorio');
+            Shell.toast('err', 'Falta el nombre');
             return;
         }
         if (!unidad_medida) {
-            alert('La unidad de medida es obligatoria');
+            Shell.toast('err', 'Elegí en qué se mide');
             return;
         }
         if (stock_minimo < 0) {
-            alert('El stock mínimo no puede ser negativo');
+            Shell.toast('err', 'El stock mínimo no puede ser negativo');
             return;
         }
         
@@ -179,13 +164,13 @@ async function guardarMateriaPrima() {
             body: JSON.stringify(payload)
         });
         
-        alert(id ? 'Materia prima actualizada correctamente' : 'Materia prima creada correctamente');
-        bootstrap.Modal.getInstance(document.getElementById('materiaPrimaModal')).hide();
+        Shell.toast('ok', id ? 'Material actualizado' : 'Material creado');
+        document.getElementById('materiaPrimaModal').close();
         cargarMateriasPrimas();
         
     } catch (err) {
         console.error('Error guardando materia prima:', err);
-        alert(err.error || 'Error al guardar materia prima');
+        Shell.error(err, 'No se pudo guardar el material');
     }
 }
 
@@ -200,11 +185,11 @@ async function eliminarMateriaPrima(id) {
             method: 'DELETE'
         });
         
-        alert('Materia prima eliminada correctamente');
+        Shell.toast('ok', 'Material desactivado');
         cargarMateriasPrimas();
     } catch (err) {
         console.error('Error eliminando materia prima:', err);
-        alert(err.error || 'Error al eliminar materia prima');
+        Shell.error(err, 'No se pudo desactivar el material');
     }
 }
 
@@ -235,26 +220,25 @@ async function verHistorialPrecios(id) {
 
         const tbody = document.getElementById('historialPreciosBody');
         if (!historial || historial.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio('Sin cambios de precio todavía','Se registran solos al cargar facturas de compra.')}</td></tr>`;
         } else {
             tbody.innerHTML = historial.map(p => `
                 <tr>
-                    <td>${p.fecha_cambio || '-'}</td>
-                    <td>${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
-                    <td>${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
-                    <td>${renderVariacionHistorial(p)}</td>
-                    <td>${p.factura_numero || '-'}</td>
-                    <td>${p.usuario_nombre || '-'}</td>
+                    <td>${Shell.fecha(p.fecha_cambio)}</td>
+                    <td class="num" data-label="Antes">${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
+                    <td class="num" data-label="Después">${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
+                    <td class="num" data-label="Variación">${renderVariacionHistorial(p)}</td>
+                    <td class="muted solo-escritorio" data-label="Factura">${p.factura_numero || '—'}</td>
+                    <td class="muted solo-escritorio" data-label="Cargó">${p.usuario_nombre || '—'}</td>
                 </tr>
             `).join('');
         }
         
-        const modal = new bootstrap.Modal(document.getElementById('historialPreciosModal'));
-        modal.show();
+        document.getElementById('historialPreciosModal').showModal();
         
     } catch (err) {
         console.error('Error cargando historial de precios:', err);
-        alert('Error al cargar historial de precios');
+        Shell.error(err, 'No se pudo cargar el historial de precios');
     }
 }
 
@@ -263,7 +247,7 @@ async function verHistorialPreciosModal() {
     const materiaPrimaId = document.getElementById('materia_prima_id').value;
     
     if (!materiaPrimaId) {
-        alert('Primero debe guardar la materia prima para ver su historial de precios');
+        Shell.toast('err', 'Guardá el material antes de ver su historial');
         return;
     }
     
@@ -276,28 +260,27 @@ async function verHistorialPreciosModal() {
 
         const tbody = document.getElementById('historialPreciosBody');
         if (!historial || historial.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio('Sin cambios de precio todavía','Se registran solos al cargar facturas de compra.')}</td></tr>`;
         } else {
             tbody.innerHTML = historial.map(p => `
                 <tr>
-                    <td>${p.fecha_cambio || '-'}</td>
-                    <td>${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
-                    <td>${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
-                    <td>${renderVariacionHistorial(p)}</td>
-                    <td>${p.factura_numero || '-'}</td>
-                    <td>${p.usuario_nombre || '-'}</td>
+                    <td>${Shell.fecha(p.fecha_cambio)}</td>
+                    <td class="num" data-label="Antes">${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
+                    <td class="num" data-label="Después">${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
+                    <td class="num" data-label="Variación">${renderVariacionHistorial(p)}</td>
+                    <td class="muted solo-escritorio" data-label="Factura">${p.factura_numero || '—'}</td>
+                    <td class="muted solo-escritorio" data-label="Cargó">${p.usuario_nombre || '—'}</td>
                 </tr>
             `).join('');
         }
         
         // Cerrar el modal de edición y abrir el de historial
-        bootstrap.Modal.getInstance(document.getElementById('materiaPrimaModal')).hide();
-        const modal = new bootstrap.Modal(document.getElementById('historialPreciosModal'));
-        modal.show();
+        document.getElementById('materiaPrimaModal').close();
+        document.getElementById('historialPreciosModal').showModal();
         
     } catch (err) {
         console.error('Error cargando historial de precios:', err);
-        alert('Error al cargar historial de precios');
+        Shell.error(err, 'No se pudo cargar el historial de precios');
     }
 }
 
@@ -318,3 +301,10 @@ function buscarMateriasPrimas() {
     
     renderizarTablaMateriasPrimas(filtradas);
 }
+
+// Cerrar las ventanas (reemplaza a data-bs-dismiss de Bootstrap)
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+});

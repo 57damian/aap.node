@@ -47,6 +47,23 @@ async function apiFetch(endpoint, options = {}) {
     }
 
     if (response.status === 403) {
+      // El backend responde así mientras la contraseña siga siendo la
+      // temporal que entregó el administrador: no es falta de permisos, hay
+      // que cambiarla antes de seguir.
+      let cuerpo = null;
+      try { cuerpo = await response.clone().json(); } catch (_) { /* no era JSON */ }
+
+      if (cuerpo && cuerpo.code === 'PASSWORD_CHANGE_REQUIRED') {
+        if (window.Shell && typeof Shell.pedirCambioPassword === 'function') {
+          Shell.pedirCambioPassword();
+        } else {
+          // Pantalla vieja, todavía sin el shell: al login, que sabe abrir el
+          // cambio obligatorio.
+          window.location.href = 'login.html?cambiar=1';
+        }
+        throw new Error(cuerpo.error || 'Tenés que cambiar tu contraseña');
+      }
+
       throw new Error('No tiene permisos para esta acción');
     }
 

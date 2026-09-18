@@ -66,7 +66,41 @@
             <i class="fas fa-exclamation-triangle"></i>
             <span id="errorText">Usuario o contraseña incorrectos</span>
         </div>
-        
+
+        <!-- Cambio obligatorio de contraseña.
+             Aparece cuando se entra con la contraseña temporal que entregó el
+             administrador. Está acá, en el login, porque es el único lugar por
+             el que pasan todas las personas, incluidas las que trabajan en
+             pantallas que todavía no usan el menú nuevo. -->
+        <form id="cambioForm" class="login-form" hidden>
+            <p class="login-subtitle" style="margin-bottom:16px">
+                Tu contraseña es temporal. Elegí una nueva para entrar.
+            </p>
+
+            <div class="form-group">
+                <i class="fas fa-lock form-icon"></i>
+                <input type="password" id="pass_nueva" class="form-input"
+                       placeholder="Contraseña nueva" minlength="10" required
+                       autocomplete="new-password">
+            </div>
+
+            <div class="form-group">
+                <i class="fas fa-lock form-icon"></i>
+                <input type="password" id="pass_repetir" class="form-input"
+                       placeholder="Repetir la nueva" minlength="10" required
+                       autocomplete="new-password">
+            </div>
+
+            <p class="version" style="margin:-6px 0 14px">
+                Al menos 10 caracteres. Una frase que recuerdes es mejor que algo
+                corto y complicado.
+            </p>
+
+            <button type="submit" class="login-button" id="cambioButton">
+                <span id="cambioButtonText">Guardar y entrar</span>
+            </button>
+        </form>
+
         <div class="login-footer">
             <p>&copy; 2024 Transformadores ERP</p>
             <p class="version">v2.0.0</p>
@@ -135,22 +169,41 @@
                 if (response.token) {
                     // Success - store token and redirect
                     localStorage.setItem('token', response.token);
-                    localStorage.setItem('usuario', JSON.stringify(response.usuario));
-                    
+                    // debe_cambiar_password viaja dentro del usuario guardado:
+                    // Shell.montar() lo lee y abre el cambio obligatorio.
+                    localStorage.setItem('usuario', JSON.stringify(
+                        Object.assign({}, response.usuario, {
+                            debe_cambiar_password: !!response.debe_cambiar_password
+                        })
+                    ));
+
                     // Remember me functionality
                     if (document.getElementById('rememberMe').checked) {
                         localStorage.setItem('rememberUser', usuario);
                     } else {
                         localStorage.removeItem('rememberUser');
                     }
-                    
+
+                    // Contraseña temporal: todavía no se entra al sistema. El
+                    // backend además responde 403 a todo lo demás hasta que se
+                    // cambie, así que saltear este paso no serviría de nada.
+                    if (response.debe_cambiar_password) {
+                        mostrarCambioObligatorio(password);
+                        return;
+                    }
+
                     // Show success message
                     buttonText.textContent = '¡Acceso concedido!';
                     button.style.background = 'var(--gradient-success)';
-                    
-                    // Redirect after short delay
+
+                    // El operario solo trabaja en Producción; el admin
+                    // arranca en el dashboard.
+                    const destino = response.usuario.rol === 'operario'
+                        ? 'produccion.html'
+                        : 'dashboard.html';
+
                     setTimeout(() => {
-                        window.location.href = 'dashboard.html';
+                        window.location.href = destino;
                     }, 1000);
                 } else {
                     throw new Error('Credenciales inválidas');
@@ -179,6 +232,74 @@
             }
         });
         
+        // ------------------------------------------------------------------
+        // Cambio obligatorio de contraseña temporal
+        // ------------------------------------------------------------------
+        let passwordTemporalUsada = '';
+
+        function mostrarCambioObligatorio(passwordActual) {
+            passwordTemporalUsada = passwordActual;
+            document.getElementById('loginForm').hidden = true;
+            document.getElementById('errorMessage').classList.remove('show');
+            const cambio = document.getElementById('cambioForm');
+            cambio.hidden = false;
+            document.getElementById('pass_nueva').focus();
+        }
+
+        document.getElementById('cambioForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const nueva = document.getElementById('pass_nueva').value;
+            const repetir = document.getElementById('pass_repetir').value;
+            const boton = document.getElementById('cambioButton');
+            const botonTexto = document.getElementById('cambioButtonText');
+            const errorMessage = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+
+            function fallar(mensaje) {
+                errorText.textContent = mensaje;
+                errorMessage.classList.add('show');
+                boton.disabled = false;
+                botonTexto.textContent = 'Guardar y entrar';
+            }
+
+            errorMessage.classList.remove('show');
+
+            if (nueva !== repetir) return fallar('Las contraseñas no coinciden.');
+            if (nueva.length < 10) return fallar('La contraseña debe tener al menos 10 caracteres.');
+
+            boton.disabled = true;
+            botonTexto.textContent = 'Guardando…';
+
+            try {
+                const res = await apiFetch('/api/usuarios/cambiar-password', {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        password_actual: passwordTemporalUsada,
+                        password_nueva: nueva,
+                        password_confirmacion: repetir
+                    })
+                });
+
+                // El backend invalida los tokens anteriores y devuelve uno
+                // nuevo: sin guardarlo, la primera pantalla daría 401.
+                if (res.token) localStorage.setItem('token', res.token);
+
+                const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+                usuario.debe_cambiar_password = false;
+                localStorage.setItem('usuario', JSON.stringify(usuario));
+                passwordTemporalUsada = '';
+
+                botonTexto.textContent = '¡Listo!';
+                window.location.href = usuario.rol === 'operario'
+                    ? 'produccion.html'
+                    : 'dashboard.html';
+
+            } catch (err) {
+                fallar((err && (err.error || err.message)) || 'No se pudo cambiar la contraseña.');
+            }
+        });
+
         // Add shake animation
         const style = document.createElement('style');
         style.textContent = `
@@ -192,6 +313,18 @@
         
         // Load remembered user
         window.addEventListener('load', function() {
+            // ?cambiar=1 lo pone js/api.js cuando una pantalla vieja (sin el
+            // menú nuevo) recibe PASSWORD_CHANGE_REQUIRED: hay que volver a
+            // entrar con la temporal para que aparezca el formulario de cambio.
+            if (new URLSearchParams(location.search).get('cambiar') === '1') {
+                const usuarioGuardado = localStorage.getItem('rememberUser');
+                localStorage.removeItem('token');
+                if (usuarioGuardado) localStorage.setItem('rememberUser', usuarioGuardado);
+                document.getElementById('errorText').textContent =
+                    'Entrá con tu contraseña temporal para elegir una nueva.';
+                document.getElementById('errorMessage').classList.add('show');
+            }
+
             const rememberedUser = localStorage.getItem('rememberUser');
             if (rememberedUser) {
                 document.getElementById('usuario').value = rememberedUser;
@@ -202,10 +335,18 @@
             }
         });
         
-        // Forgot password handler
+        // Recuperación de contraseña: no hay autoservicio por email, la
+        // restablece el administrador desde la pantalla de Usuarios y entrega
+        // una contraseña temporal de un solo uso. En vez de prometer una
+        // función que no existe ("próximamente disponible"), se explica el
+        // camino real.
         document.querySelector('.forgot-link').addEventListener('click', function(e) {
             e.preventDefault();
-            cssUtils.showNotification('Función de recuperación de contraseña próximamente disponible', 'info');
+            document.getElementById('errorText').textContent =
+                'Pedile al administrador que te la restablezca: te va a dar una ' +
+                'contraseña temporal y el sistema te va a pedir que elijas una ' +
+                'nueva al entrar.';
+            document.getElementById('errorMessage').classList.add('show');
         });
     </script>
 </body>

@@ -1,49 +1,39 @@
-// Este script se incluye solo en el login.
-// Proteger por si se carga en otra página sin #loginForm.
-const loginForm = document.getElementById('loginForm');
-if (loginForm) {
-loginForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+// Helpers de sesión compartidos.
+//
+// Antes este archivo enganchaba SU PROPIO listener al submit de #loginForm,
+// que login.html también tiene en su script inline. Los dos se registraban
+// sobre el mismo formulario, así que cada intento de login disparaba DOS
+// POST /api/auth/login (el segundo contaba como intento extra para el límite
+// de la API), y el catch de acá escribía en un elemento #error que solo
+// existe en index.html, con lo cual un login fallido en login.html tiraba
+// además un TypeError. El único handler de login vive ahora en login.html.
 
-  const usuario = document.getElementById('usuario').value;
-  const password = document.getElementById('password').value;
-
-  try {
-    // ✅ CORREGIDO: Agregado /api/ al endpoint
-    const data = await apiFetch('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ usuario, password })
-    });
-
-    // Guardar token y datos del usuario
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('usuario', JSON.stringify(data.usuario));
-    localStorage.setItem('rol', data.usuario.rol);
-    localStorage.setItem('usuario_id', data.usuario.id);
-
-    // Redirigir según el rol del usuario
-    if (data.usuario.rol === 'empleado') {
-      // Los empleados solo tienen acceso a producción
-      window.location.href = 'produccion.html';
-    } else {
-      // Otros roles van al dashboard
-      window.location.href = 'dashboard.html';
-    }
-  } catch (err) {
-    document.getElementById('error').innerText = err.error || 'Error de login';
-  }
-});
-}
-
-// Función para verificar autenticación en páginas protegidas
+/** Devuelve el usuario logueado, o redirige al login si no hay sesión. */
 function verificarAuth() {
   const token = localStorage.getItem('token');
   const usuario = localStorage.getItem('usuario');
-  
+
   if (!token || !usuario) {
     window.location.href = 'login.html';
     return null;
   }
-  
-  return JSON.parse(usuario);
+
+  try {
+    return JSON.parse(usuario);
+  } catch (e) {
+    localStorage.clear();
+    window.location.href = 'login.html';
+    return null;
+  }
+}
+
+/** Cierra la sesión y vuelve al login. */
+function logout() {
+  localStorage.clear();
+  window.location.href = 'login.html';
+}
+
+/** ¿Hay sesión abierta? (lo usa alertas-pagos.js) */
+function isAuthenticated() {
+  return !!localStorage.getItem('token') && !!localStorage.getItem('usuario');
 }
