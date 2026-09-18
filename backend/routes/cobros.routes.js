@@ -18,7 +18,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const {
   CTE_FACTURAS, CTE_A_FAVOR, EXCESO_COBRADO, ESTADO_FACTURA,
   resumenCliente, cuentaCorriente
@@ -26,8 +26,10 @@ const {
 
 router.use(verificarToken);
 
-const GESTION = authorize(['admin', 'control']);
-const LECTURA = authorize(['admin', 'control', 'operario']);
+// Todo este módulo es plata: lo ve y lo toca solo el administrador.
+// Antes la constante de lectura incluía 'operario', así que un usuario de
+// planta podía consultar por API la deuda, los cheques y las cuentas
+// corrientes aunque el menú no le mostrara esas pantallas.
 
 const TIPOS_ITEM = ['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'RETENCION'];
 const ESTADOS_EN_GESTION = ['EN_CARTERA', 'DEPOSITADO'];
@@ -48,7 +50,7 @@ function fallar(res, code, msg) {
  * ===================================================================*/
 
 /* Totales generales + antigüedad de la deuda + cheques en cartera. */
-router.get('/resumen', LECTURA, async (req, res) => {
+router.get('/resumen', soloAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       WITH ${CTE_FACTURAS}
@@ -96,7 +98,7 @@ router.get('/resumen', LECTURA, async (req, res) => {
 });
 
 /* Deuda por cliente. Es la tabla principal de la herramienta. */
-router.get('/deuda', LECTURA, async (req, res) => {
+router.get('/deuda', soloAdmin, async (req, res) => {
   const { buscar, solo_vencido, orden } = req.query;
   const incluirSinDeuda = req.query.incluir_sin_deuda === 'true';
 
@@ -156,7 +158,7 @@ router.get('/deuda', LECTURA, async (req, res) => {
 });
 
 /* Ficha de deuda de un cliente: totales + facturas + cheques + cobros. */
-router.get('/clientes/:id', LECTURA, async (req, res) => {
+router.get('/clientes/:id', soloAdmin, async (req, res) => {
   const { id } = req.params;
   const soloPendientes = req.query.solo_pendientes !== 'false';
 
@@ -202,7 +204,7 @@ router.get('/clientes/:id', LECTURA, async (req, res) => {
 });
 
 /* Cuenta corriente: movimientos con saldo acumulado. */
-router.get('/clientes/:id/cuenta-corriente', LECTURA, async (req, res) => {
+router.get('/clientes/:id/cuenta-corriente', soloAdmin, async (req, res) => {
   const { id } = req.params;
   const { desde, hasta } = req.query;
 
@@ -220,7 +222,7 @@ router.get('/clientes/:id/cuenta-corriente', LECTURA, async (req, res) => {
 });
 
 /* Facturas con saldo de un cliente — alimenta el formulario de cobro. */
-router.get('/clientes/:id/facturas-pendientes', LECTURA, async (req, res) => {
+router.get('/clientes/:id/facturas-pendientes', soloAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       WITH ${CTE_FACTURAS}
@@ -418,7 +420,7 @@ function normalizarItem(item, fechaRecepcion) {
  * ===================================================================*/
 
 /* Historial de cobros. `estado` es calculado, no hay columna. */
-router.get('/', LECTURA, async (req, res) => {
+router.get('/', soloAdmin, async (req, res) => {
   const { cliente_id, desde, hasta, estado } = req.query;
   const params = [];
   let filtro = '';
@@ -480,7 +482,7 @@ router.get('/', LECTURA, async (req, res) => {
 });
 
 /* Registrar un cobro (opcionalmente imputándolo en el mismo paso). */
-router.post('/', GESTION, async (req, res) => {
+router.post('/', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -561,7 +563,7 @@ router.post('/', GESTION, async (req, res) => {
 });
 
 /* Deshacer una imputación puntual (imputé a la factura equivocada). */
-router.delete('/imputaciones/:id', GESTION, async (req, res) => {
+router.delete('/imputaciones/:id', soloAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(
       'DELETE FROM aplicacion_pagos WHERE id = $1 RETURNING *', [req.params.id]
@@ -578,7 +580,7 @@ router.delete('/imputaciones/:id', GESTION, async (req, res) => {
  * 4. CHEQUES
  * ===================================================================*/
 
-router.get('/cheques', LECTURA, async (req, res) => {
+router.get('/cheques', soloAdmin, async (req, res) => {
   const { cliente_id, estado, desde, hasta } = req.query;
   const params = [];
   let filtro = '';
@@ -618,7 +620,7 @@ router.get('/cheques', LECTURA, async (req, res) => {
   }
 });
 
-router.get('/cheques/alertas', LECTURA, async (req, res) => {
+router.get('/cheques/alertas', soloAdmin, async (req, res) => {
   const dias = parseInt(req.query.dias, 10) || 7;
   try {
     const { rows } = await pool.query(`
@@ -684,7 +686,7 @@ async function cambiarEstadoCheque(req, res, { desde, hacia, extra }) {
   }
 }
 
-router.post('/cheques/:id/depositar', GESTION, (req, res) =>
+router.post('/cheques/:id/depositar', soloAdmin, (req, res) =>
   cambiarEstadoCheque(req, res, {
     desde: ['EN_CARTERA'],
     hacia: 'DEPOSITADO',
@@ -692,7 +694,7 @@ router.post('/cheques/:id/depositar', GESTION, (req, res) =>
   })
 );
 
-router.post('/cheques/:id/acreditar', GESTION, (req, res) =>
+router.post('/cheques/:id/acreditar', soloAdmin, (req, res) =>
   cambiarEstadoCheque(req, res, {
     desde: ['EN_CARTERA', 'DEPOSITADO'],
     hacia: 'ACREDITADO',
@@ -705,7 +707,7 @@ router.post('/cheques/:id/acreditar', GESTION, (req, res) =>
 
 /* El rechazo NO revierte nada a mano: al dejar de estar ACREDITADO/EN_CARTERA,
    sus imputaciones dejan de contar y la deuda reaparece sola. */
-router.post('/cheques/:id/rechazar', GESTION, (req, res) =>
+router.post('/cheques/:id/rechazar', soloAdmin, (req, res) =>
   cambiarEstadoCheque(req, res, {
     desde: ['EN_CARTERA', 'DEPOSITADO', 'ACREDITADO'],
     hacia: 'RECHAZADO',
@@ -719,7 +721,7 @@ router.post('/cheques/:id/rechazar', GESTION, (req, res) =>
 
 /* Endoso a proveedor. Registra en endosos_cheques (que es lo que mira
    el módulo de Proveedores) además de marcar el item. */
-router.post('/cheques/:id/endosar', GESTION, async (req, res) => {
+router.post('/cheques/:id/endosar', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -775,7 +777,7 @@ router.post('/cheques/:id/endosar', GESTION, async (req, res) => {
  * 5. RECIBOS
  * ===================================================================*/
 
-router.get('/talonarios', LECTURA, async (req, res) => {
+router.get('/talonarios', soloAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT t.id, t.numero_talonario, t.fecha_asignacion, t.activo, u.nombre_usuario
@@ -791,7 +793,7 @@ router.get('/talonarios', LECTURA, async (req, res) => {
   }
 });
 
-router.get('/recibos', LECTURA, async (req, res) => {
+router.get('/recibos', soloAdmin, async (req, res) => {
   const { cliente_id, desde, hasta } = req.query;
   const params = [];
   let filtro = '';
@@ -817,7 +819,7 @@ router.get('/recibos', LECTURA, async (req, res) => {
   }
 });
 
-router.get('/recibos/:id', LECTURA, async (req, res) => {
+router.get('/recibos/:id', soloAdmin, async (req, res) => {
   try {
     const recibo = await pool.query(`
       SELECT r.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit,
@@ -855,7 +857,7 @@ router.get('/recibos/:id', LECTURA, async (req, res) => {
   }
 });
 
-router.post('/recibos', GESTION, async (req, res) => {
+router.post('/recibos', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -952,7 +954,7 @@ router.param('id', (req, res, next, valor) => {
 });
 
 /* Detalle de un cobro: formas de pago + a qué facturas se imputó. */
-router.get('/:id', LECTURA, async (req, res) => {
+router.get('/:id', soloAdmin, async (req, res) => {
   try {
     const pago = await pool.query(`
       SELECT p.*, c.nombre AS cliente_nombre, c.cuit, r.numero_recibo
@@ -990,7 +992,7 @@ router.get('/:id', LECTURA, async (req, res) => {
 });
 
 /* Imputar (o seguir imputando) un cobro ya registrado. */
-router.post('/:id/imputar', GESTION, async (req, res) => {
+router.post('/:id/imputar', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1020,7 +1022,7 @@ router.post('/:id/imputar', GESTION, async (req, res) => {
 });
 
 /* Anular un cobro entero (se cargó mal). Libera la deuda imputada. */
-router.post('/:id/anular', GESTION, async (req, res) => {
+router.post('/:id/anular', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 
 // Todas las rutas requieren autenticación
 router.use(verificarToken);
@@ -11,7 +11,11 @@ router.use(verificarToken);
  * Lista materias primas con filtros opcionales
  * Query params: search, activo, proveedor_id, con_stock
  */
-router.get('/', async (req, res) => {
+// soloAdmin: este listado trae el precio de referencia y el proveedor de cada
+// material. Era el último endpoint que había quedado sin control de rol
+// (hallazgo S7), así que cualquier usuario logueado lo leía entero.
+// El operario consulta cantidades por GET /api/stock, que sale filtrado.
+router.get('/', soloAdmin, async (req, res) => {
   try {
     const { search, activo = 'true', proveedor_id, con_stock } = req.query;
 
@@ -70,7 +74,7 @@ router.get('/', async (req, res) => {
    * GET /api/materias-primas/:id
    * Obtener una materia prima por ID
    */
-  router.get('/:id', async (req, res) => {
+  router.get('/:id', soloAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const result = await pool.query(`
@@ -98,7 +102,7 @@ router.get('/', async (req, res) => {
    * POST /api/materias-primas
    * Crear nueva materia prima
    */
-  router.post('/', authorize(['admin', 'control']), async (req, res) => {
+  router.post('/', soloAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
       const { codigo, nombre, descripcion, unidad_medida, stock_minimo = 0, ubicacion, precio_referencia } = req.body;
@@ -131,7 +135,7 @@ router.get('/', async (req, res) => {
    * PUT /api/materias-primas/:id
    * Actualizar materia prima
    */
-  router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
+  router.put('/:id', soloAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
       const { id } = req.params;
@@ -175,7 +179,7 @@ router.get('/', async (req, res) => {
  * DELETE /api/materias-primas/:id
  * Desactivar materia prima (soft delete)
  */
-router.delete('/:id', authorize(['admin']), async (req, res) => {
+router.delete('/:id', soloAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     await pool.query('UPDATE materias_primas SET activo = false WHERE id = $1', [id]);
@@ -190,7 +194,7 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
    * GET /api/materias-primas/:id/historial-precios
    * Obtener historial de precios de una materia prima
    */
-  router.get('/:id/historial-precios', async (req, res) => {
+  router.get('/:id/historial-precios', soloAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       

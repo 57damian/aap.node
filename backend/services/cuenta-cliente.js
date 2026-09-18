@@ -44,6 +44,9 @@ const CTE_FACTURAS = `
       JOIN pago_items pi ON pi.id = ap.pago_item_id
       GROUP BY ap.factura_id
     ) imp ON imp.factura_id = f.id
+    -- Una factura anulada no debe seguir sumando deuda (hallazgo D10 de
+    -- la auditoría). El lado espejo, cuenta-proveedor.js, ya filtra así.
+    WHERE COALESCE(upper(f.estado), 'EMITIDA') <> 'ANULADA'
   )
 `;
 
@@ -132,7 +135,7 @@ async function cuentaCorriente(pool, clienteId, { desde, hasta } = {}) {
              ROUND(f.total, 2) AS debe, 0::numeric AS haber, ROUND(f.total, 2) AS monto,
              NULL::text AS detalle, f.id AS ref_id
       FROM facturas f
-      WHERE f.cliente_id = $1
+      WHERE f.cliente_id = $1 AND COALESCE(upper(f.estado), 'EMITIDA') <> 'ANULADA'
 
       UNION ALL
 

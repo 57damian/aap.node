@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 
 router.use(verificarToken);
 
 /* =========================
    1️⃣ PRECIOS ACTUALES
 ========================= */
-router.get('/actuales', authorize(['admin', 'control']), async (req, res) => {
+router.get('/actuales', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -41,7 +41,7 @@ router.get('/actuales', authorize(['admin', 'control']), async (req, res) => {
 /* =========================
    2️⃣ NUEVO PRECIO MODELO
 ========================= */
-router.post('/modelo', authorize(['admin', 'control']), async (req, res) => {
+router.post('/modelo', soloAdmin, async (req, res) => {
   const { ficha_id, precio, observaciones } = req.body;
 
   if (!ficha_id || !precio) {
@@ -66,7 +66,7 @@ router.post('/modelo', authorize(['admin', 'control']), async (req, res) => {
 /* =========================
    3️⃣ HISTORIAL POR MODELO
 ========================= */
-router.get('/modelo/:ficha_id', authorize(['admin', 'control']), async (req, res) => {
+router.get('/modelo/:ficha_id', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT precio AS precio_usd, fecha_desde, observaciones
@@ -85,7 +85,7 @@ router.get('/modelo/:ficha_id', authorize(['admin', 'control']), async (req, res
 /* =========================
    4️⃣ AUMENTO POR MODELO %
 ========================= */
-router.post('/aumento/:ficha_id', authorize(['admin']), async (req, res) => {
+router.post('/aumento/:ficha_id', soloAdmin, async (req, res) => {
   const porcentaje = Number(req.body.porcentaje);
   const observaciones = req.body.observaciones || null;
   const { ficha_id } = req.params;
@@ -122,7 +122,7 @@ router.post('/aumento/:ficha_id', authorize(['admin']), async (req, res) => {
 /* ============================================
    5️⃣ OBTENER CONFIGURACIÓN DE IVA - AGREGADO
    ============================================ */
-router.get('/parametros/iva', authorize(['admin', 'control']), async (req, res) => {
+router.get('/parametros/iva', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT valor FROM parametros WHERE clave = 'iva_general'"
@@ -155,7 +155,7 @@ router.get('/parametros/iva', authorize(['admin', 'control']), async (req, res) 
 /* ============================================
    6️⃣ ACTUALIZAR CONFIGURACIÓN DE IVA - AGREGADO
    ============================================ */
-router.put('/parametros/iva', authorize(['admin']), async (req, res) => {
+router.put('/parametros/iva', soloAdmin, async (req, res) => {
   const { valor } = req.body;
   
   if (!valor || isNaN(valor) || valor <= 0 || valor > 100) {
@@ -185,7 +185,7 @@ router.put('/parametros/iva', authorize(['admin']), async (req, res) => {
 /* ============================================
    7️⃣ OBTENER TIPO DE CAMBIO POR DEFECTO - AGREGADO
    ============================================ */
-router.get('/parametros/tipo-cambio', authorize(['admin', 'control']), async (req, res) => {
+router.get('/parametros/tipo-cambio', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT valor FROM parametros WHERE clave = 'tipo_cambio_default'"
@@ -212,7 +212,7 @@ router.get('/parametros/tipo-cambio', authorize(['admin', 'control']), async (re
 /* ============================================
    8️⃣ ACTUALIZAR TIPO DE CAMBIO POR DEFECTO - AGREGADO
    ============================================ */
-router.put('/parametros/tipo-cambio', authorize(['admin']), async (req, res) => {
+router.put('/parametros/tipo-cambio', soloAdmin, async (req, res) => {
   const { valor } = req.body;
   
   if (!valor || isNaN(valor) || valor <= 0) {
@@ -241,7 +241,7 @@ router.put('/parametros/tipo-cambio', authorize(['admin']), async (req, res) => 
 /* ============================================
    💲 OBTENER TIPO DE CAMBIO ACTUAL (DÓLAR BANCO)
    ============================================ */
-router.get('/parametros/dolar', authorize(['admin', 'control', 'operario']), async (req, res) => {
+router.get('/parametros/dolar', soloAdmin, async (req, res) => {
   try {
     // Obtener el valor del dólar del banco
     const dolarRes = await pool.query(
@@ -276,7 +276,7 @@ router.get('/parametros/dolar', authorize(['admin', 'control', 'operario']), asy
 /* ============================================
    💲 ACTUALIZAR TIPO DE CAMBIO (DÓLAR BANCO) - CORREGIDO
    ============================================ */
-router.put('/parametros/dolar', authorize(['admin', 'control']), async (req, res) => {
+router.put('/parametros/dolar', soloAdmin, async (req, res) => {
   const { dolar } = req.body;
   const usuario_id = req.headers['usuario_id'] || req.body.usuario_id || null;
   
@@ -342,7 +342,7 @@ router.put('/parametros/dolar', authorize(['admin', 'control']), async (req, res
 /* ============================================
    💲 HISTORIAL DE TIPO DE CAMBIO - CORREGIDO
    ============================================ */
-router.get('/parametros/dolar/historial', authorize(['admin', 'control', 'operario']), async (req, res) => {
+router.get('/parametros/dolar/historial', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 

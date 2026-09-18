@@ -95,33 +95,11 @@ async function updateUsuariosTable() {
     );
     
     if (adminExistente.rows.length === 0) {
-      console.log('\n➕ Creando usuario administrador por defecto...');
-      
-      const bcrypt = require('bcryptjs');
-      const password = 'admin123';
-      const salt = await bcrypt.genSalt(12);
-      const passwordHash = await bcrypt.hash(password, salt);
-      
-      // Verificar si ya existe un usuario con nombre_usuario 'admin'
-      const usuarioExistente = await pool.query(
-        "SELECT id FROM usuarios WHERE nombre_usuario = 'admin'"
-      );
-      
-      if (usuarioExistente.rows.length === 0) {
-        await pool.query(`
-          INSERT INTO usuarios (
-            nombre_usuario, email, password_hash, rol, activo, nombre_completo
-          ) VALUES ($1, $2, $3, $4, $5, $6)
-        `, ['admin', 'admin@transformadores.com', passwordHash, 'admin', true, 'Administrador del Sistema']);
-        
-        console.log('✅ Usuario administrador creado:');
-        console.log('   Usuario: admin');
-        console.log('   Email: admin@transformadores.com');
-        console.log('   Contraseña: admin123');
-        console.log('   ⚠️ Recuerda cambiar la contraseña en el primer inicio de sesión');
-      } else {
-        console.log('ℹ️ Ya existe un usuario con nombre_usuario "admin"');
-      }
+      // Ya no se siembra un admin con la contraseña fija 'admin123': dejaba
+      // una clave conocida, publicada en el repositorio, en cualquier
+      // instalación que corriera este script.
+      console.log('\nℹ️ No hay ningún administrador. Creá el primero con:');
+      console.log('   node scripts/create-admin.js <nombre_usuario> [email]');
     } else {
       console.log('ℹ️ Ya existe un usuario con rol "admin"');
     }

@@ -1,31 +1,47 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+/* Deuda y cuenta corriente salen del servicio compartido (13/09/2026).
+   Antes cada endpoint de este archivo las calculaba por su cuenta contra
+   pagos_proveedores filtrando por estado='CONFIRMADO', un estado que el
+   alta de pagos nunca escribía: la deuda daba siempre el total facturado. */
+const {
+  CTE_FACTURAS_COMPRA, CTE_A_FAVOR_PROV, ESTADO_FACTURA_COMPRA, SUBQ_IMPUTADO,
+  ESTADO_EFECTIVO_ITEM, resumenProveedor, cuentaCorrienteProveedor
+} = require('../services/cuenta-proveedor');
+
+// hallazgo S7: todos los endpoints de este archivo usaban verificarToken
+// pero ninguno authorize(...) — cualquier usuario logueado, incluido un
+// 'empleado' de planta, podía leer la cuenta corriente y la deuda de
+// todos los proveedores. Mismo criterio que ya usan cobros.routes.js y
+// pagos-proveedores.routes.js.
+// Todo este módulo es plata: lo ve y lo toca solo el administrador.
+// Antes la constante de lectura incluía 'operario', así que un usuario de
+// planta podía consultar por API la deuda, los cheques y las cuentas
+// corrientes aunque el menú no le mostrara esas pantallas.
 
 // =====================================================
 // CRUD BÁSICO DE PROVEEDORES
 // =====================================================
 
 // Obtener todos los proveedores (con filtros básicos)
-router.get('/', verificarToken, async (req, res) => {
+router.get('/', verificarToken, soloAdmin, async (req, res) => {
     const { search, estado } = req.query;
 
     try {
         let query = `
-            SELECT 
+            WITH ${CTE_FACTURAS_COMPRA}
+            SELECT
                 p.*,
-                (SELECT COUNT(*) FROM compras c WHERE c.proveedor_id = p.id) AS total_compras,
-                (SELECT COALESCE(SUM(fc.total - COALESCE(pp.total_pagado, 0)), 0) 
-                 FROM facturas_compra fc 
-                 LEFT JOIN (
-                     SELECT factura_id, SUM(monto) as total_pagado 
-                     FROM pagos_proveedores 
-                     WHERE estado = 'CONFIRMADO' 
-                     GROUP BY factura_id
-                 ) pp ON fc.id = pp.factura_id
-                 WHERE fc.proveedor_id = p.id AND fc.estado = 'PENDIENTE'
-                ) AS deuda_pendiente
+                -- "Compras" cuenta facturas de compra reales, no la tabla
+                -- legacy "compras" (que está casi vacía y hacía que esta
+                -- columna mostrara 0 para todos).
+                (SELECT COUNT(*) FROM facturas_compra fc WHERE fc.proveedor_id = p.id) AS total_compras,
+                (SELECT ROUND(COALESCE(SUM(fs.saldo) FILTER (WHERE fs.saldo > 0.005), 0), 2)
+                   FROM facturas_compra_saldo fs WHERE fs.proveedor_id = p.id) AS deuda_pendiente,
+                (SELECT ROUND(COALESCE(SUM(fs.saldo) FILTER (WHERE fs.saldo > 0.005 AND fs.dias_atraso > 0), 0), 2)
+                   FROM facturas_compra_saldo fs WHERE fs.proveedor_id = p.id) AS deuda_vencida
             FROM proveedores p
             WHERE 1=1
         `;
@@ -62,7 +78,7 @@ router.get('/', verificarToken, async (req, res) => {
 });
 
 // Obtener proveedor por ID
-router.get('/:id', verificarToken, async (req, res) => {
+router.get('/:id', verificarToken, soloAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT * FROM proveedores WHERE id = $1
@@ -79,17 +95,18 @@ router.get('/:id', verificarToken, async (req, res) => {
 });
 
 // Crear proveedor
-router.post('/', verificarToken, authorize(['admin', 'control']), async (req, res) => {
-    const { 
-        nombre, cuit, direccion, telefono, email, 
-        contacto, condicion_iva, observaciones 
+router.post('/', verificarToken, soloAdmin, async (req, res) => {
+    const {
+        nombre, cuit, direccion, telefono, email,
+        contacto, condicion_iva, observaciones,
+        dias_credito, forma_pago_habitual   // hallazgo D3
     } = req.body;
-    
+
     // Validaciones básicas
     if (!nombre) {
         return res.status(400).json({ error: 'El nombre es requerido' });
     }
-    
+
     try {
         // Verificar si ya existe por CUIT
         if (cuit) {
@@ -101,14 +118,19 @@ router.post('/', verificarToken, authorize(['admin', 'control']), async (req, re
                 return res.status(400).json({ error: 'Ya existe un proveedor con ese CUIT' });
             }
         }
-        
+
+        // hallazgo D3: antes ni el POST ni el PUT aceptaban dias_credito ni
+        // forma_pago_habitual, así que dias_credito se quedaba siempre en
+        // su default (0) y toda factura cargada aparecía "vencida" desde
+        // el día uno en el panel de deuda.
         const result = await pool.query(`
             INSERT INTO proveedores (
                 nombre, cuit, direccion, telefono, email,
-                contacto, condicion_iva, observaciones, activo
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+                contacto, condicion_iva, observaciones, activo,
+                dias_credito, forma_pago_habitual
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, COALESCE($9, 0), $10)
             RETURNING *
-        `, [nombre, cuit, direccion, telefono, email, contacto, condicion_iva, observaciones]);
+        `, [nombre, cuit, direccion, telefono, email, contacto, condicion_iva, observaciones, dias_credito, forma_pago_habitual]);
 
         // Nota (13/09/2026): antes acá se insertaba también en una tabla
         // "entidades" que no existe en la base real. Como esa consulta se
@@ -125,12 +147,13 @@ router.post('/', verificarToken, authorize(['admin', 'control']), async (req, re
 });
 
 // Actualizar proveedor
-router.put('/:id', verificarToken, authorize(['admin', 'control']), async (req, res) => {
-    const { 
-        nombre, cuit, direccion, telefono, email, 
-        contacto, condicion_iva, observaciones, activo 
+router.put('/:id', verificarToken, soloAdmin, async (req, res) => {
+    const {
+        nombre, cuit, direccion, telefono, email,
+        contacto, condicion_iva, observaciones, activo,
+        dias_credito, forma_pago_habitual   // hallazgo D3
     } = req.body;
-    
+
     try {
         // Verificar si existe
         const existe = await pool.query('SELECT id FROM proveedores WHERE id = $1', [req.params.id]);
@@ -160,10 +183,12 @@ router.put('/:id', verificarToken, authorize(['admin', 'control']), async (req, 
                 condicion_iva = COALESCE($7, condicion_iva),
                 observaciones = COALESCE($8, observaciones),
                 activo = COALESCE($9, activo),
+                dias_credito = COALESCE($10, dias_credito),
+                forma_pago_habitual = COALESCE($11, forma_pago_habitual),
                 updated_at = NOW()
-            WHERE id = $10
+            WHERE id = $12
             RETURNING *
-        `, [nombre, cuit, direccion, telefono, email, contacto, condicion_iva, observaciones, activo, req.params.id]);
+        `, [nombre, cuit, direccion, telefono, email, contacto, condicion_iva, observaciones, activo, dias_credito, forma_pago_habitual, req.params.id]);
 
         // Nota (13/09/2026): ídem que en el POST de arriba — se sacó el
         // UPDATE a la tabla "entidades" (no existe en la base real, hacía
@@ -177,29 +202,33 @@ router.put('/:id', verificarToken, authorize(['admin', 'control']), async (req, 
 });
 
 // Eliminar proveedor (soft delete)
-router.delete('/:id', verificarToken, authorize(['admin']), async (req, res) => {
+router.delete('/:id', verificarToken, soloAdmin, async (req, res) => {
     try {
-        // Verificar si tiene compras asociadas
-        const compras = await pool.query(
-            'SELECT COUNT(*) FROM compras WHERE proveedor_id = $1',
-            [req.params.id]
-        );
-        
-        if (parseInt(compras.rows[0].count) > 0) {
-            // Si tiene compras, solo desactivar
-            await pool.query(
-                'UPDATE proveedores SET activo = false WHERE id = $1',
-                [req.params.id]
-            );
-            res.json({ message: 'Proveedor desactivado (tiene compras asociadas)' });
+        /* Corregido 13/09/2026. Antes se miraba la tabla legacy `compras`
+           (casi siempre vacía) para decidir si borrar físicamente, así que
+           el DELETE se disparaba igual para proveedores con facturas de
+           compra reales y Postgres lo rechazaba con un 500 feo por la FK.
+           Ahora se chequea contra lo que de verdad depende del proveedor. */
+        const dependencias = await pool.query(`
+            SELECT
+              (SELECT COUNT(*) FROM facturas_compra   WHERE proveedor_id = $1) AS facturas,
+              (SELECT COUNT(*) FROM pagos_proveedores WHERE proveedor_id = $1) AS pagos,
+              (SELECT COUNT(*) FROM stock_movimientos WHERE proveedor_id = $1) AS movimientos
+        `, [req.params.id]);
+
+        const d = dependencias.rows[0];
+        const total = Number(d.facturas) + Number(d.pagos) + Number(d.movimientos);
+
+        if (total > 0) {
+            await pool.query('UPDATE proveedores SET activo = false WHERE id = $1', [req.params.id]);
+            res.json({
+                message: 'El proveedor tiene movimientos asociados, así que se desactivó en vez de borrarse',
+                facturas: Number(d.facturas),
+                pagos: Number(d.pagos),
+                movimientos_stock: Number(d.movimientos)
+            });
         } else {
-            // Si no tiene compras, eliminar físicamente
             await pool.query('DELETE FROM proveedores WHERE id = $1', [req.params.id]);
-            // Eliminar de entidades
-            await pool.query(
-                'DELETE FROM entidades WHERE tipo = $1 AND entidad_id = $2',
-                ['PROVEEDOR', req.params.id]
-            );
             res.json({ message: 'Proveedor eliminado permanentemente' });
         }
     } catch (error) {
@@ -212,7 +241,7 @@ router.delete('/:id', verificarToken, authorize(['admin']), async (req, res) => 
 // =====================================================
 
 // Obtener compras del proveedor
-router.get('/:id/compras', verificarToken, async (req, res) => {
+router.get('/:id/compras', verificarToken, soloAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT 
@@ -231,7 +260,7 @@ router.get('/:id/compras', verificarToken, async (req, res) => {
 });
 
 // Obtener detalle de una compra específica
-router.get('/:id/compras/:compra_id', verificarToken, async (req, res) => {
+router.get('/:id/compras/:compra_id', verificarToken, soloAdmin, async (req, res) => {
     try {
         // Obtener cabecera de compra
         const compra = await pool.query(`
@@ -270,49 +299,42 @@ router.get('/:id/compras/:compra_id', verificarToken, async (req, res) => {
 });
 
 // Obtener facturas del proveedor
-router.get('/:id/facturas', verificarToken, async (req, res) => {
+router.get('/:id/facturas', verificarToken, soloAdmin, async (req, res) => {
     const { estado, desde, hasta } = req.query;
     
     try {
         let query = `
-            SELECT 
-                fc.*,
-                c.numero_oc,
-                c.fecha_compra,
-                COALESCE(pp.total_pagado, 0) as pagado,
-                (fc.total - COALESCE(pp.total_pagado, 0)) as saldo_pendiente
-            FROM facturas_compra fc
-            LEFT JOIN compras c ON c.id = fc.compra_id
-            LEFT JOIN (
-                SELECT factura_id, SUM(monto) as total_pagado 
-                FROM pagos_proveedores 
-                WHERE estado = 'CONFIRMADO' 
-                GROUP BY factura_id
-            ) pp ON fc.id = pp.factura_id
-            WHERE fc.proveedor_id = $1
+            WITH ${CTE_FACTURAS_COMPRA}
+            SELECT
+                fs.*,
+                fs.pagado,
+                fs.saldo AS saldo_pendiente,
+                ${ESTADO_FACTURA_COMPRA} AS estado_calculado
+            FROM facturas_compra_saldo fs
+            WHERE fs.proveedor_id = $1
         `;
         const params = [req.params.id];
         let paramIndex = 2;
-        
+
         if (estado) {
-            query += ` AND fc.estado = $${paramIndex}`;
-            params.push(estado);
+            query += ` AND ${ESTADO_FACTURA_COMPRA} = $${paramIndex}`;
+            params.push(String(estado).toUpperCase());
             paramIndex++;
         }
-        
+
         if (desde) {
-            query += ` AND fc.fecha_emision >= $${paramIndex}`;
+            query += ` AND fs.fecha >= $${paramIndex}`;
             params.push(desde);
             paramIndex++;
         }
-        
+
         if (hasta) {
-            query += ` AND fc.fecha_emision <= $${paramIndex}`;
+            query += ` AND fs.fecha <= $${paramIndex}`;
             params.push(hasta);
             paramIndex++;
         }
-        
-        query += ` ORDER BY fc.fecha_emision DESC`;
+
+        query += ` ORDER BY fs.fecha DESC`;
         
         const result = await pool.query(query, params);
         res.json(result.rows);
@@ -322,40 +344,23 @@ router.get('/:id/facturas', verificarToken, async (req, res) => {
 });
 
 // Obtener cuenta corriente del proveedor (cálculo directo sin vista)
-router.get('/:id/cuenta-corriente', verificarToken, async (req, res) => {
+router.get('/:id/cuenta-corriente', verificarToken, soloAdmin, async (req, res) => {
     const proveedorId = parseInt(req.params.id, 10);
 
     try {
-        // Total facturado al proveedor (facturas_compra)
-        const facturasRes = await pool.query(
-            `
-            SELECT 
-                COALESCE(SUM(fc.total), 0) AS total_facturado,
-                COALESCE(SUM(fc.total - COALESCE(pp.total_pagado, 0)), 0) AS saldo_pendiente
-            FROM facturas_compra fc
-            LEFT JOIN (
-                SELECT factura_id, SUM(monto) as total_pagado 
-                FROM pagos_proveedores 
-                WHERE estado = 'CONFIRMADO' 
-                GROUP BY factura_id
-            ) pp ON fc.id = pp.factura_id
-            WHERE fc.proveedor_id = $1
-            `,
-            [proveedorId]
-        );
-
-        const totales = facturasRes.rows[0] || { total_facturado: 0, saldo_pendiente: 0 };
-
-        // Total pagado = facturado - saldo pendiente
-        const total_facturado = Number(totales.total_facturado || 0);
-        const saldo_pendiente = Number(totales.saldo_pendiente || 0);
-        const total_pagado = total_facturado - saldo_pendiente;
+        const totales = await resumenProveedor(pool, proveedorId);
+        const movimientos = await cuentaCorrienteProveedor(pool, proveedorId, req.query);
 
         res.json({
             proveedor_id: proveedorId,
-            total_facturado,
-            total_pagado,
-            saldo_pendiente
+            total_facturado: Number(totales.total_facturado),
+            total_pagado: Number(totales.total_pagado),
+            saldo_pendiente: Number(totales.saldo),
+            vencido: Number(totales.vencido),
+            en_valores: Number(totales.en_valores),
+            saldo_a_favor: Number(totales.saldo_a_favor),
+            exceso_pagado: Number(totales.exceso_pagado),
+            movimientos
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -363,21 +368,28 @@ router.get('/:id/cuenta-corriente', verificarToken, async (req, res) => {
 });
 
 // Obtener cheques entregados al proveedor (cheques propios)
-router.get('/:id/cheques-recibidos', verificarToken, async (req, res) => {
+router.get('/:id/cheques-recibidos', verificarToken, soloAdmin, async (req, res) => {
     try {
+        /* Reescrito 13/09/2026: la consulta anterior leía una tabla
+           `cheques_propios` que no existe en la base (500 asegurado) y
+           cruzaba por nombre con ILIKE. Los cheques entregados a un
+           proveedor viven en pago_proveedor_items. */
         const result = await pool.query(`
-            SELECT 
-                cp.*,
-                pi.id as pago_item_id,
-                p.id as pago_id,
-                p.fecha_recepcion
-            FROM cheques_propios cp
-            JOIN pago_items pi ON pi.id = cp.pago_item_id
-            JOIN pagos p ON p.id = pi.pago_id
-            WHERE cp.beneficiario ILIKE (
-                SELECT nombre FROM proveedores WHERE id = $1
-            )
-            ORDER BY cp.fecha_emision DESC
+            SELECT
+                ppi.id, ppi.tipo, ppi.monto,
+                COALESCE(ppi.cheque_numero, orig.cheque_numero)  AS cheque_numero,
+                COALESCE(ppi.cheque_banco, orig.cheque_banco)    AS cheque_banco,
+                COALESCE(ppi.cheque_fecha_emision, orig.cheque_fecha_emision) AS cheque_fecha_emision,
+                COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)     AS cheque_fecha_cobro,
+                ppi.fecha_debito,
+                ${ESTADO_EFECTIVO_ITEM} AS estado,
+                pp.id AS pago_id, pp.fecha AS fecha_pago
+            FROM pago_proveedor_items ppi
+            JOIN pagos_proveedores pp ON pp.id = ppi.pago_id
+            LEFT JOIN pago_items   orig ON orig.id = ppi.pago_item_origen_id
+            WHERE pp.proveedor_id = $1
+              AND ppi.tipo IN ('CHEQUE','CHEQUE_ENDOSADO')
+            ORDER BY COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) DESC
         `, [req.params.id]);
         
         res.json(result.rows);
@@ -387,7 +399,7 @@ router.get('/:id/cheques-recibidos', verificarToken, async (req, res) => {
 });
 
 // Obtener cheques de clientes endosados a este proveedor
-router.get('/:id/cheques-endosados', verificarToken, async (req, res) => {
+router.get('/:id/cheques-endosados', verificarToken, soloAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT 
@@ -411,49 +423,53 @@ router.get('/:id/cheques-endosados', verificarToken, async (req, res) => {
 });
 
 // Resumen financiero del proveedor
-router.get('/:id/resumen', verificarToken, async (req, res) => {
+router.get('/:id/resumen', verificarToken, soloAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT 
+            SELECT
                 p.id,
                 p.nombre,
                 p.cuit,
+                p.dias_credito,
                 COALESCE((
-                    SELECT COUNT(*) FROM compras c 
-                    WHERE c.proveedor_id = p.id
-                ), 0) as total_compras,
-                COALESCE((
-                    SELECT SUM(total) FROM compras c 
-                    WHERE c.proveedor_id = p.id
-                ), 0) as monto_total_compras,
-                COALESCE((
-                    SELECT COUNT(*) FROM facturas_compra fc 
-                    WHERE fc.proveedor_id = p.id
+                    SELECT COUNT(*) FROM facturas_compra fc WHERE fc.proveedor_id = p.id
                 ), 0) as total_facturas,
                 COALESCE((
-                    SELECT SUM(fc.total) FROM facturas_compra fc 
-                    WHERE fc.proveedor_id = p.id
+                    SELECT SUM(fc.total) FROM facturas_compra fc WHERE fc.proveedor_id = p.id
                 ), 0) as monto_total_facturas,
+                -- "compras" ahora son las facturas de compra reales, no la
+                -- tabla legacy "compras" (que está prácticamente vacía).
                 COALESCE((
-                    SELECT SUM(fc.total - COALESCE(pp.total_pagado, 0)) 
-                    FROM facturas_compra fc
-                    LEFT JOIN (
-                        SELECT factura_id, SUM(monto) as total_pagado 
-                        FROM pagos_proveedores 
-                        WHERE estado = 'CONFIRMADO' 
-                        GROUP BY factura_id
-                    ) pp ON fc.id = pp.factura_id
-                    WHERE fc.proveedor_id = p.id AND fc.estado = 'PENDIENTE'
-                ), 0) as deuda_pendiente,
+                    SELECT COUNT(*) FROM facturas_compra fc WHERE fc.proveedor_id = p.id
+                ), 0) as total_compras,
                 COALESCE((
-                    SELECT COUNT(*) FROM endosos_cheques e 
-                    WHERE e.proveedor_id = p.id AND e.estado = 'PENDIENTE'
+                    SELECT SUM(fc.total) FROM facturas_compra fc WHERE fc.proveedor_id = p.id
+                ), 0) as monto_total_compras,
+                -- hallazgo D9: antes solo contaba 'PENDIENTE', así que
+                -- ignoraba los endosos creados desde Pagos a Proveedores
+                -- (que quedan en 'APLICADO').
+                COALESCE((
+                    SELECT COUNT(*) FROM endosos_cheques e
+                    WHERE e.proveedor_id = p.id AND e.estado IN ('PENDIENTE', 'APLICADO')
                 ), 0) as endosos_pendientes
             FROM proveedores p
             WHERE p.id = $1
         `, [req.params.id]);
-        
-        res.json(result.rows[0]);
+
+        if (!result.rows.length) {
+            return res.status(404).json({ error: 'Proveedor no encontrado' });
+        }
+
+        const totales = await resumenProveedor(pool, req.params.id);
+
+        res.json({
+            ...result.rows[0],
+            deuda_pendiente: Number(totales.saldo),
+            deuda_vencida: Number(totales.vencido),
+            total_pagado: Number(totales.total_pagado),
+            en_valores: Number(totales.en_valores),
+            saldo_a_favor: Number(totales.saldo_a_favor)
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -1,14 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const {
+  CTE_FACTURAS_COMPRA, ESTADO_FACTURA_COMPRA, SUBQ_IMPUTADO
+} = require('../services/cuenta-proveedor');
 
 router.use(verificarToken);
 
 /* =========================
    OBTENER FACTURAS DE COMPRA
 ========================= */
-router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/', soloAdmin, async (req, res) => {
   try {
     const { proveedor_id, estado, fecha_desde, fecha_hasta, tipo_factura } = req.query;
     
@@ -22,12 +25,23 @@ router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => 
         COALESCE(SUM(fi.subtotal), 0) as subtotal_items,
         COALESCE(SUM(fi.iva), 0) as iva_items,
         COALESCE(SUM(fi.total), 0) as total_items,
-        COUNT(fi.id) as cantidad_items
+        COUNT(fi.id) as cantidad_items,
+        -- Saldo calculado en vivo (13/09/2026). Antes se leía
+        -- fc.neto_pagado, que nunca se actualizaba al pagar; esa columna
+        -- y fc.saldo_pendiente se eliminaron en la migración de pagos.
+        ROUND(COALESCE(imp.pagado, 0), 2)                  AS pagado,
+        ROUND(fc.total - COALESCE(imp.pagado, 0), 2)       AS saldo_pendiente,
+        ROUND(COALESCE(imp.en_valores, 0), 2)              AS en_valores,
+        COALESCE(
+          fc.fecha_vencimiento,
+          (fc.fecha_emision + (COALESCE(p.dias_credito, 0) || ' days')::interval)::date
+        )                                                  AS vencimiento
       FROM facturas_compra fc
       JOIN proveedores p ON fc.proveedor_id = p.id
       LEFT JOIN usuarios u ON fc.created_by = u.id
       LEFT JOIN historial_dolar hd ON fc.dolar_historial_id = hd.id
       LEFT JOIN factura_items fi ON fc.id = fi.factura_id
+      LEFT JOIN (${SUBQ_IMPUTADO}) imp ON imp.factura_compra_id = fc.id
     `;
     
     const conditions = [];
@@ -68,7 +82,8 @@ router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => 
       query += ' WHERE ' + conditions.join(' AND ');
     }
     
-    query += ' GROUP BY fc.id, p.nombre, p.cuit, u.nombre_completo, hd.dolar ORDER BY fc.fecha_emision DESC, fc.id DESC';
+    query += ' GROUP BY fc.id, p.nombre, p.cuit, p.dias_credito, u.nombre_completo, hd.dolar,'
+           + ' imp.pagado, imp.en_valores ORDER BY fc.fecha_emision DESC, fc.id DESC';
     
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -81,7 +96,7 @@ router.get('/', authorize(['admin', 'control', 'compras']), async (req, res) => 
 /* =========================
    OBTENER ÚLTIMO NÚMERO DE FACTURA
 ========================= */
-router.get('/ultimo-numero', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/ultimo-numero', soloAdmin, async (req, res) => {
   try {
     const { tipo_factura } = req.query;
     
@@ -108,7 +123,7 @@ router.get('/ultimo-numero', authorize(['admin', 'control', 'compras']), async (
 /* =========================
    OBTENER FACTURA DE COMPRA POR ID
 ========================= */
-router.get('/:id', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/:id', soloAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -163,7 +178,7 @@ router.get('/:id', authorize(['admin', 'control', 'compras']), async (req, res) 
 /* =========================
    CREAR FACTURA DE COMPRA
 ========================= */
-router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.post('/', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   
   try {
@@ -572,7 +587,7 @@ router.post('/', authorize(['admin', 'control', 'compras']), async (req, res) =>
 /* =========================
    ACTUALIZAR FACTURA DE COMPRA
 ========================= */
-router.put('/:id', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.put('/:id', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   
   try {
@@ -774,7 +789,7 @@ router.put('/:id', authorize(['admin', 'control', 'compras']), async (req, res) 
 /* =========================
    ELIMINAR FACTURA DE COMPRA
 ========================= */
-router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
+router.delete('/:id', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   
   try {
@@ -849,7 +864,7 @@ router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
 /* =========================
    OBTENER ITEMS DE FACTURA
 ========================= */
-router.get('/:id/items', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/:id/items', soloAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -877,7 +892,7 @@ router.get('/:id/items', authorize(['admin', 'control', 'compras']), async (req,
 /* =========================
    BUSCAR MATERIAS PRIMAS PARA FACTURA
 ========================= */
-router.get('/materias-primas/buscar', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/materias-primas/buscar', soloAdmin, async (req, res) => {
   try {
     const { query } = req.query;
     
@@ -918,7 +933,7 @@ router.get('/materias-primas/buscar', authorize(['admin', 'control', 'compras'])
 /* =========================
    OBTENER ÚLTIMO PRECIO DE MATERIA PRIMA
 ========================= */
-router.get('/materias-primas/:id/ultimo-precio', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/materias-primas/:id/ultimo-precio', soloAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -948,23 +963,27 @@ router.get('/materias-primas/:id/ultimo-precio', authorize(['admin', 'control', 
 /* =========================
    OBTENER FACTURAS PENDIENTES DE UN PROVEEDOR
 ========================= */
-router.get('/proveedor/:proveedor_id/pendientes', authorize(['admin', 'control', 'compras']), async (req, res) => {
+router.get('/proveedor/:proveedor_id/pendientes', soloAdmin, async (req, res) => {
   try {
     const { proveedor_id } = req.params;
     
+    /* Reescrito 13/09/2026. La versión anterior tiraba 500 SIEMPRE: usaba
+       EXTRACT(DAY FROM fc.fecha_vencimiento - CURRENT_DATE), y en Postgres
+       `date - date` da integer, que EXTRACT no acepta. Además leía
+       fc.neto_pagado, que nunca se actualizaba al pagar. Ahora el saldo
+       sale del servicio compartido, igual que en Pagos a Proveedores. */
     const result = await pool.query(
-      `SELECT 
-        fc.*,
-        p.nombre as proveedor_nombre,
-        p.cuit as proveedor_cuit,
-        fc.total - COALESCE(fc.neto_pagado, 0) as saldo_pendiente,
-        EXTRACT(DAY FROM fc.fecha_vencimiento - CURRENT_DATE) as dias_vencido
-       FROM facturas_compra fc
-       JOIN proveedores p ON fc.proveedor_id = p.id
-       WHERE fc.proveedor_id = $1 
-         AND fc.estado = 'PENDIENTE'
-         AND (fc.total - COALESCE(fc.neto_pagado, 0)) > 0
-       ORDER BY fc.fecha_vencimiento ASC`,
+      `WITH ${CTE_FACTURAS_COMPRA}
+       SELECT fs.*,
+              p.nombre AS proveedor_nombre,
+              p.cuit   AS proveedor_cuit,
+              fs.saldo AS saldo_pendiente,
+              fs.dias_atraso AS dias_vencido,
+              ${ESTADO_FACTURA_COMPRA} AS estado
+       FROM facturas_compra_saldo fs
+       JOIN proveedores p ON p.id = fs.proveedor_id
+       WHERE fs.proveedor_id = $1 AND fs.saldo > 0.005
+       ORDER BY fs.fecha_vencimiento ASC, fs.id ASC`,
       [proveedor_id]
     );
     

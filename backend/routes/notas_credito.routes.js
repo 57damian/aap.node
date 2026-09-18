@@ -1,17 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { saldoFactura } = require('../services/cuenta-cliente');
+const { getIVA } = require('../services/parametros');
 
 router.use(verificarToken);
-
-const IVA = 0.21;
 
 /* =========================
    CREAR NOTA DE CRÉDITO
 ========================= */
-router.post('/', authorize(['admin','control']), async (req, res) => {
+router.post('/', soloAdmin, async (req, res) => {
 
   const client = await pool.connect();
 
@@ -48,6 +47,11 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
     if (!factura) throw new Error('Factura no encontrada');
     const saldoActual = parseFloat(factura.saldo);
 
+    // IVA leído de parametros (igual que facturas.routes.js), en vez de
+    // un 0.21 hardcodeado: si alguien cambia el IVA general, antes las
+    // notas de crédito seguían calculando con el valor viejo.
+    const ivaPorcentaje = await getIVA(client);
+
     let subtotal = 0;
     let ivaTotal = 0;
     let total = 0;
@@ -55,7 +59,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
     for (const item of items) {
 
       const facturaItemRes = await client.query(
-        `SELECT * FROM factura_items WHERE id = $1`,
+        `SELECT * FROM factura_venta_items WHERE id = $1`,
         [item.factura_item_id]
       );
 
@@ -69,13 +73,25 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
         throw new Error('Cantidad supera la facturada');
       }
 
-      const sub = item.cantidad * facturaItem.precio_unitario_sin_iva;
-      const ivaItem = parseFloat((sub * IVA).toFixed(2));
+      // facturaItem.precio_unitario ya está SIN IVA: así lo calcula e
+      // inserta facturas.routes.js. La columna precio_unitario_sin_iva
+      // que se leía antes nunca la completaba ningún INSERT del sistema,
+      // así que esto daba NaN y la validación de saldo de abajo nunca se
+      // disparaba (hallazgo C3 de la auditoría).
+      const sub = item.cantidad * facturaItem.precio_unitario;
+      if (!Number.isFinite(sub)) {
+        throw new Error(`El item ${facturaItem.id} no tiene precio unitario válido`);
+      }
+      const ivaItem = parseFloat((sub * ivaPorcentaje).toFixed(2));
       const tot = sub + ivaItem;
 
       subtotal += sub;
       ivaTotal += ivaItem;
       total += tot;
+    }
+
+    if (!Number.isFinite(total) || total <= 0) {
+      throw new Error('Nota de crédito con montos inválidos');
     }
 
     if (total > saldoActual) {
@@ -99,14 +115,14 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
     for (const item of items) {
 
       const facturaItemRes = await client.query(
-        `SELECT * FROM factura_items WHERE id = $1`,
+        `SELECT * FROM factura_venta_items WHERE id = $1`,
         [item.factura_item_id]
       );
 
       const facturaItem = facturaItemRes.rows[0];
 
-      const sub = item.cantidad * facturaItem.precio_unitario_sin_iva;
-      const ivaItem = parseFloat((sub * IVA).toFixed(2));
+      const sub = item.cantidad * facturaItem.precio_unitario;
+      const ivaItem = parseFloat((sub * ivaPorcentaje).toFixed(2));
       const tot = sub + ivaItem;
 
       await client.query(
@@ -121,7 +137,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
           nota.id,
           item.factura_item_id,
           item.cantidad,
-          facturaItem.precio_unitario_sin_iva,
+          facturaItem.precio_unitario,
           sub,
           ivaItem,
           tot

@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { asyncHandler } = require('../middlewares/asyncHandler');
 
 router.use(verificarToken);
 
 /* =========================
    LISTAR VENTAS
 ========================= */
-router.get('/', authorize(['admin','control']), async (req, res) => {
+router.get('/', soloAdmin, async (req, res) => {
 
   const { cliente_id, orden_compra_id } = req.query;
 
@@ -26,7 +27,7 @@ router.get('/', authorize(['admin','control']), async (req, res) => {
         oc.numero_oc,
         (
           SELECT f.numero_factura
-          FROM factura_items fi
+          FROM factura_venta_items fi
           JOIN facturas f ON f.id = fi.factura_id
           JOIN venta_items vi ON vi.id = fi.venta_item_id
           WHERE vi.venta_id = v.id
@@ -34,7 +35,7 @@ router.get('/', authorize(['admin','control']), async (req, res) => {
         ) AS numero_factura
       FROM ventas v
       JOIN clientes c ON c.id = v.cliente_id
-      JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
+      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
       WHERE 1=1
     `;
 
@@ -67,7 +68,7 @@ router.get('/', authorize(['admin','control']), async (req, res) => {
 /* =========================
    CREAR VENTA (ENTREGA) - CORREGIDO
 ========================= */
-router.post('/', authorize(['admin','control']), async (req, res) => {
+router.post('/', soloAdmin, async (req, res) => {
   const {
     orden_compra_id,
     tipo_cambio,
@@ -100,14 +101,20 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
     // ✅ USAR EL TIPO DE CAMBIO RECIBIDO (DEL FRONTEND)
     let tipoCambio = parseFloat(tipo_cambio);
     
-    // Si no viene tipo_cambio, obtener el último registrado
+    // Si no viene tipo_cambio, obtener el último registrado. Antes había
+    // un fallback hardcodeado (1415.00) que dejaba cargar una venta con
+    // un dólar inventado de hace meses si no había cotización — ahora se
+    // rechaza explícitamente (hallazgo D8 de la auditoría).
     if (!tipoCambio || isNaN(tipoCambio)) {
       const dolarRes = await pool.query(
         "SELECT valor FROM parametros WHERE clave = 'dolar_banco'"
       );
-      tipoCambio = dolarRes.rows.length > 0 
-        ? parseFloat(dolarRes.rows[0].valor) 
-        : 1415.00;
+      if (!dolarRes.rows.length || !parseFloat(dolarRes.rows[0].valor)) {
+        return res.status(400).json({
+          error: 'No hay cotización del dólar cargada. Cargala en Precios antes de registrar la venta.'
+        });
+      }
+      tipoCambio = parseFloat(dolarRes.rows[0].valor);
     }
 
     const result = await pool.query(
@@ -136,7 +143,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
 /* =========================
    AGREGAR ITEM A VENTA
 ========================= */
-router.post('/:id/items', authorize(['admin','control']), async (req, res) => {
+router.post('/:id/items', soloAdmin, async (req, res) => {
 
   const { ficha_id, cantidad } = req.body;
 
@@ -165,6 +172,10 @@ router.post('/:id/items', authorize(['admin','control']), async (req, res) => {
       `SELECT tipo_cambio FROM ventas WHERE id = $1`,
       [req.params.id]
     );
+
+    if (!ventaRes.rows.length) {
+      return res.status(404).json({ error: 'Venta no encontrada' });
+    }
 
     const tipo_cambio = ventaRes.rows[0].tipo_cambio;
     const precio_pesos = precio_usd * tipo_cambio;
@@ -197,7 +208,7 @@ router.post('/:id/items', authorize(['admin','control']), async (req, res) => {
 /* =========================
    DETALLE VENTA
 ========================= */
-router.get('/:id', authorize(['admin','control']), async (req, res) => {
+router.get('/:id', soloAdmin, async (req, res) => {
 
   try {
 
@@ -209,7 +220,7 @@ router.get('/:id', authorize(['admin','control']), async (req, res) => {
         oc.numero_oc
       FROM ventas v
       JOIN clientes c ON c.id = v.cliente_id
-      JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
+      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
       WHERE v.id = $1
       `,
       [req.params.id]
@@ -244,13 +255,13 @@ router.get('/:id', authorize(['admin','control']), async (req, res) => {
 /* =========================
    ESTADO FACTURACIÓN
 ========================= */
-router.get('/:id/estado-facturacion', authorize(['admin','control']), async (req, res) => {
+router.get('/:id/estado-facturacion', soloAdmin, asyncHandler(async (req, res) => {
 
   const result = await pool.query(
     `
     SELECT EXISTS (
       SELECT 1
-      FROM factura_items fi
+      FROM factura_venta_items fi
       JOIN venta_items vi ON vi.id = fi.venta_item_id
       WHERE vi.venta_id = $1
     ) AS facturada
@@ -260,13 +271,13 @@ router.get('/:id/estado-facturacion', authorize(['admin','control']), async (req
 
   res.json({ facturada: result.rows[0].facturada });
 
-});
+}));
 
 
 /* =========================
    GUARDAR REMITO
 ========================= */
-router.put('/:id/remito', authorize(['admin','control']), async (req, res) => {
+router.put('/:id/remito', soloAdmin, asyncHandler(async (req, res) => {
 
   const {
     remito_numero,
@@ -274,13 +285,14 @@ router.put('/:id/remito', authorize(['admin','control']), async (req, res) => {
     remito_observaciones
   } = req.body;
 
-  await pool.query(
+  const result = await pool.query(
     `
     UPDATE ventas
     SET remito_numero=$1,
         remito_fecha=$2,
         remito_observaciones=$3
     WHERE id=$4
+    RETURNING id
     `,
     [
       remito_numero || null,
@@ -290,14 +302,18 @@ router.put('/:id/remito', authorize(['admin','control']), async (req, res) => {
     ]
   );
 
+  if (!result.rows.length) {
+    return res.status(404).json({ error: 'Venta no encontrada' });
+  }
+
   res.json({ ok: true });
 
-});
+}));
 
 /* =========================
    OBTENER FACTURA DE VENTA
 ========================= */
-router.get('/:id/factura', authorize(['admin','control']), async (req, res) => {
+router.get('/:id/factura', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `
@@ -311,7 +327,7 @@ router.get('/:id/factura', authorize(['admin','control']), async (req, res) => {
         f.total,
         f.dias_credito
       FROM facturas f
-      JOIN factura_items fi ON fi.factura_id = f.id
+      JOIN factura_venta_items fi ON fi.factura_id = f.id
       JOIN venta_items vi ON vi.id = fi.venta_item_id
       WHERE vi.venta_id = $1
       `,

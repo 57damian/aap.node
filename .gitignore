@@ -1,4 +1,12 @@
 node_modules/
 .env
+# Cualquier variante (.env.local, .env.backup-...) también tiene secretos:
+# se ignoran todas y se hace una excepción con el ejemplo, que no lleva valores.
+.env.*
+!.env.example
 backend/uploads/
 .DS_Store
+
+# Backups de base de datos y scripts de verificacion de migraciones.
+# Contienen datos reales de la base: no van al repo.
+docs/_backup/

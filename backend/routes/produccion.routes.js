@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
 
 router.use(verificarToken);
 /* ============================================
    REGISTRAR PRODUCCIÓN
    POST /api/produccion
 ============================================ */
-router.post('/', authorize(['admin', 'operario', 'empleado']), async (req, res) => {
+router.post('/', adminYOperario, async (req, res) => {
   const { 
     ficha_id, 
     cantidad, 
@@ -16,7 +16,11 @@ router.post('/', authorize(['admin', 'operario', 'empleado']), async (req, res) 
     observaciones 
   } = req.body;
   
-  const usuario_id = req.headers['usuario_id'] || req.body.usuario_id;
+  // hallazgo D4: antes salía de un header o del body, o sea de datos que
+  // controla el cliente — cualquiera podía registrar producción a nombre
+  // de otro operario. verificarToken (línea 6) ya dejó req.usuario cargado
+  // desde la base con el usuario real del token.
+  const usuario_id = req.usuario.id;
 
   if (!ficha_id || !cantidad || cantidad <= 0) {
     return res.status(400).json({ 
@@ -73,7 +77,7 @@ router.post('/', authorize(['admin', 'operario', 'empleado']), async (req, res) 
    LISTAR PRODUCCIÓN (CON FILTROS)
    GET /api/produccion?ficha_id=1&desde=2024-01-01&hasta=2024-12-31
 ============================================ */
-router.get('/', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
+router.get('/', adminYOperario, async (req, res) => {
   const { ficha_id, desde, hasta, limit = 100 } = req.query;
 
   try {
@@ -130,7 +134,7 @@ router.get('/', authorize(['admin', 'operario', 'control', 'empleado']), async (
    OBTENER STOCK ACTUAL DE PRODUCCIÓN
    GET /api/produccion/stock
 ============================================ */
-router.get('/stock', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
+router.get('/stock', adminYOperario, async (req, res) => {
   const { con_stock, solo_genericos, cliente_id } = req.query;
 
   try {
@@ -167,7 +171,7 @@ router.get('/stock', authorize(['admin', 'operario', 'control', 'empleado']), as
    OBTENER STOCK DE UN MODELO ESPECÍFICO
    GET /api/produccion/stock/:ficha_id
 ============================================ */
-router.get('/stock/:ficha_id', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
+router.get('/stock/:ficha_id', adminYOperario, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM stock_produccion WHERE ficha_id = $1',
@@ -206,7 +210,8 @@ router.get('/stock/:ficha_id', authorize(['admin', 'operario', 'control', 'emple
    REPORTE DE PRODUCCIÓN VS ENTREGAS
    GET /api/produccion/reporte?desde=&hasta=
 ============================================ */
-router.get('/reporte', authorize(['admin', 'control', 'empleado']), async (req, res) => {
+// El reporte consolidado es del admin: el operario carga y consulta stock.
+router.get('/reporte', soloAdmin, async (req, res) => {
   const { desde, hasta } = req.query;
 
   try {

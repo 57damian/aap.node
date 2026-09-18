@@ -1,30 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { getIVA } = require('../services/parametros');
 
 router.use(verificarToken);
-
-
-
-
-// ✅ OBTENER IVA DE LA BASE DE DATOS
-async function getIVA() {
-  try {
-    const result = await pool.query(
-      "SELECT valor FROM parametros WHERE clave = 'iva_general'"
-    );
-    return result.rows.length > 0 ? parseFloat(result.rows[0].valor) / 100 : 0.21;
-  } catch (err) {
-    console.error('Error obteniendo IVA:', err);
-    return 0.21;
-  }
-}
 
 /* =========================
    CREAR FACTURA DESDE VENTA
 ========================= */
-router.post('/', authorize(['admin','control']), async (req, res) => {
+router.post('/', soloAdmin, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -88,7 +73,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
 
     const facturadosRes = await client.query(
       `SELECT venta_item_id
-       FROM factura_items
+       FROM factura_venta_items
        WHERE venta_item_id = ANY($1)`,
       [ventaItemIds]
     );
@@ -98,7 +83,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
     }
 
     // 4️⃣ Obtener IVA actual
-    const ivaPorcentaje = await getIVA();
+    const ivaPorcentaje = await getIVA(pool);
     
     // 5️⃣ Calcular totales
     let subtotal = 0;
@@ -161,7 +146,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
         tot: item.tot
       });
       await client.query(
-        `INSERT INTO factura_items
+        `INSERT INTO factura_venta_items
          (factura_id, venta_item_id, ficha_id,
           cantidad, precio_unitario,
           subtotal, iva, total)
@@ -195,7 +180,7 @@ router.post('/', authorize(['admin','control']), async (req, res) => {
 /* =========================
    OBTENER FACTURA DE VENTA
 ========================= */
-router.get('/venta/:venta_id', authorize(['admin','control']), async (req, res) => {
+router.get('/venta/:venta_id', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `
@@ -209,7 +194,7 @@ router.get('/venta/:venta_id', authorize(['admin','control']), async (req, res) 
         f.total,
         f.dias_credito
       FROM facturas f
-      JOIN factura_items fi ON fi.factura_id = f.id
+      JOIN factura_venta_items fi ON fi.factura_id = f.id
       JOIN venta_items vi ON vi.id = fi.venta_item_id
       WHERE vi.venta_id = $1
       `,

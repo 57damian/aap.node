@@ -6,7 +6,7 @@ const path = require('path');
 require('dotenv').config();
 
 const pool = require('./db');
-const { verificarToken } = require('./middlewares/auth');
+const { verificarToken, exigirPasswordAlDia } = require('./middlewares/auth');
 
 // Importar rutas existentes que se mantienen
 const authRoutes = require('./routes/auth.routes');
@@ -27,7 +27,7 @@ const materiasPrimasRoutes = require('./routes/materias-primas.routes');   // CR
 const stockRoutes = require('./routes/stock.routes');                     // Movimientos y ajustes de materias primas
 const stockProduccionRoutes = require('./routes/stock-produccion.routes'); // Stock de productos terminados
 const facturasCompraRoutes = require('./routes/facturas-compra.routes');   // Facturas de compra
-const pagosRoutes = require('./routes/pagos.routes');                     // Pagos a proveedores
+const pagosProveedoresRoutes = require('./routes/pagos-proveedores.routes'); // Pagos a proveedores (reemplaza pagos.routes.js)
 const cobrosRoutes = require('./routes/cobros.routes');                   // Cobros a clientes (reemplaza pagos-clientes.routes.js)
 // =====================================================================
 
@@ -44,19 +44,49 @@ const cobrosRoutes = require('./routes/cobros.routes');                   // Cob
 const app = express();
 app.set('trust proxy', 1); // Confiar en proxy inverso (Railway)
 const port = process.env.PORT || 3000;
+const enProduccion = process.env.NODE_ENV === 'production';
+
+// Con la app publicada en internet, el login y el token no pueden viajar en
+// claro. Railway termina TLS en su proxy y reenvía por HTTP, así que hay que
+// mirar x-forwarded-proto (trust proxy ya está activado arriba).
+if (enProduccion) {
+    app.use((req, res, next) => {
+        if (req.secure || req.headers['x-forwarded-proto'] === 'https') return next();
+        if (req.method === 'GET' || req.method === 'HEAD') {
+            return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+        }
+        return res.status(403).json({ error: 'Se requiere HTTPS' });
+    });
+}
 
 // Configuración de seguridad
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    // HSTS: el navegador no vuelve a intentar por HTTP durante un año.
+    // Solo tiene efecto sobre HTTPS, así que en local no molesta.
+    hsts: enProduccion
+        ? { maxAge: 31536000, includeSubDomains: true }
+        : false,
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            connectSrc: ["'self'", "http://127.0.0.1:5501", "http://localhost:5501"],
+            // Los localhost son para el Live Server de VS Code: fuera de
+            // desarrollo no tienen nada que hacer en la política.
+            connectSrc: enProduccion
+                ? ["'self'"]
+                : ["'self'", "http://127.0.0.1:5501", "http://localhost:5501"],
+            ...(enProduccion ? { upgradeInsecureRequests: [] } : {}),
             scriptSrc: [
                 "'self'",
                 "'unsafe-inline'",
                 "https://cdn.jsdelivr.net",
-                "https://cdnjs.cloudflare.com"
+                "https://cdnjs.cloudflare.com",
+                // hallazgo S10: alertas-pagos.html y facturas-compra.html cargan
+                // jQuery y DataTables desde estos hosts; sin ellos en la CSP el
+                // navegador los bloquea en silencio cuando se sirven desde Express
+                // (por eso "funcionaba" solo abriendo el HTML con Live Server).
+                "https://code.jquery.com",
+                "https://cdn.datatables.net"
             ],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: [
@@ -64,7 +94,8 @@ app.use(helmet({
                 "'unsafe-inline'",
                 "https://fonts.googleapis.com",
                 "https://cdn.jsdelivr.net",
-                "https://cdnjs.cloudflare.com"
+                "https://cdnjs.cloudflare.com",
+                "https://cdn.datatables.net"
             ],
             fontSrc: [
                 "'self'",
@@ -80,33 +111,47 @@ app.use(helmet({
 }));
 
     // CORS
+    //
+    // Antes esto aceptaba como origen CUALQUIER dominio terminado en
+    // '.railway.app': con la app publicada, alguien que despliegue su propio
+    // proyecto en Railway quedaba autorizado a hablarle a esta API desde el
+    // navegador de un usuario logueado. Ahora la lista es explícita: los
+    // puertos de desarrollo local más lo que diga CORS_ORIGIN en el .env
+    // (separado por comas), variable que existía y no leía nadie.
+    const ORIGENES_DESARROLLO = [
+        'http://localhost:5500',
+        'http://127.0.0.1:5500',
+        'http://localhost:5501',
+        'http://127.0.0.1:5501',
+        'http://localhost:5502',
+        'http://127.0.0.1:5502',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000'
+    ];
+
+    const origenesPermitidos = [
+        ...(process.env.NODE_ENV === 'production' ? [] : ORIGENES_DESARROLLO),
+        ...(process.env.CORS_ORIGIN || '')
+            .split(',')
+            .map((o) => o.trim())
+            .filter(Boolean),
+        ...(process.env.RAILWAY_PUBLIC_DOMAIN
+            ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`]
+            : [])
+    ];
+
     app.use(cors({
         origin: function (origin, callback) {
-            const allowedOrigins = [
-                'http://localhost:5500',
-                'http://127.0.0.1:5500',
-                'http://localhost:5501',
-                'http://127.0.0.1:5501',
-                'http://localhost:5502',
-                'http://127.0.0.1:5502',
-                'http://localhost:3000',
-                'http://127.0.0.1:3000'
-            ];
-            // Agregar origen de Railway desde variable de entorno (si existe)
-            if (process.env.RAILWAY_PUBLIC_DOMAIN) {
-                allowedOrigins.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
-            }
-            // Permitir cualquier origen de Railway (*.railway.app)
-            if (origin && origin.endsWith('.railway.app')) {
+            // Sin cabecera Origin (curl, Postman, el propio front servido desde
+            // este mismo server): no es una request entre sitios, no aplica CORS.
+            if (!origin) return callback(null, true);
+
+            if (origenesPermitidos.includes(origin)) {
                 return callback(null, true);
             }
-            // Permitir requests sin origin (como Postman, curl, etc.)
-            if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-                callback(null, true);
-            } else {
-                console.log('CORS blocked for origin:', origin);
-                callback(new Error('Not allowed by CORS'));
-            }
+
+            console.warn('CORS: origen rechazado:', origin);
+            callback(new Error('Not allowed by CORS'));
         },
         credentials: true,
         optionsSuccessStatus: 200,
@@ -118,60 +163,22 @@ app.use(helmet({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ========== ENDPOINT DE DIAGNÓSTICO PARA LOGIN ==========
-app.post('/test-login', async (req, res) => {
-  const { nombre_usuario, password } = req.body;
-  console.log('🧪 Test login para:', nombre_usuario);
-  try {
-    const result = await pool.query('SELECT id, nombre_usuario, password_hash FROM usuarios WHERE nombre_usuario = $1', [nombre_usuario]);
-    if (result.rows.length === 0) {
-      return res.json({ ok: false, mensaje: 'Usuario no existe' });
-    }
-    const user = result.rows[0];
-    const bcrypt = require('bcryptjs');
-    const match = await bcrypt.compare(password, user.password_hash);
-    res.json({
-      ok: true,
-      usuarioExiste: true,
-      contrasenaValida: match,
-      hashAlmacenado: user.password_hash.substring(0, 20) + '...'
-    });
-  } catch (err) {
-    console.error('Error en test-login:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========== ENDPOINT PARA RESETEAR CONTRASEÑA ADMIN ==========
-app.post('/reset-password-admin', async (req, res) => {
-  console.log('🔑 Solicitando reset de contraseña admin');
-  try {
-    const bcrypt = require('bcryptjs');
-    const hash = await bcrypt.hash('admin123', 10);
-    console.log('Hash generado:', hash);
-    const result = await pool.query(
-      "UPDATE usuarios SET password_hash = $1 WHERE nombre_usuario = 'admin' RETURNING id, nombre_usuario",
-      [hash]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ ok: false, mensaje: 'Usuario admin no encontrado' });
-    }
-    console.log('✅ Contraseña de admin actualizada a: admin123');
-    res.json({ ok: true, mensaje: 'Contraseña actualizada a admin123', usuario: result.rows[0] });
-  } catch (err) {
-    console.error('❌ Error reseteando contraseña:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+// Los endpoints de diagnóstico /test-login y /reset-password-admin que
+// vivían acá (hallazgos S1 y S2 de la auditoría) se sacaron: no tenían
+// autenticación, así que cualquiera en internet podía resetear la
+// contraseña del admin a 'admin123' o usar /test-login como oráculo de
+// contraseñas (existencia de usuario + hash bcrypt de regalo). La
+// funcionalidad legítima de reset ya existe protegida con
+// authorize(['admin']) en POST /api/usuarios/:id/reset-password, y para
+// recuperar acceso sin server está backend/scripts/reset-admin-password.js.
 
 // Servir archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // En producción, servir el frontend desde la carpeta public/
 const rutaFrontend = path.join(__dirname, 'public');
-console.log('🔍 DEBUG - __dirname:', __dirname);
-console.log('🔍 DEBUG - rutaFrontend:', rutaFrontend);
-console.log('🔍 DEBUG - cwd:', process.cwd());
+// Las rutas del filesystem del server se logueaban en cada arranque: es
+// información sobre la máquina que no aporta nada en funcionamiento normal.
 app.use(express.static(rutaFrontend));
 
 // Logging (desarrollo)
@@ -182,22 +189,48 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
-// Endpoint de prueba de base de datos
-app.get('/test-db', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT NOW()');
-    res.json({ ok: true, now: result.rows[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+// /test-db y /debug-paths (hallazgo S3) se sacaron: no tenían autenticación
+// y /debug-paths listaba el contenido del directorio del proyecto en el
+// server. Para diagnosticar que la base responde alcanza con /health.
 
-// Rutas públicas
-app.use('/api/auth', authRoutes);
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Rate limiting (hallazgo S4: esto tiene que ir ANTES de montar /api/auth,
+// si no /api/auth/login nunca pasa por acá porque Express corre los
+// middlewares en el orden en que se registran). Number(...) explícito
+// porque process.env.* siempre llega como string y express-rate-limit
+// espera un number.
+const limiter = rateLimit({
+    windowMs: Number(process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000,
+    max: Number(process.env.RATE_LIMIT_MAX || 100),
+    message: { error: 'Demasiadas peticiones, intenta más tarde' },
+    skip: (req) => req.path === '/health'
+});
+app.use('/api/', limiter);
+
+// Límite más estricto solo para el login: 10 intentos cada 15 minutos,
+// sin contar los que salieron bien (hallazgo S4).
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    skipSuccessfulRequests: true,
+    message: { error: 'Demasiados intentos de login. Esperá 15 minutos.' }
+});
+app.use('/api/auth/login', loginLimiter);
+
+// Los endpoints de contraseña caían bajo el límite general de 100 requests:
+// suficiente para probar contraseñas actuales a mano. Este es más estricto.
+const passwordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 15,
+    message: { error: 'Demasiados intentos. Esperá 15 minutos.' }
+});
+app.use('/api/usuarios/cambiar-password', passwordLimiter);
+
+// Rutas públicas
+app.use('/api/auth', authRoutes);
 
 // Middleware de autenticación para todas las rutas /api excepto /api/auth
 app.use('/api', (req, res, next) => {
@@ -205,21 +238,17 @@ app.use('/api', (req, res, next) => {
     verificarToken(req, res, next);
 });
 
-// Rate limiting
-const limiter = rateLimit({
-    windowMs: (process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000,
-    max: process.env.RATE_LIMIT_MAX || 100,
-    message: { error: 'Demasiadas peticiones, intenta más tarde' },
-    skip: (req) => req.path === '/health'
-});
-app.use('/api/', limiter);
+// Mientras la contraseña sea la temporal que entregó el administrador, lo
+// único habilitado es cambiarla. Va después de verificarToken porque necesita
+// req.usuario, y antes de montar los routers para que cubra todo el sistema.
+app.use('/api', exigirPasswordAlDia);
 
 // ========== RUTAS PROTEGIDAS ACTIVAS ==========
 app.use('/api/materias-primas', materiasPrimasRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/stock-produccion', stockProduccionRoutes);
 app.use('/api/facturas-compra', facturasCompraRoutes);
-app.use('/api/pagos-proveedores', pagosRoutes);
+app.use('/api/pagos-proveedores', pagosProveedoresRoutes);
 app.use('/api/cobros', cobrosRoutes);
 // Alias del prefijo viejo: la pantalla anterior llamaba a /api/pagos/... y a
 // /api/pagos-clientes/..., que nunca estuvo montado del todo. Se deja el alias
@@ -243,36 +272,6 @@ app.use('/api/reportes-oc', reportesOCRoutes);
 app.use('/api/ventas', ventasRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 
-// Endpoint de depuración para verificar rutas en Railway
-app.get('/debug-paths', (req, res) => {
-    const fs = require('fs');
-    const projectRoot = path.resolve(__dirname, '..');
-    let filesInRoot = [];
-    let frontendFiles = [];
-    let frontendExists = false;
-    let indexPathExists = false;
-    try {
-        filesInRoot = fs.readdirSync(projectRoot);
-        frontendExists = fs.existsSync(rutaFrontend);
-        if (frontendExists) {
-            frontendFiles = fs.readdirSync(rutaFrontend);
-            indexPathExists = fs.existsSync(path.join(rutaFrontend, 'index.html'));
-        }
-    } catch(e) {
-        return res.json({ error: e.message });
-    }
-    res.json({
-        cwd: process.cwd(),
-        __dirname: __dirname,
-        rutaFrontend: rutaFrontend,
-        projectRoot: projectRoot,
-        frontendExists: frontendExists,
-        indexPathExists: indexPathExists,
-        filesInProjectRoot: filesInRoot,
-        frontendFiles: frontendFiles
-    });
-});
-
 // Ruta comodín para el frontend
 // Cualquier ruta que no sea /api/* sirve el index.html del frontend
 app.get('*', (req, res) => {
@@ -282,7 +281,6 @@ app.get('*', (req, res) => {
     }
     // Servir el index.html del frontend
     const indexPath = path.join(rutaFrontend, 'index.html');
-    console.log('📄 Sirviendo frontend:', indexPath);
     res.sendFile(indexPath);
 });
 
@@ -304,6 +302,15 @@ app.use((err, req, res, next) => {
         error: 'Error interno del servidor',
         message: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
+});
+
+// Red de seguridad (hallazgo C1): Express 4 no captura promesas
+// rechazadas en handlers async — sin esto, un error de base en un
+// handler que no esté envuelto con asyncHandler tira el proceso entero.
+// Esto no reemplaza asyncHandler, es el último resguardo si algún
+// handler se queda sin envolver.
+process.on('unhandledRejection', (err) => {
+    console.error('Unhandled rejection (no debería pasar, revisar handler async):', err);
 });
 
 app.listen(port, () => {

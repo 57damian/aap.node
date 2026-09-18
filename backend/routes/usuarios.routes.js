@@ -2,16 +2,45 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
-const ROLES_VALIDOS = ['admin', 'control', 'operario', 'empleado'];
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const { soloAdmin } = require('../middlewares/auth');
+const { JWT_SECRET, JWT_EXPIRES_IN, JWT_ALGORITHM } = require('../config/jwt');
+const { ROLES_VALIDOS } = require('../config/roles');
 
-router.use(verificarToken);
+// Largo mínimo de contraseña. Diez caracteres sin exigir símbolos ni mayúsculas:
+// una frase larga y memorable resiste mucho más que un 'Abc123!' que termina
+// anotado en un papel. Antes el mínimo era 6, con una regla de complejidad
+// distinta en cada endpoint.
+const LARGO_MINIMO_PASSWORD = 10;
+
+// verificarToken ya lo aplica index.js para todo /api (salvo /api/auth), así
+// que tenerlo acá otra vez hacía dos SELECT a usuarios por cada request.
+
+// Devuelve el motivo del rechazo, o null si la contraseña sirve.
+// Una sola función para los tres lugares donde se fija una contraseña: antes
+// cada endpoint tenía su propia regla (o ninguna).
+function validarPassword(password, nombreUsuario) {
+  if (typeof password !== 'string' || password.length < LARGO_MINIMO_PASSWORD) {
+    return `La contraseña debe tener al menos ${LARGO_MINIMO_PASSWORD} caracteres`;
+  }
+  if (nombreUsuario && password.toLowerCase().includes(String(nombreUsuario).toLowerCase())) {
+    return 'La contraseña no puede contener el nombre de usuario';
+  }
+  return null;
+}
+
+// Contraseña temporal para los resets: aleatoria de verdad (crypto, no
+// Math.random) y legible para dictarla por teléfono.
+function generarPasswordTemporal() {
+  return crypto.randomBytes(9).toString('base64url'); // 12 caracteres
+}
 
 // =============================
 // LISTAR USUARIOS
 // GET /api/usuarios
 // =============================
-router.get('/', authorize(['admin']), async (req, res) => {
+router.get('/', soloAdmin, async (req, res) => {
   try {
     const { search, rol, activo, page = 1, limit = 50 } = req.query;
     
@@ -69,15 +98,155 @@ router.get('/', authorize(['admin']), async (req, res) => {
     
   } catch (err) {
     console.error('Error listando usuarios:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
+});
+
+// =============================
+// CAMBIAR PROPIO PASSWORD
+// PUT /api/usuarios/cambiar-password
+//
+// Movido acá arriba de /:id (hallazgo C2 de la auditoría): Express matchea
+// rutas en el orden en que se declaran, y GET/PUT /:id venían antes, así
+// que se comían /cambiar-password (quedaba como si :id === "cambiar-password")
+// y todo el mundo, sin importar el rol, recibía "Acceso denegado" o un 500
+// de tipo inválido.
+// =============================
+router.put('/cambiar-password', async (req, res) => {
+  try {
+    const { password_actual, password_nueva, password_confirmacion } = req.body;
+    const usuarioId = req.usuario.id;
+
+    if (!password_actual || !password_nueva || !password_confirmacion) {
+      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+    }
+
+    if (password_nueva !== password_confirmacion) {
+      return res.status(400).json({ error: 'Las contraseñas no coinciden' });
+    }
+
+    const usuarioActual = await pool.query(
+      'SELECT nombre_usuario, password_hash FROM usuarios WHERE id = $1',
+      [usuarioId]
+    );
+
+    if (usuarioActual.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const usuario = usuarioActual.rows[0];
+
+    const problema = validarPassword(password_nueva, usuario.nombre_usuario);
+    if (problema) {
+      return res.status(400).json({ error: problema });
+    }
+
+    const passwordValida = await bcrypt.compare(password_actual, usuario.password_hash);
+    if (!passwordValida) {
+      return res.status(400).json({ error: 'La contraseña actual es incorrecta' });
+    }
+
+    if (password_nueva === password_actual) {
+      return res.status(400).json({ error: 'La contraseña nueva tiene que ser distinta de la actual' });
+    }
+
+    const passwordHash = await bcrypt.hash(password_nueva, 12);
+
+    // password_actualizado_en invalida todos los tokens emitidos antes de
+    // ahora (ver middlewares/auth.js): cambiar la contraseña cierra las otras
+    // sesiones. debe_cambiar_password se apaga acá, que es lo que libera a
+    // quien entró con una clave temporal.
+    const actualizado = await pool.query(
+      `UPDATE usuarios
+          SET password_hash = $1,
+              password_actualizado_en = now(),
+              debe_cambiar_password = false,
+              updated_at = now()
+        WHERE id = $2
+    RETURNING password_actualizado_en`,
+      [passwordHash, usuarioId]
+    );
+
+    // Token nuevo: el que trae la request quedó invalidado por la línea de
+    // arriba. Sin esto, quien cambia su contraseña se autoexpulsa y tiene que
+    // volver a loguearse enseguida. `pwd` tiene que ser la marca recién
+    // escrita, que es contra la que compara el middleware.
+    const token = jwt.sign(
+      {
+        id: usuarioId,
+        rol: req.usuario.rol,
+        pwd: new Date(actualizado.rows[0].password_actualizado_en).getTime()
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN, algorithm: JWT_ALGORITHM }
+    );
+
+    res.json({
+      message: 'Contraseña actualizada exitosamente',
+      token,
+      sesiones_cerradas: true
+    });
+
+  } catch (err) {
+    console.error('Error cambiando contraseña:', err);
+    res.status(500).json({ error: 'No se pudo cambiar la contraseña' });
+  }
+});
+
+// =============================
+// ESTADÍSTICAS DE USUARIOS
+// GET /api/usuarios/stats
+//
+// Movido acá arriba de /:id por el mismo motivo que /cambiar-password:
+// GET /:id se comía /stats y devolvía 500 (invalid input syntax for type
+// integer: "stats").
+// =============================
+router.get('/stats', soloAdmin, async (req, res) => {
+  try {
+    const stats = await pool.query(`
+      SELECT
+        COUNT(*) as total_usuarios,
+        COUNT(CASE WHEN activo = true THEN 1 END) as usuarios_activos,
+        COUNT(CASE WHEN activo = false THEN 1 END) as usuarios_inactivos,
+        COUNT(CASE WHEN rol = 'admin' THEN 1 END) as administradores,
+        COUNT(CASE WHEN rol = 'operario' THEN 1 END) as operarios,
+        MAX(created_at) as ultimo_registro
+      FROM usuarios
+    `);
+
+    // Últimos usuarios registrados
+    const ultimosUsuarios = await pool.query(`
+      SELECT nombre_usuario, email, rol, created_at
+      FROM usuarios
+      ORDER BY created_at DESC
+      LIMIT 5
+    `);
+
+    res.json({
+      stats: stats.rows[0],
+      ultimos_registrados: ultimosUsuarios.rows
+    });
+
+  } catch (err) {
+    console.error('Error obteniendo estadísticas:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// A partir de acá, todas las rutas son por :id. La guarda numérica evita
+// que un segmento no numérico (por si en el futuro se agrega otra ruta
+// literal y alguien se olvida de ponerla arriba) caiga en un 500 críptico
+// de Postgres en vez de un 404 prolijo.
+router.param('id', (req, res, next, valor) => {
+  if (!/^\d+$/.test(valor)) return res.status(404).json({ error: 'Ruta no encontrada' });
+  next();
 });
 
 // =============================
 // OBTENER USUARIO POR ID
 // GET /api/usuarios/:id
 // =============================
-router.get('/:id', authorize(['admin']), async (req, res) => {
+router.get('/:id', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, nombre_usuario, email, rol, activo, nombre_completo, 
@@ -94,7 +263,7 @@ router.get('/:id', authorize(['admin']), async (req, res) => {
     
   } catch (err) {
     console.error('Error obteniendo usuario:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -102,9 +271,10 @@ router.get('/:id', authorize(['admin']), async (req, res) => {
 // CREAR USUARIO
 // POST /api/usuarios
 // =============================
-router.post('/', authorize(['admin']), async (req, res) => {
-  const client = await pool.connect();
-  
+router.post('/', soloAdmin, async (req, res) => {
+  // Una sola escritura: no hace falta transacción. Antes este handler pedía
+  // un client del pool y hacía COMMIT/ROLLBACK sin haber abierto nunca un
+  // BEGIN, con lo cual el ROLLBACK del catch no revertía nada.
   try {
     const {
       nombre_usuario,
@@ -125,52 +295,61 @@ router.post('/', authorize(['admin']), async (req, res) => {
     if (!ROLES_VALIDOS.includes(rol)) {
       return res.status(400).json({ error: `Rol invalido. Permitidos: ${ROLES_VALIDOS.join(', ')}` });
     }
-    
-    // Verificar si el nombre de usuario ya existe
-    const usuarioExistente = await client.query(
-      'SELECT id FROM usuarios WHERE nombre_usuario = $1',
+
+    // Antes se creaba el usuario con cualquier contraseña, incluso de un
+    // caracter: el alta no validaba nada.
+    const problemaPassword = validarPassword(password, nombre_usuario);
+    if (problemaPassword) {
+      return res.status(400).json({ error: problemaPassword });
+    }
+
+    // lower(): el índice único uq_usuarios_nombre_lower no permite dos
+    // usuarios que difieran solo en mayúsculas, así que la comprobación
+    // previa tiene que mirar lo mismo para dar un error claro.
+    const usuarioExistente = await pool.query(
+      'SELECT id FROM usuarios WHERE lower(nombre_usuario) = lower($1)',
       [nombre_usuario]
     );
-    
+
     if (usuarioExistente.rows.length > 0) {
       return res.status(400).json({ error: 'El nombre de usuario ya existe' });
     }
-    
+
     // Verificar si el email ya existe
-    const emailExistente = await client.query(
+    const emailExistente = await pool.query(
       'SELECT id FROM usuarios WHERE email = $1',
       [email]
     );
-    
+
     if (emailExistente.rows.length > 0) {
       return res.status(400).json({ error: 'El email ya está registrado' });
     }
-    
+
     // Encriptar contraseña
     const passwordHash = await bcrypt.hash(password, 12);
-    
+
     // Insertar usuario
-    const result = await client.query(
-      `INSERT INTO usuarios 
+    const result = await pool.query(
+      `INSERT INTO usuarios
         (nombre_usuario, email, password_hash, rol, activo, nombre_completo, telefono, observaciones)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, nombre_usuario, email, rol, activo, nombre_completo, telefono, observaciones, created_at`,
       [nombre_usuario, email, passwordHash, rol, activo, nombre_completo, telefono, observaciones]
     );
-    
-    await client.query('COMMIT');
-    
+
     res.status(201).json({
       message: 'Usuario creado exitosamente',
       usuario: result.rows[0]
     });
-    
+
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Error creando usuario:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
+    // El índice único lower(nombre_usuario) o el de email pueden saltar acá
+    // si dos altas entran a la vez.
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Ya existe un usuario con ese nombre o email' });
+    }
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -178,9 +357,8 @@ router.post('/', authorize(['admin']), async (req, res) => {
 // ALTA SIMPLE DE USUARIO (ADMIN | EMPLEADO)
 // POST /api/usuarios/alta
 // =============================
-router.post('/alta', authorize(['admin']), async (req, res) => {
-  const client = await pool.connect();
-
+router.post('/alta', soloAdmin, async (req, res) => {
+  // Una sola escritura: sin transacción (ver la nota en POST /).
   try {
     const { nombre_usuario, email, password, perfil } = req.body;
     const rol = perfil === 'empleado' ? 'empleado' : perfil === 'admin' ? 'admin' : null;
@@ -191,8 +369,13 @@ router.post('/alta', authorize(['admin']), async (req, res) => {
       });
     }
 
-    const usuarioExistente = await client.query(
-      'SELECT id FROM usuarios WHERE nombre_usuario = $1',
+    const problemaPassword = validarPassword(password, nombre_usuario);
+    if (problemaPassword) {
+      return res.status(400).json({ error: problemaPassword });
+    }
+
+    const usuarioExistente = await pool.query(
+      'SELECT id FROM usuarios WHERE lower(nombre_usuario) = lower($1)',
       [nombre_usuario]
     );
 
@@ -200,7 +383,7 @@ router.post('/alta', authorize(['admin']), async (req, res) => {
       return res.status(400).json({ error: 'El nombre de usuario ya existe' });
     }
 
-    const emailExistente = await client.query(
+    const emailExistente = await pool.query(
       'SELECT id FROM usuarios WHERE email = $1',
       [email]
     );
@@ -209,10 +392,9 @@ router.post('/alta', authorize(['admin']), async (req, res) => {
       return res.status(400).json({ error: 'El email ya esta registrado' });
     }
 
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash(password, salt);
+    const passwordHash = await bcrypt.hash(password, 12);
 
-    const result = await client.query(
+    const result = await pool.query(
       `INSERT INTO usuarios
         (nombre_usuario, email, password_hash, rol, activo)
        VALUES ($1, $2, $3, $4, true)
@@ -220,18 +402,16 @@ router.post('/alta', authorize(['admin']), async (req, res) => {
       [nombre_usuario, email, passwordHash, rol]
     );
 
-    await client.query('COMMIT');
-
     res.status(201).json({
       message: 'Usuario dado de alta exitosamente',
       usuario: result.rows[0]
     });
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Error dando de alta usuario:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Ya existe un usuario con ese nombre o email' });
+    }
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -239,31 +419,58 @@ router.post('/alta', authorize(['admin']), async (req, res) => {
 // ACTUALIZAR USUARIO
 // PUT /api/usuarios/:id
 // =============================
-router.put('/:id', authorize(['admin']), async (req, res) => {
-  const client = await pool.connect();
-  
+router.put('/:id', soloAdmin, async (req, res) => {
+  // Una sola escritura: sin transacción (ver la nota en POST /).
   try {
+    // `password` se ignora a propósito: este endpoint era una tercera vía
+    // para fijar la contraseña de cualquiera (incluida la propia) sin pedir
+    // la actual y sin validar nada. Las contraseñas se cambian por
+    // PUT /cambiar-password o se restablecen por POST /:id/reset-password.
     const {
       nombre_usuario,
       email,
-      password,
       rol,
       activo,
       nombre_completo,
       telefono,
       observaciones
     } = req.body;
-    
+
     // Verificar que el usuario existe
-    const usuarioExistente = await client.query(
-      'SELECT id FROM usuarios WHERE id = $1',
+    const usuarioExistente = await pool.query(
+      'SELECT id, rol, activo FROM usuarios WHERE id = $1',
       [req.params.id]
     );
-    
+
     if (usuarioExistente.rows.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
-    
+
+    const objetivo = usuarioExistente.rows[0];
+
+    // Nadie se desactiva ni se cambia el rol a sí mismo: es la forma más
+    // fácil de quedarse afuera del sistema sin querer.
+    if (objetivo.id === req.usuario.id && (activo === false || (rol !== undefined && rol !== objetivo.rol))) {
+      return res.status(400).json({
+        error: 'No podés cambiarte el rol ni desactivarte a vos mismo'
+      });
+    }
+
+    // Y no se puede dejar al sistema sin ningún administrador activo.
+    const dejaDeSerAdmin = objetivo.rol === 'admin' && ((rol !== undefined && rol !== 'admin') || activo === false);
+    if (dejaDeSerAdmin) {
+      const otrosAdmins = await pool.query(
+        `SELECT count(*)::int AS n FROM usuarios
+          WHERE rol = 'admin' AND activo = true AND id <> $1`,
+        [objetivo.id]
+      );
+      if (otrosAdmins.rows[0].n === 0) {
+        return res.status(400).json({
+          error: 'Es el único administrador activo: primero designá otro'
+        });
+      }
+    }
+
     // Construir query dinámica
     let query = `UPDATE usuarios SET `;
     const params = [];
@@ -278,14 +485,6 @@ router.put('/:id', authorize(['admin']), async (req, res) => {
     if (email !== undefined) {
       query += `email = $${paramIndex}, `;
       params.push(email);
-      paramIndex++;
-    }
-    
-    if (password && password.length > 0) {
-      const salt = await bcrypt.genSalt(12);
-      const passwordHash = await bcrypt.hash(password, salt);
-      query += `password_hash = $${paramIndex}, `;
-      params.push(passwordHash);
       paramIndex++;
     }
     
@@ -327,8 +526,8 @@ router.put('/:id', authorize(['admin']), async (req, res) => {
     
     // Verificar duplicados (excluyendo el usuario actual)
     if (nombre_usuario) {
-      const duplicadoUsuario = await client.query(
-        'SELECT id FROM usuarios WHERE nombre_usuario = $1 AND id != $2',
+      const duplicadoUsuario = await pool.query(
+        'SELECT id FROM usuarios WHERE lower(nombre_usuario) = lower($1) AND id != $2',
         [nombre_usuario, req.params.id]
       );
       
@@ -338,7 +537,7 @@ router.put('/:id', authorize(['admin']), async (req, res) => {
     }
     
     if (email) {
-      const duplicadoEmail = await client.query(
+      const duplicadoEmail = await pool.query(
         'SELECT id FROM usuarios WHERE email = $1 AND id != $2',
         [email, req.params.id]
       );
@@ -348,11 +547,11 @@ router.put('/:id', authorize(['admin']), async (req, res) => {
       }
     }
     
-    await client.query(query, params);
-    await client.query('COMMIT');
+    await pool.query(query, params);
+    await pool.query('COMMIT');
     
     // Obtener usuario actualizado
-    const result = await client.query(
+    const result = await pool.query(
       `SELECT id, nombre_usuario, email, rol, activo, nombre_completo, telefono, observaciones, updated_at
        FROM usuarios WHERE id = $1`,
       [req.params.id]
@@ -364,11 +563,11 @@ router.put('/:id', authorize(['admin']), async (req, res) => {
     });
     
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Error actualizando usuario:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Ya existe un usuario con ese nombre o email' });
+    }
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -376,35 +575,42 @@ router.put('/:id', authorize(['admin']), async (req, res) => {
 // ELIMINAR USUARIO
 // DELETE /api/usuarios/:id
 // =============================
-router.delete('/:id', authorize(['admin']), async (req, res) => {
-  const client = await pool.connect();
-  
+router.delete('/:id', soloAdmin, async (req, res) => {
   try {
-    // Verificar que el usuario existe
-    const usuarioExistente = await client.query(
-      'SELECT id, nombre_usuario FROM usuarios WHERE id = $1',
+    // El SELECT anterior traía solo id y nombre_usuario, pero la guarda de
+    // abajo preguntaba por usuarioActual.rol: siempre era undefined, así que
+    // la protección del último administrador NUNCA se disparaba y el sistema
+    // se podía quedar sin ningún admin.
+    const usuarioExistente = await pool.query(
+      'SELECT id, nombre_usuario, rol, activo FROM usuarios WHERE id = $1',
       [req.params.id]
     );
-    
+
     if (usuarioExistente.rows.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
-    
-    // No permitir eliminar al último administrador
-    const adminCount = await client.query(
-      "SELECT COUNT(*) as count FROM usuarios WHERE rol = 'admin' AND activo = true"
-    );
-    
+
     const usuarioActual = usuarioExistente.rows[0];
-    if (usuarioActual.rol === 'admin' && adminCount.rows[0].count <= 1) {
-      return res.status(400).json({ 
-        error: 'No se puede eliminar al último administrador activo' 
-      });
+
+    if (usuarioActual.id === req.usuario.id) {
+      return res.status(400).json({ error: 'No podés eliminar tu propio usuario' });
     }
-    
-    await client.query('DELETE FROM usuarios WHERE id = $1', [req.params.id]);
-    await client.query('COMMIT');
-    
+
+    if (usuarioActual.rol === 'admin' && usuarioActual.activo) {
+      const otrosAdmins = await pool.query(
+        `SELECT count(*)::int AS n FROM usuarios
+          WHERE rol = 'admin' AND activo = true AND id <> $1`,
+        [usuarioActual.id]
+      );
+      if (otrosAdmins.rows[0].n === 0) {
+        return res.status(400).json({
+          error: 'No se puede eliminar al último administrador activo'
+        });
+      }
+    }
+
+    await pool.query('DELETE FROM usuarios WHERE id = $1', [req.params.id]);
+
     res.json({
       message: 'Usuario eliminado exitosamente',
       usuario: {
@@ -412,185 +618,86 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
         nombre_usuario: usuarioActual.nombre_usuario
       }
     });
-    
+
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Error eliminando usuario:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
+    // Un usuario referenciado desde otra tabla no se puede borrar: se
+    // explica en vez de devolver el error crudo de Postgres.
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'El usuario tiene movimientos registrados: desactivalo en vez de eliminarlo'
+      });
+    }
+    res.status(500).json({ error: 'No se pudo eliminar el usuario' });
   }
 });
 
 // =============================
-// RESET PASSWORD (con opción de nueva contraseña)
+// RESETEAR LA CONTRASEÑA DE OTRO USUARIO
 // POST /api/usuarios/:id/reset-password
+//
+// El administrador genera una contraseña temporal y se la pasa a la persona
+// (en mano, por teléfono, como sea). La persona entra con esa clave y el
+// sistema no la deja hacer nada más hasta que la cambie: eso lo garantiza
+// debe_cambiar_password + el middleware exigirPasswordAlDia.
+//
+// Cambios respecto de la versión anterior:
+//  - el admin ya NO puede elegir la contraseña. Cuando podía, terminaba
+//    poniéndole la misma a todos, y encima quedaba escrita en el body de la
+//    request. Ahora siempre es aleatoria y de un solo uso.
+//  - la aleatoria se genera con crypto, no con Math.random(), que es
+//    predecible y no sirve para nada que tenga que ser secreto.
+//  - resetear cierra las sesiones abiertas de esa persona
+//    (password_actualizado_en).
 // =============================
-router.post('/:id/reset-password', authorize(['admin']), async (req, res) => {
-  const client = await pool.connect();
-  
+router.post('/:id/reset-password', soloAdmin, async (req, res) => {
   try {
-    const { nueva_password } = req.body; // Opcional
     const usuarioId = req.params.id;
-    
-    // Verificar que el usuario existe
-    const usuarioExistente = await client.query(
-      'SELECT id, nombre_usuario, email FROM usuarios WHERE id = $1',
-      [usuarioId]
-    );
-    
-    if (usuarioExistente.rows.length === 0) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Para la propia contraseña se usa cambiar-password, que pide la actual.
+    // Si el admin perdió la suya, el rescate es scripts/reset-admin-password.js.
+    if (Number(usuarioId) === req.usuario.id) {
+      return res.status(400).json({
+        error: 'Para tu propia contraseña usá "Cambiar mi contraseña"'
+      });
     }
-    
-    let passwordFinal;
-    let esGenerada = false;
-    
-    if (nueva_password && nueva_password.trim() !== '') {
-      // Validar fortaleza de la nueva contraseña
-      if (nueva_password.length < 6) {
-        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
-      }
-      if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(nueva_password)) {
-        return res.status(400).json({ error: 'La contraseña debe contener mayúsculas, minúsculas y números' });
-      }
-      passwordFinal = nueva_password;
-    } else {
-      // Generar aleatoria (comportamiento original)
-      passwordFinal = Math.random().toString(36).slice(-8);
-      esGenerada = true;
-    }
-    
-    const passwordHash = await bcrypt.hash(passwordFinal, 12);
-    
-    await client.query(
-      'UPDATE usuarios SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+
+    const passwordTemporal = generarPasswordTemporal();
+    const passwordHash = await bcrypt.hash(passwordTemporal, 12);
+
+    const result = await pool.query(
+      `UPDATE usuarios
+          SET password_hash = $1,
+              debe_cambiar_password = true,
+              password_actualizado_en = now(),
+              intentos_fallidos = 0,
+              bloqueado_hasta = NULL,
+              updated_at = now()
+        WHERE id = $2
+    RETURNING id, nombre_usuario, email`,
       [passwordHash, usuarioId]
     );
-    
-    await client.query('COMMIT');
-    
-    const usuario = usuarioExistente.rows[0];
-    
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const usuario = result.rows[0];
+    // La temporal viaja solo en esta respuesta y no se loguea en ningún lado.
+    // La pantalla la muestra una única vez.
     res.json({
-      message: esGenerada ? 'Contraseña generada aleatoriamente' : 'Contraseña actualizada exitosamente',
-      nueva_password: passwordFinal,
+      message: 'Contraseña temporal generada',
+      password_temporal: passwordTemporal,
       usuario: {
         id: usuario.id,
         nombre_usuario: usuario.nombre_usuario,
         email: usuario.email
       }
     });
-    
+
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Error reseteando contraseña:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-// =============================
-// CAMBIAR PROPIO PASSWORD
-// PUT /api/usuarios/cambiar-password
-// =============================
-router.put('/cambiar-password', authorize(['admin', 'control', 'operario', 'empleado']), async (req, res) => {
-  const client = await pool.connect();
-  
-  try {
-    const { password_actual, password_nueva, password_confirmacion } = req.body;
-    const usuarioId = req.usuario.id;
-    
-    // Validaciones
-    if (!password_actual || !password_nueva || !password_confirmacion) {
-      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-    }
-    
-    if (password_nueva.length < 6) {
-      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
-    }
-    
-    if (password_nueva !== password_confirmacion) {
-      return res.status(400).json({ error: 'Las contraseñas no coinciden' });
-    }
-    
-    // Obtener contraseña actual del usuario
-    const usuarioActual = await client.query(
-      'SELECT password_hash FROM usuarios WHERE id = $1',
-      [usuarioId]
-    );
-    
-    if (usuarioActual.rows.length === 0) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
-    
-    // Verificar contraseña actual
-    const passwordValida = await bcrypt.compare(password_actual, usuarioActual.rows[0].password_hash);
-    
-    if (!passwordValida) {
-      return res.status(400).json({ error: 'La contraseña actual es incorrecta' });
-    }
-    
-    // Encriptar nueva contraseña
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash(password_nueva, salt);
-    
-    await client.query(
-      'UPDATE usuarios SET password_hash = $1, updated_at = NOW() WHERE id = $2',
-      [passwordHash, usuarioId]
-    );
-    
-    await client.query('COMMIT');
-    
-    res.json({
-      message: 'Contraseña actualizada exitosamente'
-    });
-    
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error cambiando contraseña:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-// =============================
-// ESTADÍSTICAS DE USUARIOS
-// GET /api/usuarios/stats
-// =============================
-router.get('/stats', authorize(['admin']), async (req, res) => {
-  try {
-    const stats = await pool.query(`
-      SELECT 
-        COUNT(*) as total_usuarios,
-        COUNT(CASE WHEN activo = true THEN 1 END) as usuarios_activos,
-        COUNT(CASE WHEN activo = false THEN 1 END) as usuarios_inactivos,
-        COUNT(CASE WHEN rol = 'admin' THEN 1 END) as administradores,
-        COUNT(CASE WHEN rol = 'control' THEN 1 END) as control,
-        COUNT(CASE WHEN rol = 'operario' THEN 1 END) as operarios,
-        COUNT(CASE WHEN rol = 'empleado' THEN 1 END) as empleados,
-        MAX(created_at) as ultimo_registro
-      FROM usuarios
-    `);
-    
-    // Últimos usuarios registrados
-    const ultimosUsuarios = await pool.query(`
-      SELECT nombre_usuario, email, rol, created_at
-      FROM usuarios
-      ORDER BY created_at DESC
-      LIMIT 5
-    `);
-    
-    res.json({
-      stats: stats.rows[0],
-      ultimos_registrados: ultimosUsuarios.rows
-    });
-    
-  } catch (err) {
-    console.error('Error obteniendo estadísticas:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'No se pudo restablecer la contraseña' });
   }
 });
 

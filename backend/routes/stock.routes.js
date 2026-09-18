@@ -1,9 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin, adminYOperario } = require('../middlewares/auth');
+const { segunRol } = require('../services/vista-operario');
 
 router.use(verificarToken);
+
+// hallazgo S7: acá tampoco había ningún authorize(...), así que cualquier
+// usuario logueado podía ver el stock valorizado con precios ('/resumen').
+// El operario ve CANTIDADES de materia prima (para saber si puede producir),
+// pero los movimientos, los ajustes y el stock valorizado son del admin.
+// Lo que sí puede leer sale filtrado por services/vista-operario.js: los
+// precios y el proveedor no salen del server.
+const GESTION = soloAdmin;
+const LECTURA = adminYOperario;
 
 /**
  * GET /api/stock
@@ -17,7 +27,7 @@ router.use(verificarToken);
  * de una versión anterior del sistema y ya no se usan (ver nota en el doc del
  * proyecto: "Auditoría — Módulo Stock").
  */
-router.get('/', async (req, res) => {
+router.get('/', LECTURA, async (req, res) => {
   try {
     const { proveedor_id, estado, search } = req.query;
 
@@ -89,7 +99,8 @@ router.get('/', async (req, res) => {
     query += ` ORDER BY mp.nombre`;
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    // segunRol: al operario no le llegan precio, variación ni proveedor.
+    res.json(segunRol(result.rows, req.usuario.rol));
   } catch (err) {
     console.error('Error en GET /stock:', err);
     res.status(500).json({ error: err.message });
@@ -101,7 +112,7 @@ router.get('/', async (req, res) => {
  * Devuelve el stock actual de todas las materias primas activas
  * (equivalente a GET /materias-primas?activo=true pero más simple)
  */
-router.get('/actual', async (req, res) => {
+router.get('/actual', LECTURA, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
@@ -120,7 +131,9 @@ router.get('/actual', async (req, res) => {
                     item.stock_actual <= item.stock_minimo ? 'BAJO' : 'NORMAL'
     }));
 
-    res.json(rows);
+    // El valor_total de arriba es justamente lo que el operario no tiene que
+    // ver: segunRol lo saca, junto con el precio con el que se calculó.
+    res.json(segunRol(rows, req.usuario.rol));
   } catch (err) {
     console.error('Error en GET /stock/actual:', err);
     res.status(500).json({ error: err.message });
@@ -136,7 +149,7 @@ router.get('/actual', async (req, res) => {
  * coincidan con lo que espera el frontend (public/js/stock.js
  * renderizarMovimientos) además de los nombres originales de columna.
  */
-router.get('/movimientos', async (req, res) => {
+router.get('/movimientos', LECTURA, async (req, res) => {
   try {
     const { materia_prima_id, desde, hasta, tipo } = req.query;
 
@@ -182,7 +195,8 @@ router.get('/movimientos', async (req, res) => {
     query += ` ORDER BY sm.fecha_movimiento DESC, sm.id DESC LIMIT 1000`;
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    // segunRol: al operario no le llegan precio, variación ni proveedor.
+    res.json(segunRol(result.rows, req.usuario.rol));
   } catch (err) {
     console.error('Error en GET /stock/movimientos:', err);
     res.status(500).json({ error: err.message });
@@ -193,7 +207,7 @@ router.get('/movimientos', async (req, res) => {
  * GET /api/stock/materia-prima/:id/movimientos
  * Historial de movimientos de una materia prima específica
  */
-router.get('/materia-prima/:id/movimientos', async (req, res) => {
+router.get('/materia-prima/:id/movimientos', LECTURA, async (req, res) => {
   try {
     const { id } = req.params;
     const { desde, hasta } = req.query;
@@ -232,7 +246,8 @@ router.get('/materia-prima/:id/movimientos', async (req, res) => {
     query += ` ORDER BY sm.fecha_movimiento DESC, sm.id DESC`;
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    // segunRol: al operario no le llegan precio, variación ni proveedor.
+    res.json(segunRol(result.rows, req.usuario.rol));
   } catch (err) {
     console.error('Error en GET /stock/materia-prima/:id/movimientos:', err);
     res.status(500).json({ error: err.message });
@@ -246,13 +261,26 @@ router.get('/materia-prima/:id/movimientos', async (req, res) => {
  * La cantidad puede ser positiva (entrada) o negativa (salida)
  * Para ajuste directo (nuevo stock), se debe calcular la diferencia en el frontend
  */
-router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
+router.post('/ajuste', GESTION, async (req, res) => {
   const client = await pool.connect();
   try {
     const { materia_prima_id, cantidad, tipo_movimiento, observaciones, fecha_movimiento } = req.body;
 
     if (!materia_prima_id || cantidad === undefined || !tipo_movimiento) {
       return res.status(400).json({ error: 'Faltan datos obligatorios' });
+    }
+
+    // hallazgo D5: antes se aceptaba cualquier texto libre en tipo_movimiento.
+    const TIPOS = ['ENTRADA', 'SALIDA', 'AJUSTE', 'MERMA'];
+    if (!TIPOS.includes(String(tipo_movimiento).toUpperCase())) {
+      await client.release();
+      return res.status(400).json({ error: `Tipo de movimiento inválido: "${tipo_movimiento}"` });
+    }
+
+    const delta = parseFloat(cantidad);
+    if (!Number.isFinite(delta) || delta === 0) {
+      await client.release();
+      return res.status(400).json({ error: 'La cantidad del ajuste tiene que ser un número distinto de cero' });
     }
 
     await client.query('BEGIN');
@@ -269,7 +297,18 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
 
     const stockAnterior = parseFloat(stockRes.rows[0].stock_actual);
     const unidad = stockRes.rows[0].unidad_medida || 'UNI';
-    const stockNuevo = Math.max(0, stockAnterior + parseFloat(cantidad));
+    // hallazgo D5: antes esto recortaba en silencio con Math.max(0, ...) —
+    // si había 10 unidades y se pedía un ajuste de -50, el movimiento
+    // quedaba grabado con cantidad=-50 pero stock_nuevo=0, y el libro de
+    // movimientos dejaba de cuadrar contra el stock actual. Ahora se
+    // rechaza en vez de mentir en el registro.
+    const stockNuevo = stockAnterior + delta;
+    if (stockNuevo < 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `No se puede descontar ${Math.abs(delta)}: el stock actual es ${stockAnterior}`
+      });
+    }
 
     // Insertar movimiento
     await client.query(`
@@ -316,7 +355,7 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
  * GET /api/stock/resumen
  * Estadísticas generales de stock
  */
-router.get('/resumen', async (req, res) => {
+router.get('/resumen', GESTION, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT

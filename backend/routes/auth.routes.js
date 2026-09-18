@@ -1,334 +1,188 @@
+// ============================================================================
+// /api/auth — SOLO sesión: entrar y verificar.
+//
+// Todo el ABM de usuarios (listar, crear, editar, borrar, resetear contraseña)
+// y el cambio de contraseña propia vivían TAMBIÉN acá, duplicados contra
+// /api/usuarios con contratos y guardas distintas: este router prohibía la
+// auto-edición y el auto-reset, el otro no, así que la misma operación era
+// segura o insegura según a qué URL le pegaras. El frontend nunca usó estas
+// rutas (verificado con grep sobre backend/public). Quedaron en /api/usuarios,
+// que es el que usa la pantalla.
+// ============================================================================
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken } = require('../middlewares/auth');
+const { JWT_SECRET, JWT_EXPIRES_IN, JWT_ALGORITHM } = require('../config/jwt');
 
-// Configuración JWT (debería estar en variables de entorno)
-const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en_produccion';
-console.log('🔑 JWT_SECRET (auth.routes) existe?', !!process.env.JWT_SECRET);
-const JWT_EXPIRES_IN = '8h';
+// Política de bloqueo por cuenta. El límite por IP (index.js) no alcanza:
+// no hace nada contra un ataque repartido entre varias IP, que es el caso
+// normal hoy. Esto cuenta intentos por usuario, no por origen.
+const MAX_INTENTOS = 5;
+const MINUTOS_BLOQUEO = 15;
 
-// LOGIN
+// Mensaje único para usuario inexistente, usuario inactivo y contraseña
+// incorrecta. Antes el inactivo respondía 'Usuario inactivo', que le confirma
+// a cualquiera que ese nombre de usuario existe.
+const CREDENCIALES_INVALIDAS = 'Usuario o contraseña incorrectos';
+
+// Hash de descarte para gastar el mismo tiempo cuando el usuario no existe.
+// Sin esto, la respuesta instantánea del caso "no existe" contra el ~100ms de
+// bcrypt del caso "existe" permite enumerar usuarios midiendo el tiempo.
+// Se genera al arrancar, con el mismo costo 12 que los hashes reales, sobre
+// un valor aleatorio que nadie conoce.
+const HASH_SEÑUELO = bcrypt.hashSync(require('crypto').randomBytes(24).toString('hex'), 12);
+
+// `pwd` es la marca de cuándo se fijó la contraseña con la que se emite este
+// token. El middleware la compara contra la base: si no coinciden, la
+// contraseña cambió después y el token deja de valer. Ver middlewares/auth.js.
+function firmarToken(usuario) {
+    return jwt.sign(
+        {
+            id: usuario.id,
+            rol: usuario.rol,
+            pwd: new Date(usuario.password_actualizado_en).getTime()
+        },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN, algorithm: JWT_ALGORITHM }
+    );
+}
+
+// ============================================================================
+// POST /api/auth/login
+// ============================================================================
 router.post('/login', [
-    body('usuario').notEmpty().trim().escape(),
+    // hallazgo S9: .escape() convierte '&' en '&amp;' etc. en el valor que
+    // llega — un usuario 'a&b' se guardó tal cual pero se buscaba como
+    // 'a&amp;b' y nunca podía loguearse. .escape() protege contra XSS en la
+    // SALIDA, no tiene nada que hacer acá adentro.
+    body('usuario').notEmpty().trim(),
     body('password').notEmpty()
 ], async (req, res) => {
-    console.log('🔐 Iniciando proceso de login');
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Faltan el usuario o la contraseña' });
+    }
+
     const { usuario, password } = req.body;
-    console.log('Usuario recibido:', usuario);
 
     try {
-        console.log('Consultando base de datos...');
-        const result = await pool.query('SELECT * FROM usuarios WHERE nombre_usuario = $1', [usuario]);
-        console.log('Resultado query:', result.rows.length);
-
-        if (result.rows.length === 0) {
-            console.log('❌ Usuario no encontrado');
-            return res.status(401).json({ error: 'Credenciales inválidas' });
-        }
+        // lower(nombre_usuario): la migración de seguridad garantiza que no
+        // hay dos usuarios que difieran solo en mayúsculas, así que escribir
+        // el nombre con otra capitalización ya no deja a nadie afuera.
+        const result = await pool.query(
+            `SELECT id, nombre_usuario, password_hash, rol, activo,
+                    debe_cambiar_password, intentos_fallidos, bloqueado_hasta,
+                    password_actualizado_en
+               FROM usuarios
+              WHERE lower(nombre_usuario) = lower($1)`,
+            [usuario]
+        );
 
         const user = result.rows[0];
-        console.log('Usuario encontrado, hash (primeros 20):', user.password_hash.substring(0, 20));
 
-        // Verificar si el usuario está activo
-        if (!user.activo) {
-            console.log('❌ Usuario inactivo');
-            return res.status(401).json({ error: 'Usuario inactivo' });
+        if (!user) {
+            // Se compara igual contra un hash de descarte para que el tiempo
+            // de respuesta no delate que el usuario no existe.
+            await bcrypt.compare(password, HASH_SEÑUELO);
+            console.warn('Login fallido: credenciales inválidas');
+            return res.status(401).json({ error: CREDENCIALES_INVALIDAS });
         }
 
-        console.log('Comparando contraseña...');
-        const match = await bcrypt.compare(password, user.password_hash);
-        console.log('¿Coincide?', match);
-
-        if (!match) {
-            console.log('❌ Contraseña incorrecta');
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+        // Cuenta bloqueada por intentos fallidos: se corta acá, sin siquiera
+        // mirar la contraseña, y el mensaje sí es específico porque a esta
+        // altura quien está del otro lado ya demostró conocer el usuario.
+        if (user.bloqueado_hasta && new Date(user.bloqueado_hasta) > new Date()) {
+            const minutosRestantes = Math.ceil(
+                (new Date(user.bloqueado_hasta) - new Date()) / 60000
+            );
+            console.warn(`Login rechazado: cuenta bloqueada (id ${user.id})`);
+            return res.status(429).json({
+                error: `Cuenta bloqueada por intentos fallidos. Probá de nuevo en ${minutosRestantes} minuto(s), o pedile al administrador que te restablezca la contraseña.`
+            });
         }
 
-        console.log('✅ Contraseña válida. Generando token...');
+        let passwordOk;
+        if (user.activo) {
+            passwordOk = await bcrypt.compare(password, user.password_hash);
+        } else {
+            // Usuario desactivado: se gasta el mismo tiempo que en el camino
+            // normal y se responde exactamente igual que con una clave mala.
+            await bcrypt.compare(password, HASH_SEÑUELO);
+            passwordOk = false;
+        }
 
-        // Actualizar último acceso
+        if (!passwordOk) {
+            // Solo se cuentan los fallos de cuentas activas: no tiene sentido
+            // bloquear una cuenta que ya está deshabilitada.
+            if (user.activo) {
+                const intentos = user.intentos_fallidos + 1;
+                if (intentos >= MAX_INTENTOS) {
+                    await pool.query(
+                        `UPDATE usuarios
+                            SET intentos_fallidos = $1,
+                                bloqueado_hasta = now() + make_interval(mins => $2)
+                          WHERE id = $3`,
+                        [intentos, MINUTOS_BLOQUEO, user.id]
+                    );
+                } else {
+                    await pool.query(
+                        'UPDATE usuarios SET intentos_fallidos = $1 WHERE id = $2',
+                        [intentos, user.id]
+                    );
+                }
+            }
+            console.warn('Login fallido: credenciales inválidas');
+            return res.status(401).json({ error: CREDENCIALES_INVALIDAS });
+        }
+
+        // Login correcto: se limpia el contador y se registra el acceso.
         await pool.query(
-            'UPDATE usuarios SET ultimo_acceso = NOW() WHERE id = $1',
+            `UPDATE usuarios
+                SET ultimo_acceso = now(), intentos_fallidos = 0, bloqueado_hasta = NULL
+              WHERE id = $1`,
             [user.id]
         );
 
-        // Generar token JWT
-        const token = jwt.sign(
-            { 
-                id: user.id, 
-                usuario: user.nombre_usuario, 
-                rol: user.rol 
-            },
-            JWT_SECRET,
-            { expiresIn: JWT_EXPIRES_IN }
-        );
-        console.log('Token generado correctamente');
-
-        // Responder con token y datos del usuario (sin hash)
         res.json({
             ok: true,
-            token,
+            token: firmarToken(user),
+            // debe_cambiar_password le dice al frontend que abra el modal de
+            // cambio obligatorio: la persona entró con una clave temporal que
+            // le dio el administrador.
+            debe_cambiar_password: user.debe_cambiar_password,
             usuario: {
                 id: user.id,
                 usuario: user.nombre_usuario,
                 rol: user.rol
             }
         });
-        console.log('✅ Respuesta enviada al cliente');
 
     } catch (error) {
-        console.error('❌ Error en login:', error);
-        res.status(500).json({ error: 'Error interno del servidor', detalle: error.message });
+        // hallazgo S6: no devolver error.message al cliente (filtra detalles
+        // internos); el detalle completo queda solo en el log del server.
+        console.error('Error en login:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
 
-// VERIFICAR TOKEN
+// ============================================================================
+// GET /api/auth/verificar
+// ============================================================================
 router.get('/verificar', verificarToken, (req, res) => {
-    res.json({ 
-        ok: true, 
+    res.json({
+        ok: true,
         usuario: {
             id: req.usuario.id,
             usuario: req.usuario.nombre_usuario,
             rol: req.usuario.rol
-        }
+        },
+        debe_cambiar_password: req.usuario.debe_cambiar_password
     });
-});
-
-// CAMBIAR CONTRASEÑA (usuario logueado)
-router.post('/cambiar-password', [
-    verificarToken,
-    body('password_actual').notEmpty(),
-    body('password_nueva').isLength({ min: 6 })
-], async (req, res) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const { password_actual, password_nueva } = req.body;
-        const usuarioId = req.usuario.id;
-
-        // Obtener usuario con su hash actual
-        const result = await pool.query(
-            'SELECT password_hash FROM usuarios WHERE id = $1',
-            [usuarioId]
-        );
-
-        const hashActual = result.rows[0].password_hash;
-
-        // Verificar contraseña actual
-        const valida = await bcrypt.compare(password_actual, hashActual);
-        if (!valida) {
-            return res.status(400).json({ error: 'Contraseña actual incorrecta' });
-        }
-
-        // Hashear nueva contraseña
-        const nuevoHash = await bcrypt.hash(password_nueva, 12);
-
-        // Actualizar
-        await pool.query(
-            'UPDATE usuarios SET password_hash = $1 WHERE id = $2',
-            [nuevoHash, usuarioId]
-        );
-
-        res.json({ ok: true, message: 'Contraseña actualizada correctamente' });
-
-    } catch (error) {
-        console.error('Error cambiando password:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
-    }
-});
-
-// SOLO ADMIN: Listar usuarios
-router.get('/usuarios', verificarToken, authorize(['admin']), async (req, res) => {
-    try {
-        const result = await pool.query(
-            `SELECT id, nombre_usuario, rol, activo, ultimo_acceso, 
-                    TO_CHAR(created_at, 'DD/MM/YYYY') as fecha_creacion
-             FROM usuarios 
-             ORDER BY id`
-        );
-        res.json({ ok: true, usuarios: result.rows });
-    } catch (error) {
-        console.error('Error listando usuarios:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
-    }
-});
-
-// SOLO ADMIN: Crear usuario
-router.post('/usuarios', [
-    verificarToken,
-    authorize(['admin']),
-    body('usuario').notEmpty().trim().escape(),
-    body('password').isLength({ min: 6 }),
-    body('rol').isIn(['admin', 'control', 'operario', 'empleado'])
-], async (req, res) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const { usuario, password, rol } = req.body;
-
-        // Verificar si ya existe
-        const existe = await pool.query(
-            'SELECT id FROM usuarios WHERE nombre_usuario = $1',
-            [usuario]
-        );
-
-        if (existe.rows.length > 0) {
-            return res.status(400).json({ error: 'El nombre de usuario ya existe' });
-        }
-
-        // Hashear contraseña
-        const hash = await bcrypt.hash(password, 12);
-
-        // Crear usuario
-        const result = await pool.query(
-            `INSERT INTO usuarios (nombre_usuario, password_hash, rol) 
-             VALUES ($1, $2, $3) 
-             RETURNING id, nombre_usuario, rol, activo, created_at`,
-            [usuario, hash, rol]
-        );
-
-        res.status(201).json({
-            ok: true,
-            usuario: result.rows[0]
-        });
-
-    } catch (error) {
-        console.error('Error creando usuario:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
-    }
-});
-
-// SOLO ADMIN: Actualizar usuario (activar/desactivar, cambiar rol)
-router.put('/usuarios/:id', [
-    verificarToken,
-    authorize(['admin']),
-    body('activo').optional().isBoolean(),
-    body('rol').optional().isIn(['admin', 'control', 'operario', 'empleado'])
-], async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { activo, rol } = req.body;
-        
-        // No permitir modificar al propio admin (para evitar bloqueos)
-        if (req.usuario.id === parseInt(id)) {
-            return res.status(400).json({ error: 'No puedes modificar tu propio usuario' });
-        }
-
-        const updates = [];
-        const values = [];
-        let contador = 1;
-
-        if (activo !== undefined) {
-            updates.push(`activo = $${contador++}`);
-            values.push(activo);
-        }
-        if (rol !== undefined) {
-            updates.push(`rol = $${contador++}`);
-            values.push(rol);
-        }
-
-        if (updates.length === 0) {
-            return res.status(400).json({ error: 'No hay campos para actualizar' });
-        }
-
-        values.push(id);
-        const query = `UPDATE usuarios SET ${updates.join(', ')} WHERE id = $${contador} RETURNING id, nombre_usuario, rol, activo`;
-
-        const result = await pool.query(query, values);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-
-        res.json({ ok: true, usuario: result.rows[0] });
-
-    } catch (error) {
-        console.error('Error actualizando usuario:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
-    }
-});
-
-// SOLO ADMIN: Resetear contraseña de usuario
-router.post('/usuarios/:id/reset-password', [
-    verificarToken,
-    authorize(['admin'])
-], async (req, res) => {
-    try {
-        const { id } = req.params;
-        
-        // No permitir resetear la propia contraseña del admin (debe usar cambiar-password)
-        if (req.usuario.id === parseInt(id)) {
-            return res.status(400).json({ error: 'Usa "cambiar contraseña" para tu propio usuario' });
-        }
-
-        // Contraseña temporal: 'Temp123456'
-        const passwordTemporal = 'Temp123456';
-        const hash = await bcrypt.hash(passwordTemporal, 12);
-
-        const result = await pool.query(
-            'UPDATE usuarios SET password_hash = $1 WHERE id = $2 RETURNING id, nombre_usuario',
-            [hash, id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-
-        res.json({ 
-            ok: true, 
-            message: 'Contraseña reseteada',
-            password_temporal: passwordTemporal // En producción, esto debería ir por email
-        });
-
-    } catch (error) {
-        console.error('Error reseteando password:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
-    }
-});
-
-// SOLO ADMIN: Eliminar usuario
-router.delete('/usuarios/:id', [
-    verificarToken,
-    authorize(['admin'])
-], async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        // No permitir eliminar al propio admin
-        if (req.usuario.id === parseInt(id)) {
-            return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
-        }
-
-        // No permitir eliminar el admin principal (id 1)
-        if (parseInt(id) === 1) {
-            return res.status(400).json({ error: 'No se puede eliminar el usuario admin principal' });
-        }
-
-        const result = await pool.query(
-            'DELETE FROM usuarios WHERE id = $1 RETURNING id, nombre_usuario',
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-
-        res.json({ ok: true, message: 'Usuario eliminado correctamente' });
-
-    } catch (error) {
-        console.error('Error eliminando usuario:', error);
-        res.status(500).json({ error: 'Error en el servidor' });
-    }
 });
 
 module.exports = router;

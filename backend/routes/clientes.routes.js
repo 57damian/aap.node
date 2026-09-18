@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { asyncHandler } = require('../middlewares/asyncHandler');
 const { resumenCliente, cuentaCorriente } = require('../services/cuenta-cliente');
 
 router.use(verificarToken);
 
 /* CREATE */
-router.post('/', authorize(['admin', 'control']), async (req, res) => {
+router.post('/', soloAdmin, async (req, res) => {
   const {
     nombre,
     cuit,
@@ -49,13 +50,13 @@ router.post('/', authorize(['admin', 'control']), async (req, res) => {
 });
 
 /* LIST */
-router.get('/', authorize(['admin', 'control', 'operario']), async (req, res) => {
+router.get('/', soloAdmin, asyncHandler(async (req, res) => {
   const result = await pool.query('SELECT * FROM clientes ORDER BY nombre');
   res.json(result.rows);
-});
+}));
 
 /* COUNT */
-router.get('/count', authorize(['admin', 'control', 'operario']), async (req, res) => {
+router.get('/count', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT COUNT(*)::int AS total FROM clientes');
     res.json({
@@ -68,7 +69,7 @@ router.get('/count', authorize(['admin', 'control', 'operario']), async (req, re
 });
 
 /* GET ONE */
-router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res) => {
+router.get('/:id', soloAdmin, asyncHandler(async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: 'ID de cliente inválido' });
@@ -83,12 +84,12 @@ router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res)
     return res.status(404).json({ error: 'Cliente no encontrado' });
 
   res.json(result.rows[0]);
-});
+}));
 
 /* ============================================
    ✅ UPDATE - ENDPOINT AGREGADO (FALTABA)
    ============================================ */
-router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
+router.put('/:id', soloAdmin, async (req, res) => {
   const {
     nombre,
     cuit,
@@ -143,7 +144,7 @@ router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
 /* ============================================
    ✅ DELETE - ENDPOINT AGREGADO (FALTABA)
    ============================================ */
-router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
+router.delete('/:id', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       'DELETE FROM clientes WHERE id = $1',
@@ -166,7 +167,7 @@ router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
    el saldo terminaba siendo igual al total facturado. Ahora delega en
    services/cuenta-cliente.js, que es la única definición de saldo del
    sistema (ver claude/modulo-pagos.md). */
-router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
+router.get('/:id/estado', soloAdmin, async (req, res) => {
   try {
     const cliente = await pool.query(
       'SELECT id, nombre FROM clientes WHERE id = $1', [req.params.id]
@@ -196,7 +197,7 @@ router.get('/:id/estado', authorize(['admin','control']), async (req, res) => {
    Rompía siempre con "column p.monto does not exist" (la columna se llama
    monto_total). Ahora usa el mismo servicio que el módulo de Cobros, así
    los movimientos y el saldo acumulado coinciden con el panel de deuda. */
-router.get('/:id/cuenta-corriente', authorize(['admin','control']), async (req, res) => {
+router.get('/:id/cuenta-corriente', soloAdmin, async (req, res) => {
   try {
     const cliente = await pool.query(
       'SELECT id, nombre FROM clientes WHERE id = $1', [req.params.id]
