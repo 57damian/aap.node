@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 
 // Todas las rutas requieren autenticación
 router.use(verificarToken);
@@ -11,7 +11,11 @@ router.use(verificarToken);
  * Lista materias primas con filtros opcionales
  * Query params: search, activo, proveedor_id, con_stock
  */
-router.get('/', async (req, res) => {
+// soloAdmin: este listado trae el precio de referencia y el proveedor de cada
+// material. Era el último endpoint que había quedado sin control de rol
+// (hallazgo S7), así que cualquier usuario logueado lo leía entero.
+// El operario consulta cantidades por GET /api/stock, que sale filtrado.
+router.get('/', soloAdmin, async (req, res) => {
   try {
     const { search, activo = 'true', proveedor_id, con_stock } = req.query;
 
@@ -33,10 +37,12 @@ router.get('/', async (req, res) => {
     }
 
     if (proveedor_id) {
-      // Filtrar materias primas que tengan compras a ese proveedor
-      query += ` AND EXISTS (SELECT 1 FROM compra_items ci 
-                JOIN compras c ON ci.compra_id = c.id 
-                WHERE ci.materia_prima_id = mp.id AND c.proveedor_id = $${paramIndex})`;
+      // Filtrar materias primas que tengan movimientos de stock de ese proveedor
+      // (stock_movimientos.proveedor_id, que es lo que factura-compra.routes.js
+      // completa realmente en cada compra; compra_items/compras es un esquema
+      // viejo ya sin uso, ver "Auditoría — Módulo Stock" en el doc del proyecto)
+      query += ` AND EXISTS (SELECT 1 FROM stock_movimientos sm
+                WHERE sm.materia_prima_id = mp.id AND sm.proveedor_id = $${paramIndex})`;
       params.push(proveedor_id);
       paramIndex++;
     }
@@ -68,7 +74,7 @@ router.get('/', async (req, res) => {
    * GET /api/materias-primas/:id
    * Obtener una materia prima por ID
    */
-  router.get('/:id', async (req, res) => {
+  router.get('/:id', soloAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const result = await pool.query(`
@@ -96,7 +102,7 @@ router.get('/', async (req, res) => {
    * POST /api/materias-primas
    * Crear nueva materia prima
    */
-  router.post('/', authorize(['admin', 'control']), async (req, res) => {
+  router.post('/', soloAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
       const { codigo, nombre, descripcion, unidad_medida, stock_minimo = 0, ubicacion, precio_referencia } = req.body;
@@ -129,7 +135,7 @@ router.get('/', async (req, res) => {
    * PUT /api/materias-primas/:id
    * Actualizar materia prima
    */
-  router.put('/:id', authorize(['admin', 'control']), async (req, res) => {
+  router.put('/:id', soloAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
       const { id } = req.params;
@@ -173,7 +179,7 @@ router.get('/', async (req, res) => {
  * DELETE /api/materias-primas/:id
  * Desactivar materia prima (soft delete)
  */
-router.delete('/:id', authorize(['admin']), async (req, res) => {
+router.delete('/:id', soloAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     await pool.query('UPDATE materias_primas SET activo = false WHERE id = $1', [id]);
@@ -188,18 +194,19 @@ router.delete('/:id', authorize(['admin']), async (req, res) => {
    * GET /api/materias-primas/:id/historial-precios
    * Obtener historial de precios de una materia prima
    */
-  router.get('/:id/historial-precios', async (req, res) => {
+  router.get('/:id/historial-precios', soloAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       
       const result = await pool.query(`
-        SELECT 
+        SELECT
           hpm.id,
           hpm.precio_nuevo,
           hpm.precio_anterior,
+          hpm.precio_nuevo_usd,
+          hpm.precio_anterior_usd,
           hpm.variacion_porcentaje,
           hpm.fecha_cambio,
-          hpm.observaciones,
           fc.numero_factura as factura_numero,
           p.nombre as proveedor_nombre,
           u.nombre_completo as usuario_nombre

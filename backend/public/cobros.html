@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cobros — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Cobros y deuda de clientes</h1>
+      <p>Quién nos debe, qué está vencido y qué cheques hay en cartera</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-primary" data-tab-ir="cobrar">Registrar cobro</button>
+    </div>
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="aging" id="aging"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="deuda">Quién nos debe</button>
+    <button class="tab" data-tab="cobrar">Registrar cobro</button>
+    <button class="tab" data-tab="cheques">Cheques</button>
+    <button class="tab" data-tab="historial">Cobros y recibos</button>
+  </div>
+
+  <!-- ============ TAB: DEUDA ============ -->
+  <div id="tab-deuda" class="tab-content active">
+    <div class="filters">
+      <div class="field grow">
+        <label for="buscarCliente">Buscar cliente</label>
+        <input class="input" type="search" id="buscarCliente" placeholder="Nombre o CUIT">
+      </div>
+      <div class="field">
+        <label for="ordenDeuda">Ordenar por</label>
+        <select class="select" id="ordenDeuda">
+          <option value="vencido">Vencido</option>
+          <option value="saldo">Saldo total</option>
+          <option value="atraso">Días de atraso</option>
+          <option value="nombre">Nombre</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <label class="check"><input type="checkbox" id="soloVencido"><span>Solo con deuda vencida</span></label>
+        <button class="b b-ghost b-sm" id="btnActualizarDeuda">Actualizar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-3)">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th class="num">Facturas</th>
+                <th class="num">Saldo <button type="button" class="ayuda" data-ayuda="saldo">?</button></th>
+                <th class="num">Vencido <button type="button" class="ayuda" data-ayuda="vencido">?</button></th>
+                <th class="num">Por vencer</th>
+                <th class="num">En gestión <button type="button" class="ayuda" data-ayuda="en_gestion">?</button></th>
+                <th class="num">Atraso</th>
+                <th class="num">A favor <button type="button" class="ayuda" data-ayuda="a_favor">?</button></th>
+              </tr>
+            </thead>
+            <tbody id="tablaDeuda"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: REGISTRAR COBRO ============ -->
+  <div id="tab-cobrar" class="tab-content">
+    <div class="panel">
+      <div class="panel-body">
+        <div class="panel-head" style="padding:0 0 var(--space-3);border:none">1 · De quién es el cobro</div>
+        <div class="filters" style="background:none;border:none;padding:0">
+          <div class="field grow">
+            <label for="cobroCliente">Cliente *</label>
+            <select class="select" id="cobroCliente"><option value="">-- Seleccionar --</option></select>
+          </div>
+          <div class="field">
+            <label for="cobroFecha">Fecha de recepción *</label>
+            <input class="input" type="date" id="cobroFecha">
+          </div>
+          <div class="field grow">
+            <label for="cobroObs">Observaciones</label>
+            <input class="input" type="text" id="cobroObs" placeholder="Ej: entregado en planta">
+          </div>
+        </div>
+        <div id="cobroResumenCliente"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        2 · Con qué nos pagan
+        <div class="page-head-actions">
+          <button class="b b-ghost b-sm" id="btnAgregarForma">+ Agregar forma de cobro</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="formasCobro"></div>
+        <div class="empty" id="avisoCheques" hidden style="padding:var(--space-4);text-align:left">
+          Los cheques no cancelan la factura hasta que se acrediten. Hasta entonces la factura
+          queda marcada <strong>en gestión de cobro</strong>.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        3 · A qué facturas se imputa <button type="button" class="ayuda" data-ayuda="imputar">?</button>
+        <div class="page-head-actions">
+          <button class="b b-ghost b-sm" id="btnImputarAuto">Imputar a las más viejas</button>
+          <button class="b b-ghost b-sm" id="btnLimpiarImputacion">Limpiar</button>
+        </div>
+      </div>
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>Factura</th>
+                <th>Vencimiento</th>
+                <th class="num">Total</th>
+                <th class="num">Saldo</th>
+                <th class="num">En gestión</th>
+                <th>Estado</th>
+                <th class="num" style="width:160px">A imputar</th>
+              </tr>
+            </thead>
+            <tbody id="tablaFacturasCobro">
+              <tr><td colspan="8">Elegí un cliente para ver sus facturas pendientes</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="totales-inline">
+          <div><span>Total del cobro</span><strong id="totCobro">$0</strong></div>
+          <div><span>Imputado a facturas</span><strong id="totImputado">$0</strong></div>
+          <div><span>Queda a cuenta <button type="button" class="ayuda" data-ayuda="a_cuenta">?</button></span><strong id="totACuenta">$0</strong></div>
+        </div>
+        <div style="margin-top:var(--space-4); display:flex; gap:var(--space-3); flex-wrap:wrap;">
+          <button class="b b-primary" id="btnGuardarCobro">Registrar cobro</button>
+          <button class="b b-ghost" id="btnCancelarCobro">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: CHEQUES ============ -->
+  <div id="tab-cheques" class="tab-content">
+    <div class="filters">
+      <div class="field">
+        <label for="filtroChequeEstado">Estado</label>
+        <select class="select" id="filtroChequeEstado">
+          <option value="EN_CARTERA">En cartera</option>
+          <option value="DEPOSITADO">Depositados</option>
+          <option value="ACREDITADO">Acreditados</option>
+          <option value="RECHAZADO">Rechazados</option>
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="field grow">
+        <label for="filtroChequeCliente">Cliente</label>
+        <select class="select" id="filtroChequeCliente"><option value="">Todos los clientes</option></select>
+      </div>
+      <div class="filters-actions">
+        <button class="b b-ghost b-sm" id="btnFiltrarCheques">Filtrar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-3)">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Cheque</th>
+                <th>Banco</th>
+                <th>Cliente</th>
+                <th class="num">Monto</th>
+                <th>Se cobra</th>
+                <th>Imputado a</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaCheques"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: HISTORIAL ============ -->
+  <div id="tab-historial" class="tab-content">
+    <div class="filters">
+      <div class="field grow">
+        <label for="filtroHistCliente">Cliente</label>
+        <select class="select" id="filtroHistCliente"><option value="">Todos los clientes</option></select>
+      </div>
+      <div class="field">
+        <label for="filtroHistDesde">Desde</label>
+        <input class="input" type="date" id="filtroHistDesde">
+      </div>
+      <div class="field">
+        <label for="filtroHistHasta">Hasta</label>
+        <input class="input" type="date" id="filtroHistHasta">
+      </div>
+      <div class="field">
+        <label for="filtroHistEstado">Estado</label>
+        <select class="select" id="filtroHistEstado">
+          <option value="">Todos</option>
+          <option value="A_CUENTA">Sin imputar (a cuenta)</option>
+          <option value="PARCIAL">Imputados en parte</option>
+          <option value="IMPUTADO">Totalmente imputados</option>
+          <option value="ANULADO">Anulados</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button class="b b-ghost b-sm" id="btnFiltrarHistorial">Filtrar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-3)">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Formas</th>
+                <th class="num">Monto</th>
+                <th class="num">Imputado</th>
+                <th class="num">Sin imputar</th>
+                <th>Recibo <button type="button" class="ayuda" data-ayuda="recibo">?</button></th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaHistorial"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel lateral de detalle de cliente. Va DENTRO de [data-content]:
+       Shell.montar() reconstruye <body> a partir del innerHTML de este
+       div nada más, así que cualquier cosa que quede afuera desaparece
+       apenas se monta el shell. -->
+  <div class="drawer-scrim" id="drawerBg"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawerTitulo">Cliente</h2>
+        <div class="meta" id="drawerMeta"></div>
+      </div>
+      <button class="b b-ghost b-sm" id="btnCerrarDrawer">Cerrar</button>
+    </div>
+    <div id="drawerCuerpo"></div>
+  </div>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>Shell.montar({ titulo: 'Cobros', sub: 'Deuda de clientes' });</script>
+<script src="js/roleGuard.js"></script>
+<script src="js/cobros.js"></script>
+<script>verificarRolPagina(['admin']);</script>
+</body>
+</html>

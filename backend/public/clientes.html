@@ -3,238 +3,142 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clientes - Transformadores</title>
+  <title>Clientes — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
-  <style>
-    /* Estilos adicionales para mejor presentación */
-    .detail-card {
-      background: #f8f9fa;
-      border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 20px;
-      border-left: 4px solid #007bff;
-    }
-    
-    .detail-grid-modern {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 15px;
-      margin-top: 15px;
-    }
-    
-    .detail-item-modern {
-      background: white;
-      padding: 15px;
-      border-radius: 6px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .detail-label-modern {
-      font-size: 0.85rem;
-      color: #6c757d;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 5px;
-    }
-    
-    .detail-value-modern {
-      font-size: 1.1rem;
-      font-weight: 500;
-      color: #2c3e50;
-    }
-    
-    .badge-pago {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      font-weight: 500;
-    }
-    
-    .badge-contado { background: #d4edda; color: #155724; }
-    .badge-cheque { background: #fff3cd; color: #856404; }
-    .badge-transferencia { background: #cce5ff; color: #004085; }
-    .badge-otro { background: #e2e3e5; color: #383d41; }
-    
-    .observaciones-box {
-      background: #fff3cd;
-      border-left: 4px solid #ffc107;
-      padding: 15px;
-      border-radius: 4px;
-      font-style: italic;
-    }
-    
-    .section-divider {
-      height: 2px;
-      background: linear-gradient(to right, #007bff, transparent);
-      margin: 20px 0;
-    }
-  </style>
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div data-content>
 
-<div class="navbar">
-  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
-  <div class="navbar-menu">
-    <button data-roles="admin,control" onclick="window.location.href='dashboard.html'">Dashboard</button>
-    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
-    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
-    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
-    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
-    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='pagos.html'">Pagos</button>
-    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
-    <button data-roles="admin,control,operario,empleado" onclick="window.location.href='produccion.html'">Producción</button>
-    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
-    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  <div class="page-head">
+    <div>
+      <h1>Clientes</h1>
+      <p>Alta y datos de contacto de los clientes</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-primary" onclick="showTab('crear', event)">+ Nuevo cliente</button>
+    </div>
   </div>
-  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" onclick="showTab('crear', event)">Crear nuevo</button>
+    <button class="tab active" onclick="showTab('listar', event)">Listar clientes</button>
+  </div>
+
+  <!-- TAB CREAR -->
+  <div id="crear" class="tab-content">
+    <form id="clienteForm">
+      <div class="panel">
+        <div class="panel-head">Información general</div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="field ancho-total">
+              <label for="nombre">Nombre del cliente *</label>
+              <input class="input" type="text" id="nombre" name="nombre" required placeholder="Ej: Industrias ABC S.A.">
+            </div>
+            <div class="field">
+              <label for="cuit">CUIT</label>
+              <input class="input" type="text" id="cuit" name="cuit" placeholder="Ej: 30-12345678-9">
+            </div>
+            <div class="field">
+              <label for="telefono">Teléfono</label>
+              <input class="input" type="tel" id="telefono" name="telefono" placeholder="Ej: 11 1234-5678">
+            </div>
+            <div class="field">
+              <label for="correo">Correo electrónico</label>
+              <input class="input" type="email" id="correo" name="correo" placeholder="ejemplo@empresa.com">
+            </div>
+            <div class="field">
+              <label for="direccion">Dirección</label>
+              <input class="input" type="text" id="direccion" name="direccion" placeholder="Calle 123, Ciudad">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Condiciones de pago</div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="field">
+              <label for="forma_pago">Forma de pago</label>
+              <select class="select" id="forma_pago" name="forma_pago">
+                <option value="">-- Seleccionar --</option>
+                <option value="contado">Contado</option>
+                <option value="cheque">Cheque</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="dias_max_pago">Días máximo de pago</label>
+              <input class="input" type="number" id="dias_max_pago" name="dias_max_pago" placeholder="Ej: 30">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Observaciones</div>
+        <div class="panel-body">
+          <div class="field ancho-total">
+            <label for="observaciones">Notas adicionales sobre el cliente</label>
+            <textarea class="input" style="height:80px" id="observaciones" name="observaciones" placeholder="Notas adicionales sobre el cliente..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:var(--space-3); flex-wrap:wrap;">
+        <button type="submit" class="b b-primary">Guardar cliente</button>
+        <button type="button" class="b b-ghost" onclick="resetForm()">Limpiar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- TAB LISTAR -->
+  <div id="listar" class="tab-content active">
+    <div class="panel">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>CUIT</th>
+                <th>Teléfono</th>
+                <th>Forma de pago</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="clientesList"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel lateral de detalle. Va DENTRO de [data-content] (Shell.montar
+       reconstruye <body> a partir de esto y descarta lo que quede afuera). -->
+  <div class="drawer-scrim" id="drawerBg"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawerTitulo">Cliente</h2>
+        <div class="meta" id="drawerMeta"></div>
+      </div>
+      <button class="b b-ghost b-sm" id="btnCerrarDrawer">Cerrar</button>
+    </div>
+    <div id="drawerCuerpo"></div>
+  </div>
+
 </div>
 
-  <div class="container">
-    <!-- Header con botón de retroceso -->
-    <header>
-      <h1 class="header-title">👥 Gestión de Clientes</h1>
-      <div class="header-actions">
-        <button class="btn-back" onclick="window.location.href='dashboard.html'">
-          ← Dashboard
-        </button>
-      </div>
-    </header>
-
-    <div class="tabs">
-      <button class="tab" onclick="showTab('crear', event)">➕ Crear Nuevo</button>
-      <button class="tab active" onclick="showTab('listar', event)">📋 Listar Clientes</button>
-    </div>
-
-    <!-- TAB CREAR -->
-    <div id="crear" class="tab-content">
-      <form id="clienteForm">
-        
-        <div class="section-title">📋 Información General</div>
-        
-        <div class="form-group full-width">
-          <label for="nombre">Nombre del Cliente *</label>
-          <input type="text" id="nombre" name="nombre" required placeholder="Ej: Industrias ABC S.A.">
-        </div>
-
-        <div class="form-group half-width">
-          <label for="cuit">CUIT</label>
-          <input type="text" id="cuit" name="cuit" placeholder="Ej: 30-12345678-9">
-        </div>
-
-        <div class="form-group half-width">
-          <label for="telefono">Teléfono</label>
-          <input type="tel" id="telefono" name="telefono" placeholder="Ej: 11 1234-5678">
-        </div>
-
-        <div class="form-group half-width">
-          <label for="correo">Correo Electrónico</label>
-          <input type="email" id="correo" name="correo" placeholder="ejemplo@empresa.com">
-        </div>
-
-        <div class="form-group half-width">
-          <label for="direccion">Dirección</label>
-          <input type="text" id="direccion" name="direccion" placeholder="Calle 123, Ciudad">
-        </div>
-
-        <div class="section-title">💳 Condiciones de Pago</div>
-
-        <div class="form-group half-width">
-          <label for="forma_pago">Forma de Pago</label>
-          <select id="forma_pago" name="forma_pago">
-            <option value="">-- Seleccionar --</option>
-            <option value="contado">Contado</option>
-            <option value="cheque">Cheque</option>
-            <option value="transferencia">Transferencia</option>
-            <option value="otro">Otro</option>
-          </select>
-        </div>
-
-        <div class="form-group half-width">
-          <label for="dias_max_pago">Días Máximo de Pago</label>
-          <input type="number" id="dias_max_pago" name="dias_max_pago" placeholder="Ej: 30">
-        </div>
-
-        <div class="section-title">📝 Observaciones</div>
-
-        <div class="form-group full-width">
-          <label for="observaciones">Observaciones</label>
-          <textarea id="observaciones" name="observaciones" placeholder="Notas adicionales sobre el cliente..."></textarea>
-        </div>
-
-        <div class="btn-group">
-          <button type="button" class="btn-secondary" onclick="resetForm()">⟲ Limpiar</button>
-          <button type="submit" class="btn-primary">💾 Guardar Cliente</button>
-        </div>
-      </form>
-
-      <div id="alert" class="alert"></div>
-    </div>
-
-    <!-- TAB LISTAR -->
-    <div id="listar" class="tab-content active">
-      <div class="list-header">
-        <h2>📋 Clientes Existentes</h2>
-        <button class="btn-info" onclick="showTab('crear', event)">➕ Crear Nuevo</button>
-      </div>
-      
-      <div class="list-container">
-        <table id="clientesTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Nombre</th>
-              <th>CUIT</th>
-              <th>Teléfono</th>
-              <th>Forma de Pago</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="clientesList">
-            <tr>
-              <td colspan="6">
-                <div class="empty-state">
-                  <div>👥</div>
-                  <p>No hay clientes creados aún</p>
-                  <button class="btn-primary" onclick="showTab('crear', event)">
-                    ➕ Crear Primer Cliente
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- MODAL DETALLE - VERSIÓN MEJORADA -->
-    <div id="detailModal" class="modal">
-      <div class="modal-content" style="max-width: 800px;">
-        <span class="close" onclick="closeDetailModal()">&times;</span>
-        <h2 class="detail-title" id="detailNombre">👥 Ficha del Cliente</h2>
-        
-        <div id="detailContent">
-          <!-- Se llena dinámicamente con el nuevo formato -->
-        </div>
-        
-        <div class="detail-actions" style="margin-top: 20px; text-align: right;">
-          <button class="btn-warning" onclick="closeDetailModal()">Cerrar</button>
-        </div>
-      </div>
-    </div>
-
-    <footer>
-      <p>© 2026 Sistema de Gestión de Transformadores</p>
-    </footer>
-  </div>
-  <script src="js/api.js"></script>
-  <script src="js/clientes.js"></script>
-  <script src="js/dashboard.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/roleGuard.js"></script>
-  <script>
-    verificarRolPagina(['admin', 'control']);
-  </script>
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>Shell.montar({ titulo: 'Clientes' });</script>
+<script src="js/roleGuard.js"></script>
+<script src="js/clientes.js"></script>
+<script>verificarRolPagina(['admin']);</script>
 </body>
 </html>

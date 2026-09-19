@@ -27,8 +27,10 @@ if (!usuario) {
 // ============================================
 // VERIFICAR PERMISOS PARA REPORTES
 // ============================================
+// El reporte de producción es del admin. El operario carga lo que produce y
+// consulta el stock; el rol 'control' que figuraba acá ya no existe.
 function puedeVerReportes() {
-  return usuario && (usuario.rol === 'admin' || usuario.rol === 'control');
+  return usuario && usuario.rol === 'admin';
 }
 
 
@@ -55,6 +57,19 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarStock();
   cargarHistorial();
   cargarFiltrosReporte();
+
+  // Pestañas: un solo listener, en vez de un onclick por botón en el HTML.
+  document.querySelectorAll('.tab[data-tab]').forEach(boton => {
+    boton.addEventListener('click', () => mostrarTab(boton.dataset.tab, boton));
+  });
+
+  // Enter en el buscador de materiales aplica el filtro.
+  const buscarMp = document.getElementById('buscarMateriaPrima');
+  if (buscarMp) {
+    buscarMp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); cargarMateriaPrima(); }
+    });
+  }
 
   // Event listener del formulario
   const form = document.getElementById('produccionForm');
@@ -219,50 +234,24 @@ async function cargarStock() {
     const container = document.getElementById('stockContainer');
     
     if (!stock || stock.length === 0) {
-      container.innerHTML = `
-        <div style="grid-column: span 3; text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px;">
-          <div style="font-size: 48px; margin-bottom: 20px;">📦</div>
-          <p style="color: #666;">No hay stock disponible</p>
-        </div>
-      `;
+      container.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'Todavía no hay stock',
+        'Registrá producción y va a aparecer acá.')}</td></tr>`;
       return;
     }
 
     container.innerHTML = stock.map(item => {
-      let cardClass = 'stock-card';
-      if (item.stock_actual === 0) {
-        cardClass += ' sin-stock';
-      } else if (item.stock_actual < 10) {
-        cardClass += ' bajo-stock';
-      }
-
-      // Determinar color según estado
-      let estadoColor = '';
-      let estadoTexto = '';
-      if (item.stock_actual === 0) {
-        estadoColor = '#dc3545';
-        estadoTexto = 'SIN STOCK';
-      } else if (item.stock_actual < 10) {
-        estadoColor = '#ffc107';
-        estadoTexto = 'STOCK BAJO';
-      } else {
-        estadoColor = '#28a745';
-        estadoTexto = 'STOCK OK';
-      }
+      const disponible = Number(item.stock_actual) || 0;
+      const estado = disponible === 0 ? 'SIN STOCK' : (disponible < 10 ? 'POCO STOCK' : 'DISPONIBLE');
 
       return `
-        <div class="${cardClass}">
-          <h3>${item.modelo}</h3>
-          <div class="cantidad" style="color: ${estadoColor};">${item.stock_actual}</div>
-          <div class="detalle">
-            <span>📦 Producido: ${item.producido_total}</span>
-            <span>🚚 Entregado: ${item.entregado_total}</span>
-          </div>
-          <div style="text-align: center; margin-top: 15px; padding: 5px; background: rgba(255,255,255,0.2); border-radius: 4px; font-size: 12px; font-weight: bold;">
-            ${estadoTexto}
-          </div>
-        </div>
-      `;
+        <tr>
+          <td><strong>${item.modelo}</strong></td>
+          <td class="num ${disponible === 0 ? 'neg' : ''}" data-label="Disponible">${disponible}</td>
+          <td class="num muted solo-escritorio" data-label="Producido">${item.producido_total || 0}</td>
+          <td class="num muted solo-escritorio" data-label="Entregado">${item.entregado_total || 0}</td>
+          <td data-label="Estado">${Shell.pill(estado)}</td>
+        </tr>`;
     }).join('');
 
   } catch (err) {
@@ -295,33 +284,20 @@ async function cargarHistorial() {
     const tbody = document.getElementById('historialTable');
     
     if (!historial || historial.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align: center; padding: 30px;">
-            No hay registros de producción
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'Sin registros en este período',
+        'Probá ampliar las fechas o sacar el filtro de modelo.')}</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = historial.map(item => {
-      const fecha = new Date(item.fecha_produccion).toLocaleDateString('es-AR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      
-      return `
+    tbody.innerHTML = historial.map(item => `
         <tr>
-          <td>${fecha}</td>
-          <td><strong>${item.modelo}</strong></td>
-          <td style="font-weight: bold; color: #28a745;">${item.cantidad} unidades</td>
-          <td>${item.registrado_por || 'Sistema'}</td>
-          <td>${item.observaciones || '-'}</td>
-        </tr>
-      `;
-    }).join('');
+          <td><strong>${Shell.fecha(item.fecha_produccion)}</strong></td>
+          <td data-label="Modelo">${item.modelo}</td>
+          <td class="num" data-label="Cantidad">${item.cantidad}</td>
+          <td class="muted solo-escritorio" data-label="Registró">${item.registrado_por || '—'}</td>
+          <td class="muted solo-escritorio" data-label="Observaciones">${item.observaciones || '—'}</td>
+        </tr>`).join('');
 
   } catch (err) {
     console.error('Error cargando historial:', err);
@@ -382,35 +358,23 @@ async function cargarReporte() {
     const tbody = document.getElementById('reporteTable');
     
     if (!reporte || reporte.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align: center; padding: 30px;">
-            No hay datos para el período seleccionado
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+        'Sin movimientos en el período',
+        'Elegí otras fechas para ver producción y entregas.')}</td></tr>`;
       return;
     }
 
     tbody.innerHTML = reporte.map(item => {
-      // Determinar color de stock
-      let stockColor = '#28a745';
-      if (item.stock_actual === 0) {
-        stockColor = '#dc3545';
-      } else if (item.stock_actual < 10) {
-        stockColor = '#ffc107';
-      }
-
+      const disponible = Number(item.stock_actual) || 0;
       return `
         <tr>
           <td><strong>${item.modelo}</strong></td>
-          <td style="color: #28a745; font-weight: bold;">${item.producido_periodo || 0}</td>
-          <td style="color: #dc3545;">${item.entregado_periodo || 0}</td>
-          <td>${item.producido_total || 0}</td>
-          <td>${item.entregado_total || 0}</td>
-          <td style="color: ${stockColor}; font-weight: bold;">${item.stock_actual || 0}</td>
-        </tr>
-      `;
+          <td class="num pos" data-label="Producido">${item.producido_periodo || 0}</td>
+          <td class="num" data-label="Entregado">${item.entregado_periodo || 0}</td>
+          <td class="num muted solo-escritorio" data-label="Producido total">${item.producido_total || 0}</td>
+          <td class="num muted solo-escritorio" data-label="Entregado total">${item.entregado_total || 0}</td>
+          <td class="num ${disponible === 0 ? 'neg' : ''}" data-label="Disponible">${disponible}</td>
+        </tr>`;
     }).join('');
 
   } catch (err) {
@@ -419,74 +383,83 @@ async function cargarReporte() {
   }
 }
 
+
 // ============================================
-// MOSTRAR TAB
+// STOCK DE MATERIA PRIMA (solo cantidades)
 // ============================================
-function showTab(tabName, event) {
-  // BLOQUEO DE SEGURIDAD: Si es empleado y quiere ver reportes, redirigir a stock
-  if (tabName === 'reporte' && !puedeVerReportes()) {
-    mostrarAlerta('No tienes permiso para ver reportes', 'error');
-    // Cambiar al tab de stock automáticamente
-    tabName = 'stock';
-    // Actualizar el botón activo
-    document.querySelectorAll('.tab').forEach(btn => {
-      if (btn.textContent.includes('Stock')) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
-    });
-  }
+// Para saber si alcanza el material antes de producir. El endpoint devuelve
+// precios y proveedor solo si quien pregunta es admin: al operario le llegan
+// únicamente las cantidades (backend/services/vista-operario.js).
+async function cargarMateriaPrima() {
+  const tbody = document.getElementById('materiaPrimaContainer');
+  if (!tbody) return;
 
-  // Ocultar todos los tabs
-  document.querySelectorAll('.tab-content').forEach(tab => {
-    tab.classList.remove('active');
-  });
+  try {
+    const buscar = document.getElementById('buscarMateriaPrima')?.value?.trim();
+    const soloFaltantes = document.getElementById('filtroMateriaPrimaBajo')?.checked;
 
-  // Desactivar todos los botones
-  document.querySelectorAll('.tab').forEach(btn => {
-    btn.classList.remove('active');
-  });
+    const url = '/api/stock' + (buscar ? '?search=' + encodeURIComponent(buscar) : '');
+    let materiales = await apiFetch(url);
 
-  // Mostrar el tab seleccionado
-  document.getElementById(tabName).classList.add('active');
+    if (soloFaltantes) {
+      materiales = materiales.filter(m =>
+        Number(m.stock_actual) <= Number(m.stock_minimo || 0));
+    }
 
-  // Activar el botón clickeado
-  if (event?.target) {
-    event.target.classList.add('active');
-  }
+    if (!materiales.length) {
+      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'No hay materiales que coincidan',
+        'Probá con otro nombre o sacá el filtro.')}</td></tr>`;
+      return;
+    }
 
-  // Cargar datos según el tab
-  switch(tabName) {
-    case 'stock':
-      cargarStock();
-      break;
-    case 'historial':
-      cargarHistorial();
-      break;
-    case 'reporte':
-      if (puedeVerReportes()) {
-        cargarReporte();
-      }
-      break;
+    tbody.innerHTML = materiales.map(m => {
+      const actual = Number(m.stock_actual) || 0;
+      const minimo = Number(m.stock_minimo) || 0;
+      const estado = actual === 0 ? 'SIN STOCK' : (actual <= minimo ? 'FALTA' : 'OK');
+
+      return `
+        <tr>
+          <td><strong>${m.nombre || '—'}</strong>${m.codigo ? ' <span class="muted">' + m.codigo + '</span>' : ''}</td>
+          <td class="num ${actual === 0 ? 'neg' : ''}" data-label="Cantidad">${actual.toLocaleString('es-AR')} ${m.unidad_medida || ''}</td>
+          <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
+          <td class="muted solo-escritorio" data-label="Ubicación">${m.ubicacion || '—'}</td>
+          <td data-label="Estado">${Shell.pill(estado)}</td>
+        </tr>`;
+    }).join('');
+
+  } catch (err) {
+    Shell.error(err, 'No se pudo cargar el stock de materiales');
+    tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+      'No se pudo cargar', 'Probá recargar la página.')}</td></tr>`;
   }
 }
 
 // ============================================
-// MOSTRAR ALERTA
+// PESTAÑAS
+// ============================================
+// Mismo patrón que el resto de las pantallas migradas: los botones llevan
+// data-tab y el contenido vive en #tab-<nombre>.
+function mostrarTab(nombre, boton) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  boton.classList.add('active');
+  const contenido = document.getElementById('tab-' + nombre);
+  if (contenido) contenido.classList.add('active');
+
+  if (nombre === 'stock') cargarStock();
+  if (nombre === 'materiaprima') cargarMateriaPrima();
+  if (nombre === 'historial') cargarHistorial();
+  if (nombre === 'reporte' && puedeVerReportes()) cargarReporte();
+}
+
+// ============================================
+// AVISOS
 // ============================================
 function mostrarAlerta(mensaje, tipo) {
-  const alertDiv = document.getElementById('alert');
-  if (!alertDiv) return;
-  
-  alertDiv.textContent = mensaje;
-  alertDiv.className = `alert alert-${tipo}`;
-  alertDiv.style.display = 'block';
-
-  // Auto ocultar después de 5 segundos
-  setTimeout(() => {
-    alertDiv.style.display = 'none';
-  }, 5000);
+  // Antes escribía en un <div id="alert"> propio de esta pantalla. Ahora usa
+  // el mismo toast que el resto del sistema.
+  Shell.toast(tipo === 'error' ? 'err' : 'ok', mensaje);
 }
 
 // ============================================

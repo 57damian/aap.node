@@ -3,408 +3,294 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestion de Pagos a Proveedores</title>
+  <title>Pagos a proveedores — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div data-content>
 
-<div class="navbar">
-  <a href="dashboard.html" class="navbar-brand">TRANSFORMADORES ERP</a>
-  <div class="navbar-menu">
-    <button data-roles="admin,control" onclick="window.location.href='dashboard.html'">Dashboard</button>
-    <button data-roles="admin,control" onclick="window.location.href='ficha.html'">Fichas Tecnicas</button>
-    <button data-roles="admin,control" onclick="window.location.href='oc.html'">Ordenes de Compra</button>
-    <button data-roles="admin,control" onclick="window.location.href='ventas.html'">Ventas</button>
-    <button data-roles="admin,control" onclick="window.location.href='clientes.html'">Clientes</button>
-    <button data-roles="admin,control" onclick="window.location.href='proveedores.html'">Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='facturas-compra.html'">Facturas</button>
-    <button data-roles="admin,control" onclick="window.location.href='pagos-proveedores.html'" class="active">Pagos Proveedores</button>
-    <button data-roles="admin,control" onclick="window.location.href='pagos-clientes.html'">Pagos Clientes</button>
-    <button data-roles="admin,control" onclick="window.location.href='stock.html'">Stock</button>
-    <button data-roles="admin,control" onclick="window.location.href='reportes.html'">Reportes</button>
-    <button data-roles="admin,operario,empleado" onclick="window.location.href='produccion.html'">Produccion</button>
-    <button data-roles="admin" onclick="window.location.href='usuarios.html'">Usuarios</button>
-    <button data-roles="admin" onclick="window.location.href='precios.html'">Precios</button>
+  <div class="page-head">
+    <div>
+      <h1>Pagos y deuda con proveedores</h1>
+      <p>A quién le debemos, qué está vencido y qué cheques entregamos</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-primary" data-tab-ir="pagar">Registrar pago</button>
+    </div>
   </div>
-  <button class="btn btn-danger btn-sm" onclick="logout()">Salir</button>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="aging" id="aging"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="deuda">A quién le debemos</button>
+    <button class="tab" data-tab="pagar">Registrar pago</button>
+    <button class="tab" data-tab="cheques">Cheques entregados</button>
+    <button class="tab" data-tab="historial">Pagos</button>
+  </div>
+
+  <!-- ============ TAB: DEUDA ============ -->
+  <div id="tab-deuda" class="tab-content active">
+    <div class="filters">
+      <div class="field grow">
+        <label for="buscarProveedor">Buscar proveedor</label>
+        <input class="input" type="search" id="buscarProveedor" placeholder="Nombre o CUIT">
+      </div>
+      <div class="field">
+        <label for="ordenDeuda">Ordenar por</label>
+        <select class="select" id="ordenDeuda">
+          <option value="vencido">Vencido</option>
+          <option value="saldo">Saldo total</option>
+          <option value="atraso">Días de atraso</option>
+          <option value="nombre">Nombre</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <label class="check"><input type="checkbox" id="soloVencido"><span>Solo con deuda vencida</span></label>
+        <button class="b b-ghost b-sm" id="btnActualizarDeuda">Actualizar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-3)">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th class="num">Facturas</th>
+                <th class="num">Saldo</th>
+                <th class="num">Vencido</th>
+                <th class="num">Por vencer</th>
+                <th class="num">En valores <button type="button" class="ayuda" data-ayuda="en_valores">?</button></th>
+                <th class="num">Atraso</th>
+                <th class="num">A favor</th>
+              </tr>
+            </thead>
+            <tbody id="tablaDeuda"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: REGISTRAR PAGO ============ -->
+  <div id="tab-pagar" class="tab-content">
+    <div class="panel">
+      <div class="panel-body">
+        <div class="panel-head" style="padding:0 0 var(--space-3);border:none">1 · A quién le pagamos</div>
+        <div class="filters" style="background:none;border:none;padding:0">
+          <div class="field grow">
+            <label for="pagoProveedor">Proveedor *</label>
+            <select class="select" id="pagoProveedor"><option value="">-- Seleccionar --</option></select>
+          </div>
+          <div class="field">
+            <label for="pagoFecha">Fecha del pago *</label>
+            <input class="input" type="date" id="pagoFecha">
+          </div>
+          <div class="field">
+            <label for="pagoReferencia">Referencia</label>
+            <input class="input" type="text" id="pagoReferencia" placeholder="Ej: OP-0012">
+          </div>
+          <div class="field grow">
+            <label for="pagoObs">Observaciones</label>
+            <input class="input" type="text" id="pagoObs" placeholder="Ej: retirado en planta">
+          </div>
+        </div>
+        <div id="pagoResumenProveedor"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        2 · Con qué le pagamos
+        <div class="page-head-actions">
+          <button class="b b-ghost b-sm" id="btnAgregarForma">+ Agregar forma de pago</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="formasPago"></div>
+        <div class="empty" id="avisoCheques" hidden style="padding:var(--space-4);text-align:left">
+          Entregar el cheque ya cancela la factura. El monto queda además contado como
+          <strong>compromiso de caja</strong> hasta que el cheque se debite. Si el proveedor lo
+          rechaza, la deuda vuelve a quedar abierta sola.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        3 · A qué facturas se imputa <button type="button" class="ayuda" data-ayuda="imputar">?</button>
+        <div class="page-head-actions">
+          <button class="b b-ghost b-sm" id="btnImputarAuto">Imputar a las más viejas</button>
+          <button class="b b-ghost b-sm" id="btnLimpiarImputacion">Limpiar</button>
+        </div>
+      </div>
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>Factura</th>
+                <th>Vencimiento</th>
+                <th class="num">Total</th>
+                <th class="num">Saldo</th>
+                <th>Estado</th>
+                <th class="num" style="width:160px">A imputar</th>
+              </tr>
+            </thead>
+            <tbody id="tablaFacturasPago">
+              <tr><td colspan="7">Elegí un proveedor para ver sus facturas pendientes</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="totales-inline">
+          <div><span>Total del pago</span><strong id="totPago">$0</strong></div>
+          <div><span>Imputado a facturas</span><strong id="totImputado">$0</strong></div>
+          <div><span>Queda a cuenta</span><strong id="totACuenta">$0</strong></div>
+        </div>
+        <div style="margin-top:var(--space-4); display:flex; gap:var(--space-3); flex-wrap:wrap;">
+          <button class="b b-primary" id="btnGuardarPago">Registrar pago</button>
+          <button class="b b-ghost" id="btnCancelarPago">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: CHEQUES ENTREGADOS ============ -->
+  <div id="tab-cheques" class="tab-content">
+    <div class="filters">
+      <div class="field">
+        <label for="filtroChequeEstado">Estado</label>
+        <select class="select" id="filtroChequeEstado">
+          <option value="ENTREGADO">Entregados (a debitar)</option>
+          <option value="DEBITADO">Debitados</option>
+          <option value="RECHAZADO">Rechazados</option>
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="filtroChequeTipo">Origen</label>
+        <select class="select" id="filtroChequeTipo">
+          <option value="">Propios y endosados</option>
+          <option value="CHEQUE">Solo propios</option>
+          <option value="CHEQUE_ENDOSADO">Solo endosados de clientes</option>
+        </select>
+      </div>
+      <div class="field grow">
+        <label for="filtroChequeProveedor">Proveedor</label>
+        <select class="select" id="filtroChequeProveedor"><option value="">Todos los proveedores</option></select>
+      </div>
+      <div class="filters-actions">
+        <button class="b b-ghost b-sm" id="btnFiltrarCheques">Filtrar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-3)">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Cheque</th>
+                <th>Banco</th>
+                <th>Proveedor</th>
+                <th>Origen</th>
+                <th class="num">Monto</th>
+                <th>Se debita</th>
+                <th>Imputado a</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaCheques"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: HISTORIAL ============ -->
+  <div id="tab-historial" class="tab-content">
+    <div class="filters">
+      <div class="field grow">
+        <label for="filtroHistProveedor">Proveedor</label>
+        <select class="select" id="filtroHistProveedor"><option value="">Todos los proveedores</option></select>
+      </div>
+      <div class="field">
+        <label for="filtroHistDesde">Desde</label>
+        <input class="input" type="date" id="filtroHistDesde">
+      </div>
+      <div class="field">
+        <label for="filtroHistHasta">Hasta</label>
+        <input class="input" type="date" id="filtroHistHasta">
+      </div>
+      <div class="field">
+        <label for="filtroHistEstado">Estado</label>
+        <select class="select" id="filtroHistEstado">
+          <option value="">Todos</option>
+          <option value="A_CUENTA">Sin imputar (a cuenta)</option>
+          <option value="PARCIAL">Imputados en parte</option>
+          <option value="IMPUTADO">Totalmente imputados</option>
+          <option value="ANULADO">Anulados</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button class="b b-ghost b-sm" id="btnFiltrarHistorial">Filtrar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-3)">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fecha</th>
+                <th>Proveedor</th>
+                <th>Formas</th>
+                <th>Referencia</th>
+                <th class="num">Monto</th>
+                <th class="num">Imputado</th>
+                <th class="num">Sin imputar</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tablaHistorial"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel lateral de detalle. Va DENTRO de [data-content] (ver nota en cobros.html). -->
+  <div class="drawer-scrim" id="drawerBg"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawerTitulo">Proveedor</h2>
+        <div class="meta" id="drawerMeta"></div>
+      </div>
+      <button class="b b-ghost b-sm" id="btnCerrarDrawer">Cerrar</button>
+    </div>
+    <div id="drawerCuerpo"></div>
+  </div>
+
 </div>
 
-<div class="container">
-    <div class="header">
-      <h1 class="header-title">Gestion de Pagos a Proveedores</h1>
-    </div>
-
-    <!-- Alertas de cheques proximos -->
-    <div id="alertas-cheques-proveedor" class="alert alert-warning">
-      <div class="alerta-cheques-row">
-        <div>
-          <strong>Cheques proximos a vencer</strong>
-          <span id="alertasChequesCountProveedor"></span>
-        </div>
-        <button class="btn btn-info btn-sm" onclick="verAlertasChequesProveedor()">Ver detalles</button>
-      </div>
-    </div>
-
-    <!-- Tabs principales -->
-    <div class="tabs">
-      <button class="tab active" onclick="showTabProveedor('nuevo-pago-proveedor', event)">Nuevo Pago</button>
-      <button class="tab" onclick="showTabProveedor('pagos-list-proveedor', event)">Lista de Pagos</button>
-      <button class="tab" onclick="showTabProveedor('ordenes-pago-list', event)">Ordenes de Pago</button>
-      <button class="tab" onclick="showTabProveedor('cheques-list-proveedor', event)">Cheques</button>
-      <button class="tab" onclick="showTabProveedor('estado-cuenta-proveedor', event)">Estado de Cuenta</button>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- TAB NUEVO PAGO -->
-    <!-- ============================================ -->
-    <div id="nuevo-pago-proveedor" class="tab-content active">
-      <div class="form-section">
-        <div class="form-section-title">
-          <span>Datos del Pago</span>
-        </div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Proveedor *</label>
-            <select id="proveedor_id" required>
-              <option value="">-- Seleccionar Proveedor --</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Fecha de Pago *</label>
-            <input type="date" id="fecha_pago" required>
-          </div>
-          <div class="form-group">
-            <label>Observaciones</label>
-            <input type="text" id="observaciones_pago_proveedor" placeholder="Observaciones del pago">
-          </div>
-        </div>
-      </div>
-
-      <!-- Items de pago -->
-      <div class="form-section">
-        <div class="form-section-title">
-          <span>Items de Pago</span>
-          <button type="button" class="btn btn-info btn-sm" onclick="agregarItemPagoProveedor()">+ Agregar Item</button>
-        </div>
-        <div id="pago-items-container-proveedor"></div>
-        <div>
-          <strong>TOTAL PAGO: </strong>
-          <span id="total-pago-proveedor">$0.00</span>
-        </div>
-      </div>
-
-      <!-- Facturas pendientes -->
-      <div class="form-section">
-        <div class="form-section-title">
-          <span>Facturas Pendientes</span>
-        </div>
-        <table id="facturas-pendientes-table-proveedor">
-          <thead>
-            <tr>
-              <th>Seleccionar</th>
-              <th>Factura</th>
-              <th>Tipo</th>
-              <th>Fecha</th>
-              <th>Total</th>
-              <th>Saldo</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody id="facturasPendientesListProveedor">
-            <tr>
-              <td colspan="7">
-                Seleccione un proveedor para ver sus facturas pendientes
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Boton guardar pago -->
-      <div class="pagos-actions">
-        <button class="btn btn-primary" id="btnGuardarPagoProveedor">Guardar Pago</button>
-      </div>
-
-      <!-- Seccion de aplicacion (oculta hasta crear pago) -->
-      <div id="pago-aplicar-section-proveedor" class="hidden-section">
-        <h3>Aplicar Pago #<span id="pago-id-proveedor"></span></h3>
-        <p><strong>Monto disponible:</strong> <span id="monto-pago-proveedor"></span></p>
-
-        <table id="facturas-aplicar-table-proveedor">
-          <thead>
-            <tr>
-              <th>Factura</th>
-              <th>Saldo</th>
-              <th>Monto a aplicar</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="facturasAplicarListProveedor">
-            <tr>
-              <td colspan="4">
-                Seleccione facturas para aplicar
-              </td>
-            </tr>
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colspan="3"><strong>TOTAL A APLICAR:</strong></td>
-              <td><strong id="total-aplicar-proveedor">$0.00</strong></td>
-            </tr>
-          </tfoot>
-        </table>
-
-        <div class="pagos-actions">
-          <button class="btn btn-success" id="btnAplicarPagoProveedor">Aplicar Pago</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- TAB LISTA DE PAGOS -->
-    <!-- ============================================ -->
-    <div id="pagos-list-proveedor" class="tab-content">
-      <h2>Historial de Pagos a Proveedores</h2>
-
-      <div class="pagos-toolbar">
-        <select id="filtroProveedorPagos">
-          <option value="">Todos los proveedores</option>
-        </select>
-        <input type="date" id="filtroDesdePagos">
-        <input type="date" id="filtroHastaPagos">
-        <select id="filtroEstadoPagos">
-          <option value="">Todos los estados</option>
-          <option value="pendiente">Pendiente</option>
-          <option value="parcial">Parcial</option>
-          <option value="aplicado">Aplicado</option>
-        </select>
-        <button class="btn btn-info" onclick="cargarPagosProveedor()">Filtrar</button>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Fecha</th>
-            <th>Proveedor</th>
-            <th>Monto</th>
-            <th>Items</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="pagosListProveedor">
-          <tr>
-            <td colspan="7">
-              <div>...</div>
-              Cargando pagos...
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- TAB ORDENES DE PAGO -->
-    <!-- ============================================ -->
-    <div id="ordenes-pago-list" class="tab-content">
-      <h2>Ordenes de Pago</h2>
-
-      <div class="pagos-toolbar">
-        <select id="filtroProveedorOrdenes">
-          <option value="">Todos los proveedores</option>
-        </select>
-        <input type="date" id="filtroOrdenesDesde">
-        <input type="date" id="filtroOrdenesHasta">
-        <select id="filtroEstadoOrdenes">
-          <option value="">Todos los estados</option>
-          <option value="pendiente">Pendiente</option>
-          <option value="autorizada">Autorizada</option>
-          <option value="pagada">Pagada</option>
-          <option value="cancelada">Cancelada</option>
-        </select>
-        <button class="btn btn-info" onclick="cargarOrdenesPago()">Filtrar</button>
-        <button class="btn btn-success" onclick="nuevaOrdenPago()">+ Nueva Orden</button>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Nro Orden</th>
-            <th>Fecha</th>
-            <th>Proveedor</th>
-            <th>Monto</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="ordenesPagoList">
-          <tr>
-            <td colspan="6">
-              <div>...</div>
-              Cargando ordenes de pago...
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- TAB CHEQUES -->
-    <!-- ============================================ -->
-    <div id="cheques-list-proveedor" class="tab-content">
-      <h2>Gestion de Cheques Emitidos</h2>
-
-      <div class="pagos-toolbar">
-        <select id="filtroChequeProveedor">
-          <option value="">Todos los proveedores</option>
-        </select>
-        <select id="filtroChequeEstadoProveedor">
-          <option value="">Todos los estados</option>
-          <option value="pendiente">Pendiente</option>
-          <option value="depositado">Depositado</option>
-          <option value="acreditado">Acreditado</option>
-          <option value="rechazado">Rechazado</option>
-        </select>
-        <input type="date" id="filtroChequeDesdeProveedor">
-        <input type="date" id="filtroChequeHastaProveedor">
-        <button class="btn btn-info" onclick="cargarChequesProveedor()">Filtrar</button>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Cheque Nro</th>
-            <th>Banco</th>
-            <th>Proveedor</th>
-            <th>Monto</th>
-            <th>Emision</th>
-            <th>Cobro</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="chequesListProveedor">
-          <tr>
-            <td colspan="8">
-              <div>...</div>
-              Cargando cheques...
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- TAB ESTADO DE CUENTA -->
-    <!-- ============================================ -->
-    <div id="estado-cuenta-proveedor" class="tab-content">
-      <h2>Estado de Cuenta por Proveedor</h2>
-
-      <div class="pagos-toolbar">
-        <select id="filtroEstadoCuentaProveedor">
-          <option value="">Seleccionar proveedor</option>
-        </select>
-        <input type="date" id="filtroEstadoCuentaDesde">
-        <input type="date" id="filtroEstadoCuentaHasta">
-        <button class="btn btn-info" onclick="cargarEstadoCuenta()">Generar Reporte</button>
-        <button class="btn btn-primary" onclick="imprimirEstadoCuenta()">Imprimir</button>
-      </div>
-
-      <div id="estado-cuenta-detalle">
-        <div class="estado-cuenta-header">
-          <h3>Estado de Cuenta</h3>
-          <div id="estado-cuenta-info"></div>
-        </div>
-        
-        <div class="estado-cuenta-resumen">
-          <div class="resumen-card">
-            <div class="resumen-title">Saldo Anterior</div>
-            <div class="resumen-value" id="saldo-anterior">$0.00</div>
-          </div>
-          <div class="resumen-card">
-            <div class="resumen-title">Compras</div>
-            <div class="resumen-value" id="total-compras">$0.00</div>
-          </div>
-          <div class="resumen-card">
-            <div class="resumen-title">Pagos</div>
-            <div class="resumen-value" id="total-pagos">$0.00</div>
-          </div>
-          <div class="resumen-card">
-            <div class="resumen-title">Saldo Actual</div>
-            <div class="resumen-value" id="saldo-actual">$0.00</div>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Documento</th>
-              <th>Descripcion</th>
-              <th>Debe</th>
-              <th>Haber</th>
-              <th>Saldo</th>
-            </tr>
-          </thead>
-          <tbody id="estadoCuentaDetalle">
-            <tr>
-              <td colspan="6">
-                Seleccione un proveedor y genere el reporte
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- MODALES -->
-    <!-- ============================================ -->
-
-    <!-- Modal Detalle Pago Proveedor -->
-    <div id="pagoModalProveedor" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Detalle del Pago</h3>
-          <span class="close" onclick="cerrarModal('pagoModalProveedor')">&times;</span>
-        </div>
-        <div id="pagoDetalleProveedor"></div>
-      </div>
-    </div>
-
-    <!-- Modal Detalle Cheque -->
-    <div id="chequeModalProveedor" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Gestion de Cheque</h3>
-          <span class="close" onclick="cerrarModal('chequeModalProveedor')">&times;</span>
-        </div>
-        <div id="chequeDetalleProveedor"></div>
-      </div>
-    </div>
-
-    <!-- Modal Nueva Orden de Pago -->
-    <div id="ordenPagoModal" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Nueva Orden de Pago</h3>
-          <span class="close" onclick="cerrarModal('ordenPagoModal')">&times;</span>
-        </div>
-        <div id="ordenPagoDetalle"></div>
-      </div>
-    </div>
-
-    <!-- Alerta global -->
-    <div id="globalAlertProveedor" class="alert"></div>
-  </div>
-  <script src="js/api.js"></script>
-  <script src="js/pagos-proveedores.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/dashboard.js"></script>
-  <script src="js/roleGuard.js"></script>
-  <script>
-    verificarRolPagina(['admin', 'control']);
-  </script>
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>Shell.montar({ titulo: 'Pagos a proveedores', sub: 'Deuda con proveedores' });</script>
+<script src="js/roleGuard.js"></script>
+<script src="js/pagos-proveedores.js"></script>
+<script>verificarRolPagina(['admin']);</script>
 </body>
 </html>

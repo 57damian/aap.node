@@ -1,0 +1,680 @@
+/* =====================================================================
+ * app.css — CAPA DE APLICACIÓN (shell + componentes)
+ * ---------------------------------------------------------------------
+ * Va SIEMPRE después de css/styles.css. styles.css aporta los tokens
+ * (--primary-*, --gray-*, --space-*, --radius-*). Este archivo aporta
+ * el esqueleto (sidebar + topbar) y la librería de componentes única.
+ *
+ * Regla: ninguna pantalla vuelve a declarar <style> propio. Si algo no
+ * está acá, se agrega ACÁ, no en la página.
+ * ===================================================================== */
+
+:root {
+  --sidebar-w: 236px;
+  --sidebar-w-collapsed: 56px;
+  --topbar-h: 52px;
+
+  /* Semánticos de dinero: se usan en toda la app, no inventar otros */
+  --money-debe: var(--danger-500);
+  --money-haber: var(--success-500);
+  --money-neutro: var(--gray-700);
+}
+
+/* Densidad: este ERP lo usa una sola persona, todo el día. Menos aire
+   que un sitio público, más filas visibles sin scrollear. */
+html, body { font-size: 14px; }
+body { padding: 0; background: var(--gray-100); }
+
+/* =====================================================================
+ * 1. SHELL
+ * ===================================================================== */
+
+.app { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: var(--gray-900);
+  color: var(--gray-300);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: width .15s ease, flex-basis .15s ease;
+}
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--gray-700); border-radius: 3px; }
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: var(--space-2);
+  height: var(--topbar-h);
+  padding: 0 var(--space-4);
+  color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .04em;
+  text-decoration: none; white-space: nowrap;
+  border-bottom: 1px solid var(--gray-800);
+}
+.sidebar-brand svg { flex: 0 0 18px; width: 18px; height: 18px; }
+
+.sidebar-group { padding: var(--space-3) 0 var(--space-1); }
+.sidebar-group-label {
+  padding: 0 var(--space-4) var(--space-2);
+  font-size: 10px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--gray-500);
+  white-space: nowrap;
+}
+
+.sidebar-link {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 7px var(--space-4);
+  color: var(--gray-300); text-decoration: none;
+  font-size: 13px; line-height: 1.3;
+  border-left: 2px solid transparent;
+  white-space: nowrap;
+}
+.sidebar-link svg { flex: 0 0 16px; width: 16px; height: 16px; opacity: .75; }
+.sidebar-link:hover { background: var(--gray-800); color: #fff; }
+.sidebar-link:hover svg { opacity: 1; }
+.sidebar-link.active {
+  background: var(--gray-800); color: #fff; font-weight: 600;
+  border-left-color: var(--primary-500);
+}
+.sidebar-link.active svg { opacity: 1; color: var(--primary-500); }
+
+/* Contador de pendientes al costado del link (ej. alertas) */
+.sidebar-badge {
+  margin-left: auto;
+  background: var(--danger-500); color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 9px;
+}
+
+.sidebar-footer { margin-top: auto; border-top: 1px solid var(--gray-800); padding: var(--space-2) 0; }
+
+/* Colapsado: solo íconos. El estado se guarda en localStorage. */
+.app.sidebar-collapsed .sidebar { width: var(--sidebar-w-collapsed); flex-basis: var(--sidebar-w-collapsed); }
+.app.sidebar-collapsed .sidebar-group-label,
+.app.sidebar-collapsed .sidebar-link span,
+.app.sidebar-collapsed .sidebar-brand span,
+.app.sidebar-collapsed .sidebar-badge { display: none; }
+.app.sidebar-collapsed .sidebar-link { justify-content: center; padding-inline: 0; }
+.app.sidebar-collapsed .sidebar-group { border-top: 1px solid var(--gray-800); padding-top: var(--space-2); }
+
+.main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+/* Topbar: reemplaza al banner con degradado. 52px en vez de ~200px. */
+.topbar {
+  height: var(--topbar-h);
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 0 var(--space-5);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky; top: 0; z-index: 30;
+}
+.topbar-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.topbar-sub { font-size: 12px; color: var(--text-muted); }
+.topbar-spacer { flex: 1 1 auto; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-md);
+  color: var(--gray-600); cursor: pointer;
+}
+.icon-btn:hover { background: var(--gray-100); color: var(--gray-900); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* Disparador del buscador global (Ctrl+K) */
+.search-trigger {
+  display: flex; align-items: center; gap: var(--space-2);
+  min-width: 220px; padding: 5px var(--space-3);
+  background: var(--gray-50); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); color: var(--text-muted);
+  font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.search-trigger svg { width: 14px; height: 14px; flex: 0 0 14px; }
+.search-trigger:hover { background: var(--gray-100); }
+.search-trigger kbd {
+  margin-left: auto; font-family: var(--font-mono); font-size: 10px;
+  background: var(--bg-primary); border: 1px solid var(--gray-300);
+  border-bottom-width: 2px; border-radius: 4px; padding: 1px 4px; color: var(--gray-600);
+}
+
+.content { padding: var(--space-5); flex: 1 1 auto; }
+.content > * + * { margin-top: var(--space-4); }
+
+/* =====================================================================
+ * 2. PAGE HEADER (dentro del contenido, sin degradado)
+ * ===================================================================== */
+.page-head { display: flex; align-items: flex-start; gap: var(--space-4); }
+.page-head h1 { font-size: 19px; font-weight: 700; color: var(--text-primary); }
+.page-head p { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.page-head-actions { margin-left: auto; display: flex; gap: var(--space-2); flex-shrink: 0; }
+
+/* =====================================================================
+ * 3. CARD / SECCIÓN
+ * ===================================================================== */
+.panel {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+.panel-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+}
+.panel-head .page-head-actions { margin-left: auto; }
+.panel-body { padding: var(--space-4); }
+.panel-body.flush { padding: 0; }
+
+/* =====================================================================
+ * 4. KPI TILES — el número manda, la etiqueta arriba y chica
+ * ===================================================================== */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); }
+.kpi {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--gray-300);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+}
+.kpi-k {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); display: flex; align-items: center; gap: 4px;
+}
+.kpi-v {
+  font-size: 22px; font-weight: 700; color: var(--text-primary);
+  font-variant-numeric: tabular-nums; margin-top: 2px; line-height: 1.2;
+}
+.kpi-sub { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.kpi.is-danger  { border-left-color: var(--danger-500); }
+.kpi.is-warning { border-left-color: var(--warning-500); }
+.kpi.is-success { border-left-color: var(--success-500); }
+.kpi.is-info    { border-left-color: var(--info-500); }
+.kpi.is-danger .kpi-v { color: var(--danger-600); }
+
+/* =====================================================================
+ * 5. TABS — UN solo estilo en toda la app (subrayado)
+ * ===================================================================== */
+/* Se usa .tabs .tab (y no solo .tab) para ganarle por especificidad a la
+   versión vieja de styles.css, que pintaba la pestaña activa como una
+   píldora igual a los botones del menú. Cuando styles.css se limpie
+   (Fase 4) se puede volver a .tab a secas. */
+.tabs {
+  display: flex; gap: var(--space-1);
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+}
+.tabs .tab {
+  padding: var(--space-2) var(--space-4);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; box-shadow: none;
+  font: inherit; font-size: 13px; font-weight: 500;
+  color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+}
+.tabs .tab:hover { background: none; color: var(--text-primary); }
+.tabs .tab.active {
+  background: none; color: var(--primary-600);
+  border-bottom-color: var(--primary-600); font-weight: 600;
+}
+.tab-content { display: none; padding-top: var(--space-4); }
+.tab-content.active { display: block; }
+
+/* =====================================================================
+ * 6. BARRA DE FILTROS — una sola fila, acciones pegadas a los campos
+ * ===================================================================== */
+.filters {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--gray-50);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.field > label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.field.grow { flex: 1 1 200px; }
+.input, .select {
+  height: 32px; padding: 0 var(--space-2);
+  border: 1px solid var(--gray-300); border-radius: var(--radius-md);
+  background: var(--bg-primary); color: var(--text-primary);
+  font: inherit; font-size: 13px; min-width: 0;
+}
+.input:focus, .select:focus { outline: none; border-color: var(--primary-500); box-shadow: var(--focus-ring); }
+/* nowrap: si no, "Solo con deuda vencida" se parte en 3 renglones y el
+   checkbox queda flotando lejos de su texto. */
+/* OJO: .check NO es flex a propósito.
+   Con `display:flex`, el texto suelto del <label> es un ítem anónimo de
+   flexbox: no se lo puede targetear con CSS, toma `flex:0 1 auto` y se
+   encoge hasta desbordar la caja, montándose encima de los botones.
+   Como inline-block el ancho sale del contenido y no hay forma de romperlo,
+   escriba como escriba el HTML quien lo use. */
+/* El texto del checkbox VA SIEMPRE dentro de un <span>:
+   <label class="check"><input type="checkbox"><span>Solo vencidas</span></label>
+   Si se deja suelto, es un ítem anónimo de flexbox — no se lo puede
+   targetear, el navegador le calcula el ancho como si el texto se
+   partiera en varias líneas, y termina dibujándose encima de los botones. */
+.check {
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 0 auto; height: 32px;
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+}
+/* CAUSA RAÍZ de los checkboxes rotos en toda la app:
+   styles.css:422 declara `input, select, textarea { width: 100% }` sin
+   excluir checkbox ni radio. El cuadradito se estira hasta ocupar toda la
+   caja y empuja al texto fuera del label, encima de lo que venga al lado.
+   Afecta a cualquier checkbox/radio de cualquier pantalla, no solo a este.
+   Se corrige acá para no tocar styles.css todavía; al limpiarlo (Fase 4)
+   la regla de origen se arregla en su lugar y esta se puede borrar. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; min-width: 0; padding: 0;
+}
+.check input { margin: 0; flex: 0 0 auto; }
+.check span { white-space: nowrap; flex: 0 0 auto; }
+
+/* Las acciones (checkboxes + botones) van juntas al final de la barra.
+   Van agrupadas en su propio contenedor a propósito: como ítem suelto, el
+   navegador le asigna a cada uno el espacio que sobra en vez de su ancho
+   natural, y los textos largos se montan encima de los botones. */
+.filters-actions {
+  margin-left: auto;
+  display: flex; align-items: center; gap: var(--space-2);
+  flex: 0 0 auto; width: max-content;
+}
+@media (max-width: 860px) { .filters-actions { margin-left: 0; flex-wrap: wrap; } }
+
+/* =====================================================================
+ * 7. BOTONES — 3 variantes y listo
+ * ===================================================================== */
+.b {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 var(--space-3);
+  border-radius: var(--radius-md); border: 1px solid transparent;
+  font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+}
+.b svg { width: 14px; height: 14px; }
+.b-primary { background: var(--primary-600); color: #fff; }
+.b-primary:hover { background: var(--primary-700); }
+.b-ghost { background: var(--bg-primary); color: var(--text-primary); border-color: var(--gray-300); }
+.b-ghost:hover { background: var(--gray-50); }
+.b-danger { background: var(--bg-primary); color: var(--danger-600); border-color: var(--danger-500); }
+.b-danger:hover { background: var(--danger-500); color: #fff; }
+.b-sm { height: 26px; padding: 0 var(--space-2); font-size: 12px; }
+.b:disabled { opacity: .5; cursor: not-allowed; }
+
+/* =====================================================================
+ * 8. TABLA — la única de la app
+ * ===================================================================== */
+.table-wrap { overflow-x: auto; border-radius: var(--radius-lg); }
+/* min-width: sin esto, en el celular las columnas se comprimen hasta que
+   cada celda cae en su propio renglón y la tabla se vuelve ilegible.
+   Con min-width la tabla mantiene su forma y el contenedor scrollea. */
+table.t { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13px; }
+table.t.narrow { min-width: 480px; }
+table.t thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--gray-50);
+  padding: var(--space-2) var(--space-3);
+  text-align: left; font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color); white-space: nowrap;
+}
+table.t tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--text-primary); vertical-align: middle;
+}
+table.t tbody tr:hover { background: var(--primary-50); }
+table.t tbody tr.clickable { cursor: pointer; }
+/* Todo lo que sea plata: alineado a la derecha y con cifras de ancho fijo,
+   para poder comparar columnas de un vistazo. */
+table.t .num, table.t th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.t .neg { color: var(--money-debe); }
+table.t .pos { color: var(--money-haber); }
+table.t .muted { color: var(--text-muted); }
+
+/* =====================================================================
+ * 9. BADGES DE ESTADO — un color por significado, no por pantalla
+ * ===================================================================== */
+.pill {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em; white-space: nowrap;
+}
+.pill-ok      { background: #dcfce7; color: #166534; }  /* PAGADA, ACREDITADO, COBRADA */
+.pill-warn    { background: #fef3c7; color: #92400e; }  /* PARCIAL, EN_GESTION, EN_CARTERA */
+.pill-danger  { background: #fee2e2; color: #991b1b; }  /* VENCIDA, RECHAZADO */
+.pill-info    { background: #dbeafe; color: #1e40af; }  /* PENDIENTE, DEPOSITADO, ENTREGADO */
+.pill-neutral { background: var(--gray-100); color: var(--gray-700); } /* ANULADO */
+
+/* =====================================================================
+ * 10. ESTADO VACÍO
+ * ===================================================================== */
+.empty { padding: var(--space-10) var(--space-5); text-align: center; }
+.empty svg { width: 28px; height: 28px; color: var(--gray-400); margin-bottom: var(--space-2); }
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.empty-text { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.empty .b { margin-top: var(--space-3); }
+
+/* =====================================================================
+ * 11. AYUDA CONTEXTUAL — el ícono (?) y su globo
+ * ===================================================================== */
+.ayuda {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; flex: 0 0 14px;
+  border-radius: 50%; border: 1px solid var(--gray-400);
+  background: none; color: var(--gray-500);
+  font-size: 9px; font-weight: 700; font-family: inherit;
+  cursor: help; padding: 0; vertical-align: middle;
+}
+.ayuda:hover, .ayuda:focus-visible { background: var(--primary-600); border-color: var(--primary-600); color: #fff; outline: none; }
+
+.ayuda-pop {
+  position: fixed; z-index: 100; max-width: 300px;
+  background: var(--gray-900); color: var(--gray-100);
+  padding: var(--space-3); border-radius: var(--radius-md);
+  font-size: 12px; line-height: 1.5; box-shadow: var(--shadow-lg);
+}
+.ayuda-pop b { color: #fff; display: block; margin-bottom: 3px; font-size: 12px; }
+.ayuda-pop em { color: var(--gray-400); font-style: normal; display: block; margin-top: var(--space-2); font-size: 11px; }
+
+/* =====================================================================
+ * 12. BUSCADOR GLOBAL (Ctrl+K)
+ * ===================================================================== */
+.cmdk-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(17, 24, 39, .45);
+  display: flex; justify-content: center; padding-top: 12vh;
+}
+.cmdk {
+  width: min(520px, 92vw); align-self: flex-start;
+  background: var(--bg-primary); border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl); overflow: hidden;
+}
+.cmdk input {
+  width: 100%; border: none; border-bottom: 1px solid var(--border-color);
+  padding: var(--space-4); font: inherit; font-size: 15px; color: var(--text-primary);
+}
+.cmdk input:focus { outline: none; }
+.cmdk-list { max-height: 320px; overflow-y: auto; padding: var(--space-2); }
+.cmdk-item {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  font-size: 13px; color: var(--text-primary); cursor: pointer;
+}
+.cmdk-item svg { width: 15px; height: 15px; color: var(--gray-500); }
+.cmdk-item .grp { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.cmdk-item[aria-selected="true"] { background: var(--primary-50); }
+.cmdk-empty { padding: var(--space-6); text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* =====================================================================
+ * 13. TOASTS
+ * ===================================================================== */
+.toasts { position: fixed; top: var(--space-4); right: var(--space-4); z-index: 300; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  min-width: 260px; max-width: 380px;
+  padding: var(--space-3); border-radius: var(--radius-md);
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-left: 3px solid var(--gray-400);
+  box-shadow: var(--shadow-lg); font-size: 13px;
+}
+.toast.ok    { border-left-color: var(--success-500); }
+.toast.err   { border-left-color: var(--danger-500); }
+.toast.warn  { border-left-color: var(--warning-500); }
+.toast b { display: block; margin-bottom: 2px; }
+.toast .det { color: var(--text-muted); font-size: 12px; }
+
+/* =====================================================================
+ * 14. MÓVIL — el sidebar se esconde en un cajón
+ * ===================================================================== */
+.sidebar-scrim { display: none; }
+@media (max-width: 860px) {
+  .sidebar {
+    position: fixed; left: 0; top: 0; z-index: 60;
+    transform: translateX(-100%); transition: transform .18s ease;
+    width: var(--sidebar-w); flex-basis: var(--sidebar-w);
+  }
+  .app.nav-open .sidebar { transform: none; }
+  .app.nav-open .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 50; background: rgba(17,24,39,.5); }
+  .content { padding: var(--space-3); }
+  .search-trigger { min-width: 0; }
+  .search-trigger span, .search-trigger kbd { display: none; }
+  .topbar-sub { display: none; }
+
+  /* El título y los botones no entran en la misma fila: apilar, si no el
+     título se parte en 3 renglones contra los botones.
+     OJO: esto es solo para .page-head (el título grande de la pantalla).
+     Cuando .page-head-actions se reutiliza dentro de .panel-head (un
+     "Ver todas" al lado de un título de panel, como en el dashboard) el
+     panel-head sigue siendo una fila angosta: forzar acá width:100% lo
+     desbordaba ~37px en cualquier pantalla de 390px que tuviera un panel
+     con acción en el header. Por eso el selector va scopeado. */
+  .page-head { flex-direction: column; gap: var(--space-3); }
+  .page-head > .page-head-actions { margin-left: 0; width: 100%; }
+  .page-head > .page-head-actions .b { flex: 1 1 auto; }
+
+  /* TABLAS EN TELÉFONO — cada fila pasa a ser una tarjeta.
+     Una tabla de 9 columnas de plata con scroll horizontal es ilegible:
+     se ve una columna por vez y se pierde de qué fila es cada número.
+     Cada <td> necesita data-label con el nombre de su columna:
+        <td data-label="Saldo" class="num">$ 1.804.300,00</td>
+     Las celdas sin contenido útil se marcan con class="solo-escritorio". */
+  .table-wrap { overflow-x: visible; }
+  table.t { min-width: 0; display: block; }
+  table.t thead { display: none; }
+  table.t tbody, table.t tbody tr { display: block; }
+  table.t tbody tr {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-2);
+    background: var(--bg-primary);
+  }
+  table.t tbody tr:hover { background: var(--bg-primary); }
+  table.t tbody td {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+    padding: 3px 0; border: none; text-align: right;
+  }
+  table.t tbody td::before {
+    content: attr(data-label);
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-muted);
+    text-align: left; flex: 0 0 auto;
+  }
+  /* La primera celda hace de título de la tarjeta. */
+  table.t tbody td:first-child {
+    justify-content: flex-start; text-align: left;
+    font-size: 14px; font-weight: 700;
+    padding-bottom: var(--space-2); margin-bottom: var(--space-1);
+    border-bottom: 1px solid var(--gray-100);
+  }
+  table.t tbody td:first-child::before { display: none; }
+  table.t tbody td.solo-escritorio { display: none; }
+  table.t .num { text-align: right; }
+}
+@media (min-width: 861px) { .nav-toggle { display: none; } }
+
+/* =====================================================================
+ * 15. BARRA DE ANTIGÜEDAD DE DEUDA — usada en Cobros y Pagos a proveedores
+ * ===================================================================== */
+.aging {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 2px;
+  border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border-color);
+}
+.aging > div { padding: var(--space-3) var(--space-4); background: var(--bg-primary); }
+.aging .t { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); font-weight: 600; }
+.aging .v { font-size: 16px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.aging .b0 { box-shadow: inset 0 -3px 0 var(--gray-300); }
+.aging .b1 { box-shadow: inset 0 -3px 0 var(--warning-500); }
+.aging .b2 { box-shadow: inset 0 -3px 0 #fd7e14; }
+.aging .b3 { box-shadow: inset 0 -3px 0 var(--danger-500); }
+.aging .b4 { box-shadow: inset 0 -3px 0 #7f1d1d; }
+@media (max-width: 860px) { .aging { grid-template-columns: repeat(2, 1fr); } }
+
+/* =====================================================================
+ * 16. PANEL LATERAL DE DETALLE (ficha de cliente/proveedor)
+ * ===================================================================== */
+.drawer-scrim {
+  position: fixed; inset: 0; background: rgba(17,24,39,.45); z-index: 400;
+  display: none;
+}
+.drawer-scrim.open { display: block; }
+.drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: min(940px, 96vw);
+  background: var(--gray-100); box-shadow: var(--shadow-xl); z-index: 401;
+  transform: translateX(100%); transition: transform .18s ease;
+  overflow-y: auto; padding: var(--space-5);
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); margin-bottom: var(--space-4); }
+.drawer-head h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.drawer-head .meta { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+.drawer > * + * { margin-top: var(--space-4); }
+@media (max-width: 640px) { .drawer { width: 100vw; } }
+
+/* =====================================================================
+ * 17. FILA DE FORMA DE PAGO/COBRO — usada al registrar cobros y pagos
+ * ===================================================================== */
+.forma {
+  display: grid; grid-template-columns: 150px 150px 1fr 34px; gap: var(--space-3); align-items: start;
+  padding: var(--space-3); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.forma + .forma { margin-top: var(--space-2); }
+.forma .detalle { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-2); }
+.forma .campo { display: flex; flex-direction: column; gap: 2px; }
+.forma .campo span { font-size: 10px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+.forma-quitar {
+  width: 32px; height: 32px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-color); background: var(--bg-primary);
+  color: var(--danger-600); font-weight: 700; cursor: pointer;
+}
+@media (max-width: 640px) { .forma { grid-template-columns: 1fr; } }
+
+/* =====================================================================
+ * 18. TOTALES EN LÍNEA — resumen al pie de un formulario de cobro/pago
+ * ===================================================================== */
+.totales-inline {
+  display: flex; gap: var(--space-6); flex-wrap: wrap;
+  padding: var(--space-4); background: var(--gray-50); border-radius: var(--radius-md);
+}
+.totales-inline > div span { display: block; font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+.totales-inline > div strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+
+/* =====================================================================
+ * 19. AVISO EN LÍNEA — nota fija dentro del flujo de la página (no un
+ * toast: para cosas como "hay facturas con saldo negativo" que el
+ * usuario tiene que ver mientras completa el formulario, no un mensaje
+ * que aparece y se va solo).
+ * ===================================================================== */
+.notice { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font-size: 13px; line-height: 1.5; }
+.notice-info { background: #e0f2fe; color: #075985; }
+.notice-warn { background: #fef3c7; color: #92400e; }
+.notice-ok   { background: #dcfce7; color: #166534; }
+.notice-err  { background: #fee2e2; color: #991b1b; }
+
+/* =====================================================================
+ * 20. GRILLA DE FORMULARIO — evita los formularios de 2-3 campos
+ * estirados a 1200px de ancho (F3.5 del plan; ver oc.html).
+ * ===================================================================== */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); max-width: 900px; }
+.form-grid .field { width: 100%; }
+.form-grid .ancho-total { grid-column: 1 / -1; }
+
+/* =====================================================================
+ * 21. TABLA CON CONTROLES DE FORMULARIO EN CADA CELDA (facturas-compra.html,
+ * F1.6). Dos problemas juntos, no alcanza con arreglar solo uno:
+ * - .input/.select no traen ancho propio (lo heredan del flex de .field,
+ *   que dentro de un <td> no existe), así que se encogen a su contenido.
+ * - un <select>/<input> con width:100% en layout de tabla "auto" no sirve:
+ *   el ancho de columna se calcula ANTES a partir del contenido mínimo,
+ *   ignorando porcentajes en los hijos de la celda. Por eso hace falta
+ *   table-layout:fixed + un ancho explícito por columna (en el <th>), y
+ *   recién ahí el width:100% del control llena la celda de verdad.
+ * ===================================================================== */
+.table-items-editable { table-layout: fixed; }
+.table-items-editable .input,
+.table-items-editable .select { width: 100%; }
+
+/* styles.css (legado) mete cualquier <form> dentro de una pestaña en una
+   grilla de 12 columnas (pensada para .form-group de 30 años atrás). Eso
+   rompe cualquier <form> migrado al shell nuevo, porque sus hijos directos
+   (los .panel) terminan aplastados en columnas angostas en vez de apilarse.
+   OJO: [data-content] es solo el envoltorio ORIGINAL del HTML de la página;
+   Shell.montar() se queda con su innerHTML y lo vuelve a insertar dentro de
+   <main class="content">, así que ese atributo ya no existe en el DOM
+   después de montar el shell — hay que apuntar a .content, no a
+   [data-content]. Con más especificidad que la regla legada (clase extra),
+   este <form> vuelve a fluir normal y el maquetado interno lo hace
+   .form-grid. */
+.content .tab-content form:not(.login-form) { display: block; }
+
+/* =====================================================================
+ * VENTANAS (<dialog> nativo)
+ * ---------------------------------------------------------------------
+ * Reemplazan a los modales de Bootstrap. Se usan con showModal(), que las
+ * pone en la capa superior del navegador: no hacen falta z-index ni un
+ * backdrop hecho a mano, y Escape las cierra solo.
+ *
+ * Van con class="panel", así heredan fondo, borde y radio del resto de los
+ * paneles; acá se ajusta lo propio de una ventana: centrado, ancho máximo
+ * cómodo de leer y scroll interno si el contenido es largo.
+ * ===================================================================== */
+dialog.panel {
+  margin: auto;                 /* centrada, vertical y horizontal */
+  width: min(560px, calc(100% - 32px));
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid var(--linea, #e5e7eb);
+  padding: 0;
+}
+
+dialog.panel::backdrop {
+  background: rgba(15, 23, 42, .45);
+}
+
+/* Las acciones de una ventana van abajo a la derecha y con aire. */
+dialog.panel .page-head-actions {
+  margin-top: var(--space-5, 20px);
+  justify-content: flex-end;
+}
+
+/* =====================================================================
+ * FORMULARIO CON VISTA PREVIA (ficha.html)
+ * ---------------------------------------------------------------------
+ * Dos columnas en escritorio (formulario + vista previa/foto), una sola
+ * columna en pantallas angostas. Reemplaza los ~150 líneas de <style>
+ * propias que tenía la página.
+ * ===================================================================== */
+.layout-con-preview {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: var(--space-5, 20px);
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .layout-con-preview { grid-template-columns: 1fr; }
+}
+
+/* Un <input> con la unidad pegada al lado (V, A, mm, kg). */
+.field-unit { display: flex; align-items: stretch; }
+.field-unit .input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.field-unit span {
+  display: flex; align-items: center; padding: 0 var(--space-3, 12px);
+  background: var(--gray-50, #f8fafc); border: 1px solid var(--linea, #e5e7eb);
+  border-left: none; border-top-right-radius: var(--radius, 8px); border-bottom-right-radius: var(--radius, 8px);
+  color: var(--muted, #64748b); font-size: .85rem; white-space: nowrap;
+}
+
+/* Zona de arrastrar/tocar para subir una foto. */
+.foto-upload {
+  border: 2px dashed var(--linea, #e5e7eb); border-radius: var(--radius, 8px);
+  padding: var(--space-5, 20px); text-align: center; cursor: pointer;
+  color: var(--muted, #64748b);
+}
+.foto-upload:hover { border-color: var(--primary-500, #667eea); }
+.foto-preview { display: none; width: 100%; border-radius: var(--radius, 8px); margin-top: var(--space-3, 12px); }
+.foto-preview.show { display: block; }

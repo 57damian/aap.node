@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 
 router.use(verificarToken);
 const upload = require('../middlewares/uploadModelo'); // reutilizamos multer
@@ -9,7 +9,7 @@ const upload = require('../middlewares/uploadModelo'); // reutilizamos multer
 
 router.get(
   '/',
-  authorize(['admin', 'control']),
+  soloAdmin,
   async (req, res) => {
     try {
       const result = await pool.query(
@@ -29,7 +29,7 @@ router.get(
 
 router.post(
   '/',
-  authorize(['admin', 'control']),
+  soloAdmin,
   upload.single('foto_oc'),
   async (req, res) => {
     const { cliente_id, numero_oc, fecha_oc, observaciones } = req.body;
@@ -61,9 +61,16 @@ router.post(
 
 router.post(
   '/:id/items',
-  authorize(['admin', 'control']),
+  soloAdmin,
   async (req, res) => {
     const { ficha_id, cantidad_pedida } = req.body;
+
+    // Antes no se validaba nada acá: un ficha_id vacío o una cantidad no
+    // numérica llegaban directo al INSERT y salían como 500 (hallazgo C4).
+    const cantidad = parseInt(cantidad_pedida, 10);
+    if (!ficha_id || !Number.isInteger(cantidad) || cantidad <= 0) {
+      return res.status(400).json({ error: 'Falta el modelo o la cantidad no es un entero positivo' });
+    }
 
     try {
       const result = await pool.query(
@@ -74,7 +81,7 @@ router.post(
           DO UPDATE SET
           cantidad_pedida = orden_compra_items.cantidad_pedida + EXCLUDED.cantidad_pedida
           RETURNING *;`,
-        [req.params.id, ficha_id, cantidad_pedida]
+        [req.params.id, ficha_id, cantidad]
       );
 
       res.json(result.rows[0]);
@@ -84,9 +91,114 @@ router.post(
   }
 );
 
+// Trae un item de la OC con lo ya entregado de ese modelo, bloqueando la
+// fila para que no cambie mientras se valida. Devuelve null si el item no
+// es de esa OC. Lo usan PUT y DELETE de abajo.
+async function itemConEntregado(client, ocId, itemId) {
+  const r = await client.query(
+    `SELECT oci.id, oci.ficha_id, oci.cantidad_pedida, oc.estado,
+       (SELECT COALESCE(SUM(vi.cantidad), 0)
+        FROM ventas v
+        JOIN venta_items vi ON vi.venta_id = v.id
+        WHERE v.orden_compra_id = oci.orden_compra_id
+          AND vi.ficha_id = oci.ficha_id) AS entregado
+     FROM orden_compra_items oci
+     JOIN ordenes_compra oc ON oc.id = oci.orden_compra_id
+     WHERE oci.id = $1 AND oci.orden_compra_id = $2
+     FOR UPDATE OF oci`,
+    [itemId, ocId]
+  );
+  return r.rows[0] || null;
+}
+
+// Corregir la cantidad de un item mal cargado. Fija la cantidad (el POST
+// de arriba, en cambio, suma). No se puede bajar por debajo de lo que ya
+// se entregó de ese modelo.
+router.put(
+  '/:id/items/:itemId',
+  soloAdmin,
+  async (req, res) => {
+    const cantidad = parseInt(req.body.cantidad_pedida, 10);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      return res.status(400).json({ error: 'La cantidad tiene que ser un entero positivo' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const item = await itemConEntregado(client, req.params.id, req.params.itemId);
+
+      if (!item) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Item no encontrado en esta orden' });
+      }
+      if (item.estado === 'cerrada') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'La orden está cerrada, no se puede modificar' });
+      }
+      if (cantidad < Number(item.entregado)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya se entregaron ${item.entregado} unidades de este modelo: la cantidad no puede ser menor`
+        });
+      }
+
+      const result = await client.query(
+        `UPDATE orden_compra_items SET cantidad_pedida = $1 WHERE id = $2 RETURNING *`,
+        [cantidad, item.id]
+      );
+      await client.query('COMMIT');
+      res.json(result.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// Borrar un item mal cargado. Solo si todavía no se entregó nada de ese
+// modelo: si ya hay remitos, se puede bajar la cantidad hasta lo entregado.
+router.delete(
+  '/:id/items/:itemId',
+  soloAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const item = await itemConEntregado(client, req.params.id, req.params.itemId);
+
+      if (!item) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Item no encontrado en esta orden' });
+      }
+      if (item.estado === 'cerrada') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'La orden está cerrada, no se puede modificar' });
+      }
+      if (Number(item.entregado) > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya se entregaron ${item.entregado} unidades de este modelo: no se puede borrar, solo bajar la cantidad hasta lo entregado`
+        });
+      }
+
+      await client.query(`DELETE FROM orden_compra_items WHERE id = $1`, [item.id]);
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.get(
   '/:id/estado',
-  authorize(['admin', 'control']),
+  soloAdmin,
   async (req, res) => {
     try {
       const result = await pool.query(
@@ -115,25 +227,36 @@ router.get(
 
 router.put(
   '/:id/cerrar',
-  authorize(['admin', 'control']),
+  soloAdmin,
   async (req, res) => {
     try {
+      // La versión anterior hacía SUM(... - SUM(...)) en el mismo nivel:
+      // Postgres no permite anidar funciones de agregación así y tiraba
+      // "aggregate function calls cannot be nested" (hallazgo C5). Hay que
+      // agregar primero por línea de la OC (subconsulta, agrupando por
+      // oci.id) y recién ahí sumar el total pendiente.
       const pendientes = await pool.query(
-        `SELECT
-          SUM(oci.cantidad_pedida - COALESCE(SUM(vi.cantidad),0)) AS pendiente
-         FROM orden_compra_items oci
-         LEFT JOIN ventas v ON v.orden_compra_id = oci.orden_compra_id
-         LEFT JOIN venta_items vi
-           ON vi.venta_id = v.id AND vi.ficha_id = oci.ficha_id
-         WHERE oci.orden_compra_id = $1
-         GROUP BY oci.orden_compra_id`,
+        `SELECT COALESCE(SUM(d.pendiente), 0) AS pendiente
+         FROM (
+           SELECT oci.cantidad_pedida - COALESCE(SUM(vi.cantidad), 0) AS pendiente
+           FROM orden_compra_items oci
+           LEFT JOIN ventas v       ON v.orden_compra_id = oci.orden_compra_id
+           LEFT JOIN venta_items vi ON vi.venta_id = v.id AND vi.ficha_id = oci.ficha_id
+           WHERE oci.orden_compra_id = $1
+           GROUP BY oci.id, oci.cantidad_pedida
+         ) d`,
         [req.params.id]
       );
 
-      if (pendientes.rows.length && pendientes.rows[0].pendiente > 0) {
+      if (Number(pendientes.rows[0].pendiente) > 0) {
         return res.status(400).json({ error: 'La OC todavía tiene pendiente' });
       }
 
+      // Nota: se deja 'cerrada' en minúscula (no se toca la convención de
+      // estado en esta pasada) para no desincronizar con oc.js / oc_detalle.js,
+      // que hoy comparan contra minúscula. Migrar a MAYÚSCULAS + CHECK queda
+      // pendiente junto con el resto de Órdenes de Compra (ver hallazgo C5
+      // completo en claude/auditoria-bugs-2026-09-13.md).
       await pool.query(
         `UPDATE ordenes_compra SET estado = 'cerrada' WHERE id = $1`,
         [req.params.id]

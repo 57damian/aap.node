@@ -63,21 +63,8 @@ function formatCurrency(value) {
 }
 
 function mostrarAlerta(mensaje, tipo = 'success') {
-  const alertDiv = document.getElementById('alert');
-  if (!alertDiv) return;
-
-  alertDiv.textContent = mensaje;
-  alertDiv.className = `alert alert-${tipo}`;
-  alertDiv.style.display = 'block';
-
-  setTimeout(() => {
-    alertDiv.style.display = 'none';
-  }, 4000);
+  Shell.toast(tipo === 'error' ? 'err' : 'ok', mensaje);
 }
-
-// ====================================
-// FUNCIONES DE GESTION DE DOLAR
-// ====================================
 
 // Cargar cotizacion actual
 async function cargarDolar() {
@@ -91,7 +78,7 @@ async function cargarDolar() {
     const dolarFechaEl = document.getElementById('dolarFecha');
 
     if (dolarActualEl) {
-      dolarActualEl.innerHTML = `ARS ${dolarFormateado}`;
+      dolarActualEl.textContent = `$ ${dolarFormateado}`;
     }
 
     if (dolarValorEl) {
@@ -99,11 +86,13 @@ async function cargarDolar() {
     }
 
     if (dolarFechaEl) {
-      const fecha = new Date(data.fecha);
-      dolarFechaEl.innerHTML = `
-        <i class="far fa-clock"></i>
-        Ultima actualizacion: ${fecha.toLocaleDateString('es-AR')} ${fecha.toLocaleTimeString('es-AR')}
-      `;
+      // Antes esto mostraba "Ultima actualizacion: Invalid Date Invalid Date"
+      // cuando el parámetro no traía fecha: se construía un Date con undefined
+      // y se imprimía dos veces (fecha y hora), sin comprobar nada.
+      const fecha = data.fecha ? new Date(data.fecha) : null;
+      dolarFechaEl.textContent = (fecha && !isNaN(fecha))
+        ? `Actualizada el ${fecha.toLocaleDateString('es-AR')} a las ${fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+        : 'Todavía no se cargó ninguna cotización';
     }
   } catch (err) {
     console.error('Error cargando dolar:', err);
@@ -127,14 +116,9 @@ async function cargarHistorialDolar() {
     if (!tbody) return;
 
     if (!historial || historial.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="3" class="empty-state">
-            <i class="fas fa-history"></i>
-            <p>No hay historial de cotizaciones</p>
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="3">${Shell.vacio(
+        'Todavía no hay cotizaciones guardadas',
+        'Cada vez que actualices el dólar, queda registrado acá.')}</td></tr>`;
       return;
     }
 
@@ -145,36 +129,18 @@ async function cargarHistorialDolar() {
 
       html += `
         <tr>
-          <td>
-            <i class="far fa-calendar-alt" style="color: #666; margin-right: 8px;"></i>
-            ${fecha}
-          </td>
-          <td>
-            <span class="badge badge-success">
-              <i class="fas fa-dollar-sign"></i> ARS ${dolarFormateado}
-            </span>
-          </td>
-          <td>
-            <span class="badge badge-info">
-              <i class="fas fa-user"></i> ${item.usuario || 'Sistema'}
-            </span>
-          </td>
-        </tr>
-      `;
+          <td>${fecha}</td>
+          <td class="num" data-label="Valor">$ ${dolarFormateado}</td>
+          <td class="muted solo-escritorio" data-label="Cargó">${item.usuario || 'Sistema'}</td>
+        </tr>`;
     });
 
     tbody.innerHTML = html;
   } catch (err) {
     console.error('Error cargando historial de dolar:', err);
     if (tbody) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="3" class="empty-state">
-            <i class="fas fa-exclamation-triangle"></i>
-            <p>No se pudo cargar el historial</p>
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="3">${Shell.vacio(
+        'No se pudo cargar el historial', 'Probá recargar la página.')}</td></tr>`;
     }
     mostrarAlerta('Error cargando historial de cotizaciones', 'error');
   }
@@ -199,7 +165,7 @@ async function actualizarDolar() {
   const btn = document.querySelector('button[onclick="actualizarDolar()"]');
   const originalText = btn ? btn.innerHTML : '';
   if (btn) {
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Actualizando...';
+    btn.textContent = 'Guardando…';
     btn.disabled = true;
   }
 
@@ -245,46 +211,38 @@ async function cargarPrecios() {
     if (!tbody) return;
 
     if (!data || data.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="4" class="empty-state">
-            <i class="fas fa-tags"></i>
-            <p>No hay precios cargados</p>
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="4">${Shell.vacio(
+        'Todavía no hay precios cargados',
+        'Cargá el precio de un modelo con el botón Cambiar, o aplicá un aumento general.')}</td></tr>`;
       return;
     }
 
     let html = '';
     data.forEach(p => {
-      const fecha = p.fecha_desde ? new Date(p.fecha_desde).toLocaleDateString('es-AR') : '-';
-      const precioUSD = p.precio_usd != null ? formatCurrency(p.precio_usd) : '-';
+      const precioUSD = p.precio_usd != null ? formatCurrency(p.precio_usd) : '—';
 
       html += `
         <tr>
           <td><strong>${p.modelo || 'Sin nombre'}</strong></td>
-          <td>
-            <span class="badge badge-success">
-              <i class="fas fa-dollar-sign"></i> USD ${precioUSD}
-            </span>
+          <td class="num" data-label="Precio">US$ ${precioUSD}</td>
+          <td class="muted solo-escritorio" data-label="Desde">${Shell.fecha(p.fecha_desde)}</td>
+          <td class="num">
+            <button class="b b-ghost b-sm" onclick="actualizarPrecio(${p.ficha_id})">Cambiar</button>
           </td>
-          <td><i class="far fa-calendar-alt"></i> ${fecha}</td>
-          <td>
-            <button class="btn btn-primary btn-sm" onclick="actualizarPrecio(${p.ficha_id})">
-              <i class="fas fa-edit"></i> Actualizar
-            </button>
-          </td>
-        </tr>
-      `;
+        </tr>`;
     });
 
     tbody.innerHTML = html;
   } catch (err) {
-    console.error('Error cargando precios:', err);
-    mostrarAlerta(err.error || err.message || 'Error cargando precios', 'error');
+    console.error('Error cargando historial de dolar:', err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="3">${Shell.vacio(
+        'No se pudo cargar el historial', 'Probá recargar la página.')}</td></tr>`;
+    }
+    mostrarAlerta('Error cargando historial de cotizaciones', 'error');
   }
 }
+
 
 async function cargarModelos() {
   if (modelosCache) return modelosCache;
@@ -324,34 +282,41 @@ async function cargarSelectsModelos() {
   }
 }
 
+// Abre la ventana para cambiar el precio de un modelo.
 async function actualizarPrecio(fichaId) {
-  const precioStr = prompt('Ingrese nuevo precio USD:');
-  if (precioStr === null) return;
+  const modelos = await cargarModelos();
+  const modelo = (modelos || []).find(m => m.id === fichaId || m.ficha_id === fichaId);
 
-  const precio = Number(precioStr);
+  document.getElementById('precio_ficha_id').value = fichaId;
+  document.getElementById('precio_modelo').value = modelo ? (modelo.modelo || '') : '';
+  document.getElementById('precio_nuevo').value = '';
+  document.getElementById('precio_obs').value = '';
+  document.getElementById('precioModal').showModal();
+  document.getElementById('precio_nuevo').focus();
+}
+
+async function guardarPrecioModelo() {
+  const fichaId = Number(document.getElementById('precio_ficha_id').value);
+  const precio = Number(document.getElementById('precio_nuevo').value);
+  const observaciones = document.getElementById('precio_obs').value.trim() || null;
+
   if (Number.isNaN(precio) || precio <= 0) {
-    mostrarAlerta('Precio invalido', 'error');
+    mostrarAlerta('Escribí un precio mayor a cero', 'error');
     return;
   }
-
-  const observaciones = prompt('Observaciones (opcional):') || null;
 
   try {
     await apiFetch('/api/precios/modelo', {
       method: 'POST',
-      body: JSON.stringify({
-        ficha_id: fichaId,
-        precio,
-        observaciones
-      })
+      body: JSON.stringify({ ficha_id: fichaId, precio, observaciones })
     });
 
-    mostrarAlerta('Precio actualizado correctamente', 'success');
+    document.getElementById('precioModal').close();
+    mostrarAlerta('Precio actualizado', 'success');
     modelosCache = null;
     await Promise.all([cargarPrecios(), cargarSelectsModelos()]);
   } catch (err) {
-    console.error('Error actualizando precio:', err);
-    mostrarAlerta(err.error || err.message || 'Error actualizando precio', 'error');
+    Shell.error(err, 'No se pudo actualizar el precio');
   }
 }
 
@@ -403,14 +368,7 @@ async function cargarHistorialPrecios() {
   if (!tbody) return;
 
   if (!fichaId) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="3" class="empty-state">
-          <i class="fas fa-chart-line"></i>
-          <p>Seleccione un modelo para ver su historial</p>
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = '<tr><td colspan="3" class="muted">Elegí un modelo para ver su historial.</td></tr>';
     return;
   }
 
@@ -420,35 +378,22 @@ async function cargarHistorialPrecios() {
     const data = await apiFetch(`/api/precios/modelo/${fichaId}`);
 
     if (!data || data.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="3" class="empty-state">
-            <i class="fas fa-history"></i>
-            <p>Sin historial para este modelo</p>
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="3">${Shell.vacio(
+        'Este modelo no tuvo cambios de precio',
+        'Los cambios quedan registrados acá cuando actualizás el precio.')}</td></tr>`;
       return;
     }
 
+    // Antes esto llenaba DOS tablas con exactamente los mismos datos, solo
+    // que con las columnas en otro orden ("historial por modelo" e "historial
+    // general"). Quedó una.
     tbody.innerHTML = data.map(item => `
       <tr>
-        <td>${formatDate(item.fecha_desde)}</td>
-        <td><span class="badge badge-success">USD ${formatCurrency(item.precio_usd)}</span></td>
-        <td>${item.observaciones || '-'}</td>
+        <td>${Shell.fecha(item.fecha_desde)}</td>
+        <td class="num" data-label="Precio">US$ ${formatCurrency(item.precio_usd)}</td>
+        <td class="muted solo-escritorio" data-label="Motivo">${item.observaciones || '—'}</td>
       </tr>
     `).join('');
-
-    const generalBody = document.getElementById('tablaHistorial');
-    if (generalBody) {
-      generalBody.innerHTML = data.map(item => `
-        <tr>
-          <td><span class="badge badge-success">USD ${formatCurrency(item.precio_usd)}</span></td>
-          <td>${formatDate(item.fecha_desde)}</td>
-          <td>${item.observaciones || '-'}</td>
-        </tr>
-      `).join('');
-    }
   } catch (err) {
     console.error('Error cargando historial de precios:', err);
     mostrarAlerta(err.error || err.message || 'Error cargando historial', 'error');
@@ -473,4 +418,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Error inicializando pantalla de precios:', err);
     mostrarAlerta('Error inicializando la pantalla', 'error');
   }
+});
+
+// ============================================
+// PESTAÑAS
+// ============================================
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+
+  document.querySelectorAll('.tab[data-tab]').forEach(boton => {
+    boton.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      boton.classList.add('active');
+      document.getElementById('tab-' + boton.dataset.tab)?.classList.add('active');
+    });
+  });
 });

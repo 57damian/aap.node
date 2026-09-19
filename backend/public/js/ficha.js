@@ -10,14 +10,14 @@ const usuario = (() => {
   const userStr = localStorage.getItem('usuario');
   
   if (!token || !userStr) {
-    window.location.href = 'index.html';
+    window.location.href = 'login.html';
     return null;
   }
   
   try {
     return JSON.parse(userStr);
   } catch {
-    window.location.href = 'index.html';
+    window.location.href = 'login.html';
     return null;
   }
 })();
@@ -114,36 +114,33 @@ async function cargarFichas() {
     tbody.innerHTML = '';
 
     if (!fichas.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align:center;padding:20px;">
-            No hay modelos creados
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'Todavía no hay modelos cargados',
+        'Creá el primero desde la pestaña "Nueva ficha".')}</td></tr>`;
       return;
     }
 
     fichas.forEach(ficha => {
       const tr = document.createElement('tr');
 
-      const tipoBadge = ficha.cliente_id
-        ? '<span class="badge badge-specific">🔵 Específico</span>'
-        : '<span class="badge badge-generic">⚪ Genérico</span>';
+      // Antes esta fila tenía una columna de #id que no estaba en el
+      // encabezado, y le faltaban Amperaje y Cliente, que sí estaban
+      // anunciados: la tabla quedaba desalineada.
+      const tipoBadge = ficha.cliente_id ? Shell.pill('ESPECIFICO') : Shell.pill('GENERICO');
 
       // Escapar comillas simples para el onclick
       const modeloEscapado = (ficha.modelo || '').replace(/'/g, "\\'");
 
       tr.innerHTML = `
-        <td>#${ficha.id}</td>
         <td><strong>${ficha.modelo}</strong></td>
-        <td>${tipoBadge}</td>
-        <td>${ficha.voltaje_entrada || '-'}V / ${ficha.voltaje_salida || '-'}V</td>
-        <td>
-          <button class="btn-ver" onclick="verDetalles(${ficha.id})">👁️ Ver</button>
-          <button class="btn-editar" onclick="editarFicha(${ficha.id})">✏️ Editar</button>
+        <td data-label="Tipo">${tipoBadge}</td>
+        <td class="num muted solo-escritorio" data-label="Voltaje E/S">${ficha.voltaje_entrada || '—'}V / ${ficha.voltaje_salida || '—'}V</td>
+        <td class="num muted solo-escritorio" data-label="Amperaje E/S">${ficha.amperaje_entrada || '—'}A / ${ficha.amperaje_salida || '—'}A</td>
+        <td class="num">
+          <button class="b b-ghost b-sm" onclick="verDetalles(${ficha.id})">Ver</button>
+          <button class="b b-ghost b-sm" onclick="editarFicha(${ficha.id})">Editar</button>
           ${rolPermiteEliminar() ?
-            `<button class="btn-eliminar" onclick="confirmarEliminar(${ficha.id}, '${modeloEscapado}')">🗑️ Eliminar</button>`
+            `<button class="b b-ghost b-sm" onclick="confirmarEliminar(${ficha.id}, '${modeloEscapado}')">Eliminar</button>`
             : ''
           }
         </td>
@@ -404,7 +401,7 @@ async function verDetalles(id) {
     `;
 
     content.innerHTML = html;
-    document.getElementById('detailModal').style.display = 'block';
+    document.getElementById('detailModal').showModal();
 
   } catch (err) {
     console.error('Error cargando detalles:', err);
@@ -415,7 +412,7 @@ async function verDetalles(id) {
    CERRAR MODAL
 ===================== */
 function closeDetailModal() {
-  document.getElementById('detailModal').style.display = 'none';
+  document.getElementById('detailModal').close();
   currentFicha = null;
 }
 
@@ -639,18 +636,7 @@ function showTab(tabName, event) {
    ALERTA
 ===================== */
 function showAlert(message, type) {
-  const alertDiv = document.getElementById('alert');
-  if (!alertDiv) return;
-  
-  alertDiv.textContent = message;
-  alertDiv.className = type === 'success'
-    ? 'alert alert-success'
-    : 'alert alert-error';
-  alertDiv.style.display = 'block';
-
-  setTimeout(() => {
-    alertDiv.style.display = 'none';
-  }, 5000);
+  Shell.toast(type === 'success' ? 'ok' : 'err', message);
 }
 
 /* =====================
@@ -658,5 +644,5 @@ function showAlert(message, type) {
 ===================== */
 function logout() {
   localStorage.clear();
-  window.location.href = 'index.html';
+  window.location.href = 'login.html';
 }

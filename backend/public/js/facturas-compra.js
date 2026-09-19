@@ -37,25 +37,37 @@ class FacturasCompra {
         this.setupDateDefaults();
         this.renderItemsTable();
         this.calculateTotals();
-        
-        // Cargar Select2 para proveedores
-        if ($ && $.fn.select2) {
-            $('#proveedor').select2({
-                placeholder: 'Seleccionar proveedor...',
-                allowClear: true,
-                width: '100%'
-            }).on('change', this.onProveedorChange.bind(this));
-        }
-        
+
+        // Select nativo de proveedor (antes: Select2). Con pocas decenas de
+        // proveedores el <select> nativo alcanza y evita cargar jQuery.
+        document.getElementById('proveedor').addEventListener('change', this.onProveedorChange.bind(this));
+
         // Agregar fila inicial - SIEMPRE se debe llamar
         this.addEmptyItem();
     }
     
+    // Trae la cotización actual del dólar (parametros.dolar_banco) para
+    // sugerirla como valor inicial en una factura nueva. Solo se llama para
+    // altas: al editar, loadFactura() carga el dólar propio de esa factura
+    // (o lo deja vacío si no lo tenía), que no debe pisarse con el actual.
+    async loadDolarActual() {
+        try {
+            const dolarInfo = typeof apiFetch === 'function'
+                ? await apiFetch('/api/precios/parametros/dolar')
+                : await fetch(`${API_URL || 'http://localhost:3000'}/api/precios/parametros/dolar`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                }).then(r => r.json());
+
+            if (dolarInfo && dolarInfo.dolar) {
+                document.getElementById('dolar').value = dolarInfo.dolar;
+            }
+        } catch (error) {
+            console.error('Error cargando dólar actual:', error);
+        }
+    }
+
     async loadProveedores() {
         try {
-            // Mostrar indicador de carga
-            this.showAlert('Cargando proveedores...', 'info');
-            
             // Usar apiFetch si está disponible, sino usar fetch con API_URL
             if (typeof apiFetch === 'function') {
                 this.proveedores = await apiFetch('/api/proveedores');
@@ -65,31 +77,21 @@ class FacturasCompra {
                         'Authorization': `Bearer ${localStorage.getItem('token')}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`Error ${response.status}: ${errorText}`);
                 }
-                
+
                 this.proveedores = await response.json();
             }
-            
+
             if (!Array.isArray(this.proveedores)) {
                 throw new Error('Formato de datos inválido para proveedores');
             }
-            
+
             this.populateProveedoresSelect();
-            
-            // Ocultar alerta de carga
-            setTimeout(() => {
-                const alerts = document.querySelectorAll('#alert-container .alert');
-                alerts.forEach(alert => {
-                    if (alert.textContent.includes('Cargando proveedores')) {
-                        alert.remove();
-                    }
-                });
-            }, 500);
-            
+
         } catch (error) {
             console.error('Error cargando proveedores:', error);
             this.showAlert(`Error cargando proveedores: ${error.message}`, 'danger');
@@ -101,9 +103,6 @@ class FacturasCompra {
     
     async loadMateriasPrimas() {
         try {
-            // Mostrar indicador de carga
-            this.showAlert('Cargando materias primas del stock...', 'info');
-            
             // Usar apiFetch si está disponible, sino usar fetch con API_URL
             if (typeof apiFetch === 'function') {
                 this.materiasPrimas = await apiFetch('/api/materias-primas');
@@ -133,19 +132,7 @@ class FacturasCompra {
             
             // Ordenar por nombre
             this.materiasPrimas.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            
-            // Ocultar alerta de carga
-            setTimeout(() => {
-                const alerts = document.querySelectorAll('#alert-container .alert');
-                alerts.forEach(alert => {
-                    if (alert.textContent.includes('Cargando materias primas')) {
-                        alert.remove();
-                    }
-                });
-            }, 500);
-            
-            this.showAlert(`Cargadas ${this.materiasPrimas.length} materias primas del stock`, 'success');
-            
+
             // Si no hay materias primas, mostrar alerta informativa
             if (this.materiasPrimas.length === 0) {
                 this.showAlert('No se encontraron materias primas en el stock. Puede agregar ítems manualmente.', 'warning');
@@ -176,7 +163,6 @@ class FacturasCompra {
     // Método para forzar la recarga de materias primas
     async reloadMateriasPrimas() {
         try {
-            this.showAlert('Recargando materias primas del stock...', 'info');
             await this.loadMateriasPrimas();
             
             // Actualizar los selects existentes
@@ -357,13 +343,13 @@ class FacturasCompra {
         
         this.items.forEach((item, index) => {
             const row = document.createElement('tr');
-            row.className = 'item-row';
+            row.className = 'fc-item-row';
             row.dataset.index = index;
             
             // Columna 1: Select de producto
             const td1 = document.createElement('td');
             const select = document.createElement('select');
-            select.className = 'form-control item-select';
+            select.className = 'select item-select';
             select.dataset.index = index;
             
             const opVacia = document.createElement('option');
@@ -408,9 +394,10 @@ class FacturasCompra {
             
             // Columna 2: Nombre (editable)
             const td2 = document.createElement('td');
+            td2.dataset.label = 'Nombre';
             const inputNombre = document.createElement('input');
             inputNombre.type = 'text';
-            inputNombre.className = 'form-control item-nombre';
+            inputNombre.className = 'input item-nombre';
             inputNombre.value = item.nombre || '';
             inputNombre.dataset.index = index;
             // El nombre ahora es editable manualmente
@@ -422,9 +409,10 @@ class FacturasCompra {
             
             // Columna 3: Unidad (editable)
             const td3 = document.createElement('td');
+            td3.dataset.label = 'Unidad';
             const inputUnidad = document.createElement('input');
             inputUnidad.type = 'text';
-            inputUnidad.className = 'form-control item-unidad';
+            inputUnidad.className = 'input item-unidad';
             inputUnidad.value = item.unidad_medida || 'UNI';
             inputUnidad.dataset.index = index;
             inputUnidad.title = item.unidad_medida || 'UNI';
@@ -434,9 +422,10 @@ class FacturasCompra {
             
             // Columna 4: Cantidad (editable)
             const td4 = document.createElement('td');
+            td4.dataset.label = 'Cant.';
             const inputCantidad = document.createElement('input');
             inputCantidad.type = 'number';
-            inputCantidad.className = 'form-control item-cantidad';
+            inputCantidad.className = 'input item-cantidad';
             inputCantidad.value = item.cantidad;
             inputCantidad.min = 0.001;
             inputCantidad.step = 0.001;
@@ -447,9 +436,10 @@ class FacturasCompra {
             
             // Columna 5: Precio unitario (editable)
             const td5 = document.createElement('td');
+            td5.dataset.label = 'Precio unit.';
             const inputPrecio = document.createElement('input');
             inputPrecio.type = 'number';
-            inputPrecio.className = 'form-control item-precio';
+            inputPrecio.className = 'input item-precio';
             inputPrecio.value = item.precio_unitario;
             inputPrecio.min = 0;
             inputPrecio.step = 0.01;
@@ -460,9 +450,10 @@ class FacturasCompra {
             
             // Columna 6: IVA % (editable)
             const td6 = document.createElement('td');
+            td6.dataset.label = 'IVA %';
             const inputIva = document.createElement('input');
             inputIva.type = 'number';
-            inputIva.className = 'form-control item-iva';
+            inputIva.className = 'input item-iva';
             inputIva.value = item.iva_porcentaje;
             inputIva.min = 0;
             inputIva.max = 100;
@@ -474,27 +465,32 @@ class FacturasCompra {
             
             // Columna 7: Subtotal (solo lectura)
             const td7 = document.createElement('td');
-            td7.className = 'item-subtotal';
-            td7.textContent = `$${item.subtotal.toFixed(2)}`;
+            td7.className = 'item-subtotal num';
+            td7.dataset.label = 'Subtotal';
+            td7.textContent = Shell.money(item.subtotal);
             row.appendChild(td7);
-            
+
             // Columna 8: IVA (solo lectura)
             const td8 = document.createElement('td');
-            td8.className = 'item-iva-calculo';
-            td8.textContent = `$${item.iva.toFixed(2)}`;
+            td8.className = 'item-iva-calculo num';
+            td8.dataset.label = 'IVA $';
+            td8.textContent = Shell.money(item.iva);
             row.appendChild(td8);
-            
+
             // Columna 9: Total (solo lectura)
             const td9 = document.createElement('td');
-            td9.className = 'item-total';
-            td9.textContent = `$${item.total.toFixed(2)}`;
+            td9.className = 'item-total num';
+            td9.dataset.label = 'Total';
+            td9.textContent = Shell.money(item.total);
             row.appendChild(td9);
             
             // Columna 10: Botón eliminar
             const td10 = document.createElement('td');
             const btnEliminar = document.createElement('button');
-            btnEliminar.className = 'btn-eliminar-item';
-            btnEliminar.innerHTML = '<i class="fas fa-trash"></i>';
+            btnEliminar.type = 'button';
+            btnEliminar.className = 'forma-quitar';
+            btnEliminar.title = 'Quitar ítem';
+            btnEliminar.textContent = '×';
             btnEliminar.addEventListener('click', () => {
                 if (this.items.length > 1) {
                     this.items.splice(index, 1);
@@ -616,14 +612,14 @@ class FacturasCompra {
         item.total = item.subtotal + item.iva;
 
         // Actualizar display en la fila utilizando data-index para evitar desfasajes
-        const row = document.querySelector(`.item-row[data-index="${index}"]`);
+        const row = document.querySelector(`.fc-item-row[data-index="${index}"]`);
         if (row) {
             const subtotalCell = row.querySelector('.item-subtotal');
             const ivaCell = row.querySelector('.item-iva-calculo');
             const totalCell = row.querySelector('.item-total');
-            if (subtotalCell) subtotalCell.textContent = `$${item.subtotal.toFixed(2)}`;
-            if (ivaCell) ivaCell.textContent = `$${item.iva.toFixed(2)}`;
-            if (totalCell) totalCell.textContent = `$${item.total.toFixed(2)}`;
+            if (subtotalCell) subtotalCell.textContent = Shell.money(item.subtotal);
+            if (ivaCell) ivaCell.textContent = Shell.money(item.iva);
+            if (totalCell) totalCell.textContent = Shell.money(item.total);
         }
     }
     
@@ -649,10 +645,10 @@ class FacturasCompra {
         document.getElementById('total').value = total.toFixed(2);
         
         // Actualizar display
-        document.getElementById('display-subtotal').textContent = `$${subtotal.toFixed(2)}`;
-        document.getElementById('display-iva').textContent = `$${iva.toFixed(2)}`;
-        document.getElementById('display-percepciones').textContent = `$${percepciones.toFixed(2)}`;
-        document.getElementById('display-total').textContent = `$${total.toFixed(2)}`;
+        document.getElementById('display-subtotal').textContent = Shell.money(subtotal);
+        document.getElementById('display-iva').textContent = Shell.money(iva);
+        document.getElementById('display-percepciones').textContent = Shell.money(percepciones);
+        document.getElementById('display-total').textContent = Shell.money(total);
     }
     
     // Métodos para guardar factura
@@ -685,6 +681,7 @@ class FacturasCompra {
             condicion_pago: document.getElementById('condicion_pago').value,
             observaciones: document.getElementById('observaciones').value || null,
             estado: document.getElementById('estado').value,
+            dolar: document.getElementById('dolar').value ? parseFloat(document.getElementById('dolar').value) : null,
             items: this.items
         };
         
@@ -800,12 +797,7 @@ class FacturasCompra {
         document.getElementById('retenciones').value = '0';
         document.getElementById('observaciones').value = '';
         document.getElementById('estado').value = 'PENDIENTE';
-        
-        // Limpiar Select2
-        if ($ && $.fn.select2) {
-            $('#proveedor').val('').trigger('change');
-        }
-        
+
         // Limpiar ítems
         this.items = [];
         this.currentItemId = 1;
@@ -820,28 +812,12 @@ class FacturasCompra {
         this.showAlert('Formulario limpiado', 'info');
     }
     
+    // Antes construía un <div class="alert"> de Bootstrap a mano; ahora pasa
+    // por el mismo mecanismo de toasts que el resto de la app (Shell.toast).
     showAlert(message, type = 'info') {
-        const alertContainer = document.getElementById('alert-container');
-        
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type}`;
-        alert.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span>${message}</span>
-                <button type="button" class="btn btn-sm" onclick="this.parentElement.parentElement.remove()" style="padding: 0; background: none; border: none; color: inherit;">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        `;
-        
-        alertContainer.appendChild(alert);
-        
-        // Auto-remover después de 5 segundos
-        setTimeout(() => {
-            if (alert.parentElement) {
-                alert.remove();
-            }
-        }, 5000);
+        const tipoMap = { success: 'ok', danger: 'err', warning: 'warn', info: 'ok' };
+        const texto = String(message).replace(/<br\s*\/?>/gi, ' · ').replace(/<[^>]+>/g, '');
+        Shell.toast(tipoMap[type] || 'ok', texto);
     }
     
     // Generar número de factura completo
@@ -1163,12 +1139,7 @@ class FacturasCompra {
             document.getElementById('cuit').textContent = factura.proveedor_cuit || '-';
             document.getElementById('telefono').textContent = factura.proveedor_telefono || '-';
             document.getElementById('direccion').textContent = factura.proveedor_direccion || '-';
-            
-            // Actualizar Select2
-            if ($ && $.fn.select2) {
-                $('#proveedor').val(factura.proveedor_id).trigger('change');
-            }
-            
+
             document.getElementById('tipo_factura').value = factura.tipo_factura || 'A';
             
             // Parsear número de factura
@@ -1188,6 +1159,7 @@ class FacturasCompra {
             document.getElementById('retenciones').value = factura.retenciones || 0;
             document.getElementById('observaciones').value = factura.observaciones || '';
             document.getElementById('estado').value = factura.estado || 'PENDIENTE';
+            document.getElementById('dolar').value = factura.dolar || '';
             
             // Actualizar display del número
             this.updateNumeroFacturaDisplay();
@@ -1203,7 +1175,7 @@ class FacturasCompra {
             this.calculateTotals();
             
             // Cambiar texto del botón
-            document.getElementById('btn-guardar-factura').innerHTML = '<i class="fas fa-save"></i> Actualizar Factura';
+            document.getElementById('btn-guardar-factura').textContent = 'Actualizar factura';
             
             this.showAlert('Factura cargada para edición', 'success');
             
@@ -1224,6 +1196,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (facturaId) {
         window.facturasCompra.loadFactura(facturaId);
+    } else {
+        window.facturasCompra.loadDolarActual();
     }
 });
     

@@ -100,60 +100,33 @@ async function handleSubmitOC(e) {
 async function cargarOC() {
   if (!lista) return;
 
-  lista.innerHTML = '<li class="loading"><i class="fas fa-spinner fa-spin"></i> Cargando órdenes...</li>';
+  lista.innerHTML = '<tr><td colspan="5" class="muted">Cargando…</td></tr>';
 
   try {
     const ocs = await apiFetch('/api/ordenes-compra');
 
     if (!Array.isArray(ocs) || ocs.length === 0) {
-      lista.innerHTML = '<li class="empty-state"><i class="fas fa-inbox"></i> No hay órdenes de compra</li>';
+      lista.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'Todavía no hay órdenes de compra',
+        'Creá la primera con el botón "Nueva orden".')}</td></tr>`;
       return;
     }
 
-    lista.innerHTML = '';
-    ocs.forEach((oc) => {
-      const li = document.createElement('li');
-      li.className = 'oc-item';
+    lista.innerHTML = ocs.map((oc) => `
+      <tr>
+        <td><strong>${oc.numero_oc}</strong></td>
+        <td data-label="Cliente">${oc.cliente || '—'}</td>
+        <td class="muted solo-escritorio" data-label="Fecha">${Shell.fecha(oc.fecha_oc)}</td>
+        <td data-label="Estado">${Shell.pill(oc.estado || 'pendiente')}</td>
+        <td class="num">
+          <button class="b b-ghost b-sm" onclick="verOC(${oc.id})">Ver</button>
+        </td>
+      </tr>`).join('');
 
-      let estadoClass = 'estado-pendiente';
-      let estadoIcon = 'fa-clock';
-
-      switch (oc.estado) {
-        case 'completa':
-          estadoClass = 'estado-completa';
-          estadoIcon = 'fa-check-circle';
-          break;
-        case 'parcial':
-          estadoClass = 'estado-parcial';
-          estadoIcon = 'fa-truck-loading';
-          break;
-        case 'pendiente':
-        default:
-          estadoClass = 'estado-pendiente';
-          estadoIcon = 'fa-clock';
-      }
-
-      li.innerHTML = `
-        <div class="oc-info">
-          <div class="oc-header">
-            <span class="oc-numero"><i class="fas fa-hashtag"></i> ${oc.numero_oc}</span>
-            <span class="oc-estado ${estadoClass}"><i class="fas ${estadoIcon}"></i> ${oc.estado || 'pendiente'}</span>
-          </div>
-          <div class="oc-cliente"><i class="fas fa-user"></i> ${oc.cliente || '-'}</div>
-          <div class="oc-fecha"><i class="fas fa-calendar"></i> ${oc.fecha_oc ? new Date(oc.fecha_oc).toLocaleDateString('es-AR') : '-'}</div>
-        </div>
-        <div class="oc-actions">
-          <button class="btn-view" onclick="verOC(${oc.id})" title="Ver detalle">
-            <i class="fas fa-eye"></i> Ver Detalle
-          </button>
-        </div>
-      `;
-
-      lista.appendChild(li);
-    });
   } catch (err) {
-    console.error('Error cargando OCs:', err);
-    lista.innerHTML = `<li class="error-state"><i class="fas fa-exclamation-triangle"></i> Error cargando OCs: ${err.error || err.message || 'Error desconocido'}</li>`;
+    Shell.error(err, 'No se pudieron cargar las órdenes de compra');
+    lista.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+      'No se pudo cargar', 'Probá recargar la página.')}</td></tr>`;
   }
 }
 

@@ -2,14 +2,15 @@ const upload = require('../middlewares/uploadModelo');
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
+const { segunRol } = require('../services/vista-operario');
 
 router.use(verificarToken);
 
 /* =========================
    CREATE - Crear nueva ficha
 ========================= */
-router.post('/', authorize(['admin', 'control', 'operario']), upload.single('foto'), async (req, res) => {
+router.post('/', adminYOperario, upload.single('foto'), async (req, res) => {
   const { 
     modelo,
     cliente_id,
@@ -76,27 +77,33 @@ router.post('/', authorize(['admin', 'control', 'operario']), upload.single('fot
 /* =========================
    READ ALL - Listar todas las fichas
 ========================= */
-router.get('/', authorize(['admin', 'control', 'operario', 'empleado']), async (req, res) => {
+router.get('/', adminYOperario, async (req, res) => {
   const { cliente_id } = req.query;
 
   try {
     let result;
 
+    // hallazgo D11: listar solo fichas activas (deleted_at IS NULL). Este es
+    // el listado que alimenta los selectores de "elegir modelo" — una ficha
+    // dada de baja no tiene que seguir apareciendo para elegirla de nuevo.
     if (cliente_id) {
       result = await pool.query(
         `SELECT * FROM ficha_transformador
-         WHERE cliente_id IS NULL OR cliente_id = $1
+         WHERE (cliente_id IS NULL OR cliente_id = $1) AND deleted_at IS NULL
          ORDER BY modelo`,
         [cliente_id]
       );
     } else {
       result = await pool.query(
         `SELECT * FROM ficha_transformador
+         WHERE deleted_at IS NULL
          ORDER BY modelo`
       );
     }
 
-    res.json(result.rows);
+    // Las fichas hoy no guardan precios, pero la consulta es SELECT *: si
+    // mañana se agrega una columna de precio, al operario no le llega.
+    res.json(segunRol(result.rows, req.usuario.rol));
   } catch (err) {
     console.error('Error listando fichas:', err);
     res.status(500).json({ error: err.message });
@@ -106,7 +113,7 @@ router.get('/', authorize(['admin', 'control', 'operario', 'empleado']), async (
 /* =========================
    READ ONE - Obtener una ficha por ID
 ========================= */
-router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res) => {
+router.get('/:id', adminYOperario, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM ficha_transformador WHERE id = $1',
@@ -127,7 +134,7 @@ router.get('/:id', authorize(['admin', 'control', 'operario']), async (req, res)
 /* =========================
    UPDATE - Actualizar ficha
 ========================= */
-router.put('/:id', authorize(['admin', 'control', 'operario']), upload.single('foto'), async (req, res) => {
+router.put('/:id', adminYOperario, upload.single('foto'), async (req, res) => {
   try {
     // Obtener la ficha actual para mantener la foto si no se cambia
     const fichaActual = await pool.query(
@@ -187,21 +194,28 @@ router.put('/:id', authorize(['admin', 'control', 'operario']), upload.single('f
 /* =========================
    DELETE - Eliminar ficha
 ========================= */
-router.delete('/:id', authorize(['admin', 'control']), async (req, res) => {
+router.delete('/:id', soloAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    
+
     if (isNaN(id) || id <= 0) {
       return res.status(400).json({ error: 'ID inválido' });
     }
-    
+
+    // hallazgo D11: la columna deleted_at existía en el esquema pero no la
+    // usaba nadie — el DELETE era físico, y si el modelo tenía producción,
+    // ventas, precios o items de OC, Postgres lo rechazaba por FK y el
+    // usuario se llevaba un 500 con el mensaje crudo de la base. Ahora es
+    // borrado lógico: no rompe nunca por FK, y la ficha sigue existiendo
+    // para lo que ya se cargó con ella (ver GET /:id, que no filtra
+    // deleted_at a propósito para no romper el detalle de algo viejo).
     const result = await pool.query(
-      'DELETE FROM ficha_transformador WHERE id = $1',
+      'UPDATE ficha_transformador SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
       [id]
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Ficha no encontrada' });
+      return res.status(404).json({ error: 'Ficha no encontrada o ya eliminada' });
     }
 
     res.json({ ok: true, deletedId: id });

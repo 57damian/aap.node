@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarToken, authorize } = require('../middlewares/auth');
+const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
 
 router.use(verificarToken);
 
@@ -10,7 +10,7 @@ router.use(verificarToken);
  * Devuelve el stock de PRODUCTOS TERMINADOS (producción)
  * Query params: con_stock, solo_genericos, cliente_id
  */
-router.get('/', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
+router.get('/', adminYOperario, async (req, res) => {
   const { con_stock, solo_genericos, cliente_id } = req.query;
 
   try {
@@ -44,10 +44,46 @@ router.get('/', authorize(['admin', 'operario', 'control', 'empleado']), async (
 });
 
 /**
+ * GET /api/stock-produccion/resumen
+ * Estadísticas generales de stock de producción
+ *
+ * Movido acá arriba de /:ficha_id (hallazgo C10 de la auditoría): antes
+ * GET /:ficha_id se comía /resumen y Postgres tiraba 500
+ * ("invalid input syntax for type integer: resumen") en vez de devolver
+ * las estadísticas.
+ */
+router.get('/resumen', adminYOperario, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        COUNT(*) as total_modelos,
+        SUM(stock_actual) as total_unidades,
+        COUNT(CASE WHEN stock_actual > 0 THEN 1 END) as modelos_con_stock,
+        COUNT(CASE WHEN stock_actual = 0 THEN 1 END) as modelos_sin_stock,
+        COUNT(CASE WHEN cliente_id IS NULL THEN 1 END) as modelos_genericos,
+        COUNT(CASE WHEN cliente_id IS NOT NULL THEN 1 END) as modelos_especificos
+      FROM stock_produccion
+    `);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error obteniendo resumen de stock de producción:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A partir de acá todas las rutas son por :ficha_id. La guarda numérica
+// evita el mismo problema con cualquier otra ruta literal futura.
+router.param('ficha_id', (req, res, next, valor) => {
+  if (!/^\d+$/.test(valor)) return res.status(404).json({ error: 'Ruta no encontrada' });
+  next();
+});
+
+/**
  * GET /api/stock-produccion/:ficha_id
  * Devuelve el stock de un producto terminado específico
  */
-router.get('/:ficha_id', authorize(['admin', 'operario', 'control', 'empleado']), async (req, res) => {
+router.get('/:ficha_id', adminYOperario, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM stock_produccion WHERE ficha_id = $1',
@@ -87,7 +123,7 @@ router.get('/:ficha_id', authorize(['admin', 'operario', 'control', 'empleado'])
  * Registra un ajuste manual de stock de productos terminados
  * Body: { ficha_id, cantidad, tipo_ajuste, motivo, fecha_ajuste (opcional) }
  */
-router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
+router.post('/ajuste', soloAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     const { ficha_id, cantidad, tipo_ajuste, motivo, fecha_ajuste } = req.body;
@@ -161,7 +197,7 @@ router.post('/ajuste', authorize(['admin', 'control']), async (req, res) => {
  * GET /api/stock-produccion/:ficha_id/ajustes
  * Historial de ajustes de stock para un producto terminado
  */
-router.get('/:ficha_id/ajustes', authorize(['admin', 'control', 'empleado']), async (req, res) => {
+router.get('/:ficha_id/ajustes', adminYOperario, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT 
@@ -179,30 +215,6 @@ router.get('/:ficha_id/ajustes', authorize(['admin', 'control', 'empleado']), as
     res.json(result.rows);
   } catch (err) {
     console.error('Error obteniendo ajustes de stock:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * GET /api/stock-produccion/resumen
- * Estadísticas generales de stock de producción
- */
-router.get('/resumen', authorize(['admin', 'control', 'empleado']), async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT 
-        COUNT(*) as total_modelos,
-        SUM(stock_actual) as total_unidades,
-        COUNT(CASE WHEN stock_actual > 0 THEN 1 END) as modelos_con_stock,
-        COUNT(CASE WHEN stock_actual = 0 THEN 1 END) as modelos_sin_stock,
-        COUNT(CASE WHEN cliente_id IS NULL THEN 1 END) as modelos_genericos,
-        COUNT(CASE WHEN cliente_id IS NOT NULL THEN 1 END) as modelos_especificos
-      FROM stock_produccion
-    `);
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error obteniendo resumen de stock de producción:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -25,22 +25,10 @@ if (!usuario) {
   throw new Error('No autenticado');
 }
 
+// Esta pantalla tenía su propio sistema de notificaciones (un div flotante
+// inventado acá). Ahora usa el toast del shell, igual que el resto.
 function mostrarNotificacion(mensaje, tipo = 'info') {
-  let notificacion = document.querySelector('.notificacion');
-
-  if (!notificacion) {
-    notificacion = document.createElement('div');
-    notificacion.className = 'notificacion';
-    document.body.appendChild(notificacion);
-  }
-
-  notificacion.className = `notificacion notificacion-${tipo}`;
-  notificacion.textContent = mensaje;
-  notificacion.style.display = 'block';
-
-  setTimeout(() => {
-    notificacion.style.display = 'none';
-  }, 3000);
+  Shell.toast(tipo === 'error' ? 'err' : 'ok', mensaje);
 }
 
 function formatFecha(fecha) {
@@ -52,35 +40,22 @@ function formatFecha(fecha) {
 
 function renderLoadingTabla() {
   if (!tablaVentas) return;
-  tablaVentas.innerHTML = `
-    <tr>
-      <td colspan="7" style="text-align:center; padding: 32px;">
-        <div class="loading">Cargando ventas...</div>
-      </td>
-    </tr>
-  `;
+  tablaVentas.innerHTML = '<tr><td colspan="6" class="muted">Cargando…</td></tr>';
 }
 
 function renderEmptyTabla() {
   if (!tablaVentas) return;
-  tablaVentas.innerHTML = `
-    <tr>
-      <td colspan="7" class="empty-state">
-        No hay ventas para los filtros seleccionados
-      </td>
-    </tr>
-  `;
+  tablaVentas.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+    'No hay ventas para este filtro',
+    'Las ventas se generan al entregar una orden de compra.',
+    { txt: 'Ver órdenes de compra', url: 'oc.html' })}</td></tr>`;
 }
 
-function renderErrorTabla(mensaje) {
+function renderErrorTabla() {
   if (!tablaVentas) return;
-  tablaVentas.innerHTML = `
-    <tr>
-      <td colspan="7" class="error-state">
-        Error cargando ventas: ${mensaje}
-      </td>
-    </tr>
-  `;
+  tablaVentas.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+    'No se pudieron cargar las ventas',
+    'Probá recargar la página.')}</td></tr>`;
 }
 
 /* =====================
@@ -126,32 +101,37 @@ async function cargarVentas() {
       return;
     }
 
-    ventas.forEach((venta) => {
+    const soloSinFacturar = document.getElementById('filtroSinFacturar')?.checked;
+    const visibles = soloSinFacturar
+      ? ventas.filter(v => !v.numero_factura)
+      : ventas;
+
+    if (!visibles.length) {
+      renderEmptyTabla();
+      return;
+    }
+
+    tablaVentas.innerHTML = visibles.map((venta) => {
       const facturada = Boolean(venta.numero_factura);
-      const estadoHtml = facturada
-        ? '<span class="badge success">Facturada</span>'
-        : '<span class="badge warning">Pendiente</span>';
+      return `
+        <tr>
+          <td><strong>${venta.cliente || 'Sin cliente'}</strong></td>
+          <td data-label="Fecha">${Shell.fecha(venta.fecha)}</td>
+          <td class="muted solo-escritorio" data-label="OC">${venta.numero_oc || '—'}</td>
+          <td class="muted solo-escritorio" data-label="Factura">${venta.numero_factura || '—'}</td>
+          <td data-label="Estado">${Shell.pill(facturada ? 'FACTURADA' : 'PENDIENTE')}</td>
+          <td class="num">
+            <button class="b b-ghost b-sm" onclick="verVenta(${venta.id})">
+              ${facturada ? 'Ver' : 'Facturar'}
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
 
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${venta.id}</td>
-        <td>${formatFecha(venta.fecha)}</td>
-        <td>${venta.cliente || '-'}</td>
-        <td>${venta.numero_oc || '-'}</td>
-        <td>${venta.numero_factura || '-'}</td>
-        <td>${estadoHtml}</td>
-        <td>
-          <button class="btn btn-secondary btn-sm" onclick="verVenta(${venta.id})">Ver</button>
-          ${!facturada ? `<button class="btn btn-success btn-sm" onclick="facturarVenta(${venta.id})">Facturar</button>` : ''}
-        </td>
-      `;
-
-      tablaVentas.appendChild(tr);
-    });
   } catch (err) {
     console.error('Error cargando ventas:', err);
-    renderErrorTabla(err.error || err.message || 'Error desconocido');
-    mostrarNotificacion(err.error || err.message || 'Error cargando ventas', 'error');
+    renderErrorTabla();
+    Shell.error(err, 'No se pudieron cargar las ventas');
   }
 }
 

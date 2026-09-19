@@ -29,110 +29,45 @@ function formatearFecha(fecha) {
 }
 
 function getEstadoBadge(estado) {
-    if (!estado) return '<span class="badge bg-secondary">SIN ESTADO</span>';
-    
-    const estadoUpper = estado.toUpperCase();
-    if (estadoUpper === 'PAGADA') {
-        return '<span class="badge bg-success">PAGADA</span>';
-    } else if (estadoUpper === 'PENDIENTE') {
-        return '<span class="badge bg-warning">PENDIENTE</span>';
-    } else if (estadoUpper === 'ANULADA') {
-        return '<span class="badge bg-danger">ANULADA</span>';
-    } else {
-        return `<span class="badge bg-secondary">${estado}</span>`;
-    }
+    return Shell.pill(estado || 'SIN ESTADO');
 }
 
 // Función principal para cargar facturas
 async function cargarFacturas() {
-    console.log('Cargando facturas...');
-    
     // Verificar autenticación
     const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
     const token = localStorage.getItem('token');
-    
+
     if (!usuario.id || !token) {
-        console.error('Usuario no autenticado');
         window.location.href = 'login.html';
         return;
     }
-    
-    // Mostrar estado de carga
+
     const tbody = document.getElementById('tablaFacturasBody');
     if (tbody) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center text-muted py-4">
-                    <div class="spinner-border spinner-border-sm text-primary" role="status">
-                        <span class="visually-hidden">Cargando...</span>
-                    </div>
-                    <span class="ms-2">Cargando facturas...</span>
-                </td>
-            </tr>
-        `;
+        tbody.innerHTML = '<tr><td colspan="8" class="muted">Cargando facturas…</td></tr>';
     }
-    
-    // Ocultar mensajes anteriores
-    document.getElementById('mensajeNoFacturas').style.display = 'none';
-    document.getElementById('mensajeError').style.display = 'none';
-    
+
     try {
-        // Usar la función apiFetch si existe, sino hacer fetch manual
-        let facturas;
-        if (typeof apiFetch === 'function') {
-            console.log('Usando apiFetch...');
-            facturas = await apiFetch('/api/facturas-compra');
-        } else {
-            console.log('Usando fetch manual...');
-            const response = await fetch(`${API_URL || 'http://localhost:3000'}/api/facturas-compra`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
-            facturas = await response.json();
-        }
-        
-        console.log('Facturas recibidas:', facturas.length);
-        console.log('Primera factura:', facturas[0]);
-        
+        const facturas = await apiFetch('/api/facturas-compra');
+
         // Guardar en cache
         facturasCache = facturas;
-        
+
         // Actualizar contador
         document.getElementById('totalFacturas').textContent = facturas.length;
-        document.getElementById('contadorFacturas').textContent = `Mostrando ${facturas.length} facturas`;
-        
+        document.getElementById('contadorFacturas').textContent =
+            facturas.length === 1 ? '1 factura' : `${facturas.length} facturas`;
+
         // Renderizar tabla
         renderizarTablaFacturas(facturas);
-        
-        // Mostrar mensaje si no hay facturas
-        if (facturas.length === 0) {
-            document.getElementById('mensajeNoFacturas').style.display = 'block';
-        }
-        
+
     } catch (error) {
-        console.error('Error cargando facturas:', error);
-        
-        // Mostrar mensaje de error
-        document.getElementById('textoError').textContent = error.message || 'Error desconocido';
-        document.getElementById('mensajeError').style.display = 'block';
-        
-        // Mostrar error en tabla
+        Shell.error(error, 'No se pudieron cargar las facturas');
         if (tbody) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="8" class="text-center text-danger py-4">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        Error al cargar facturas: ${error.message || 'Error desconocido'}
-                    </td>
-                </tr>
-            `;
+            tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
+                'No se pudieron cargar las facturas',
+                'Probá recargar la página.')}</td></tr>`;
         }
     }
 }
@@ -146,137 +81,82 @@ function renderizarTablaFacturas(facturas) {
     }
     
     if (facturas.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center text-muted py-4">
-                    <i class="fas fa-info-circle"></i> No hay facturas registradas
-                </td>
-            </tr>
-        `;
+        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
+            'No hay facturas registradas',
+            'Cargá la primera desde Facturas de compra.',
+            { txt: 'Ir a Facturas de compra', url: 'facturas-compra.html' })}</td></tr>`;
         return;
     }
-    
+
     try {
         const htmlRows = facturas.map(factura => {
-            // Extraer datos con valores por defecto
             const tipoFactura = factura.tipo_factura || 'A';
             const puntoVenta = factura.punto_venta || '0001';
             const numeroFactura = factura.numero_factura || '00000000';
-            const proveedorNombre = factura.proveedor_nombre || factura.proveedor?.nombre || '-';
-            
-            // Convertir valores a números
+            const proveedorNombre = factura.proveedor_nombre || factura.proveedor?.nombre || '—';
+
             const total = parseFloat(factura.total) || 0;
             const pagado = parseFloat(factura.pagado) || 0;
             const saldo = parseFloat(factura.saldo) || (total - pagado);
-            
-            // Estado
+
             const estado = factura.estado || 'PENDIENTE';
             const estadoBadge = getEstadoBadge(estado);
-            
-            // Fecha
-            const fechaEmision = formatearFecha(factura.fecha_emision);
-            
-            // Determinar clase de fila según estado
-            let rowClass = '';
-            if (estado.toUpperCase() === 'PENDIENTE') {
-                rowClass = 'table-warning';
-            } else if (estado.toUpperCase() === 'ANULADA') {
-                rowClass = 'table-danger';
-            } else if (estado.toUpperCase() === 'PAGADA') {
-                rowClass = 'table-success';
-            }
-            
+            const fechaEmision = Shell.fecha(factura.fecha_emision);
+
             return `
-                <tr class="${rowClass}">
+                <tr>
                     <td>
                         <strong>${tipoFactura} ${puntoVenta}-${numeroFactura}</strong>
-                        ${factura.cae ? `<br><small class="text-muted">CAE: ${factura.cae}</small>` : ''}
+                        ${factura.cae ? `<div class="muted">CAE: ${factura.cae}</div>` : ''}
                     </td>
-                    <td>${proveedorNombre}</td>
-                    <td>${fechaEmision}</td>
-                    <td class="text-end">${formatearMoneda(total)}</td>
-                    <td class="text-end">${formatearMoneda(pagado)}</td>
-                    <td class="text-end fw-bold ${saldo > 0 ? 'text-danger' : 'text-success'}">
-                        ${formatearMoneda(saldo)}
-                    </td>
-                    <td>${estadoBadge}</td>
-                    <td>
-                        <button class="btn btn-sm btn-info" onclick="verDetalleFactura(${factura.id})" title="Ver detalle">
-                            <i class="fas fa-eye"></i>
-                        </button>
+                    <td data-label="Proveedor">${proveedorNombre}</td>
+                    <td class="muted solo-escritorio" data-label="Emisión">${fechaEmision}</td>
+                    <td class="num" data-label="Total">${formatearMoneda(total)}</td>
+                    <td class="num muted solo-escritorio" data-label="Pagado">${formatearMoneda(pagado)}</td>
+                    <td class="num ${saldo > 0 ? 'neg' : 'pos'}" data-label="Saldo"><strong>${formatearMoneda(saldo)}</strong></td>
+                    <td data-label="Estado">${estadoBadge}</td>
+                    <td class="num">
+                        <button class="b b-ghost b-sm" onclick="verDetalleFactura(${factura.id})">Ver</button>
                         ${estado.toUpperCase() === 'PENDIENTE' ? `
-                            <button class="btn btn-sm btn-success" onclick="registrarPago(${factura.id})" title="Registrar pago">
-                                <i class="fas fa-money-bill"></i>
-                            </button>
+                            <button class="b b-ghost b-sm" onclick="registrarPago(${factura.id})">Pagar</button>
                         ` : ''}
                     </td>
                 </tr>
             `;
         });
-        
+
         tbody.innerHTML = htmlRows.join('');
-        
+
     } catch (error) {
-        console.error('Error renderizando tabla:', error);
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center text-danger py-4">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    Error al renderizar facturas: ${error.message}
-                </td>
-            </tr>
-        `;
+        Shell.error(error, 'No se pudo mostrar la lista de facturas');
+        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
+            'No se pudo mostrar la lista', 'Probá recargar la página.')}</td></tr>`;
     }
 }
 
 // Función para ver detalle de factura
 async function verDetalleFactura(facturaId) {
     try {
-        console.log('Cargando detalle de factura:', facturaId);
-        
         const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
-        const token = localStorage.getItem('token');
-        
-        if (!usuario.id || !token) {
-            alert('Usuario no autenticado');
+        if (!usuario.id) {
             window.location.href = 'login.html';
             return;
         }
-        
-        // Buscar factura en cache primero
-        let factura = facturasCache.find(f => f.id === facturaId);
-        
-        // Si no está en cache, cargarla de la API
-        if (!factura) {
-            if (typeof apiFetch === 'function') {
-                factura = await apiFetch(`/api/facturas-compra/${facturaId}`);
-            } else {
-                const response = await fetch(`${API_URL || 'http://localhost:3000'}/api/facturas-compra/${facturaId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Error HTTP: ${response.status}`);
-                }
-                
-                factura = await response.json();
-            }
-        }
-        
-        // Calcular saldo
+
+        // Buscar factura en cache primero; si no está, se pide a la API.
+        const factura = facturasCache.find(f => f.id === facturaId)
+            || await apiFetch(`/api/facturas-compra/${facturaId}`);
+
         const total = parseFloat(factura.total) || 0;
         const pagado = parseFloat(factura.pagado) || 0;
         const saldo = total - pagado;
-        
-        // Formatear fecha de vencimiento si existe
-        let fechaVencimiento = '-';
+
+        // Fecha de vencimiento: si no vino cargada, se estima desde la
+        // condición de pago (30 o 60 días).
+        let fechaVencimiento = '—';
         if (factura.fecha_vencimiento) {
             fechaVencimiento = formatearFecha(factura.fecha_vencimiento);
         } else if (factura.fecha_emision && factura.condicion_pago) {
-            // Calcular vencimiento aproximado
             const fechaEmision = new Date(factura.fecha_emision);
             if (factura.condicion_pago.includes('30')) {
                 fechaEmision.setDate(fechaEmision.getDate() + 30);
@@ -286,99 +166,53 @@ async function verDetalleFactura(facturaId) {
                 fechaVencimiento = fechaEmision.toLocaleDateString('es-AR');
             }
         }
-        
-        // Construir HTML del detalle
+
         let html = `
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Información de Factura</h6>
-                    <table class="table table-sm">
-                        <tr>
-                            <th>Factura:</th>
-                            <td>${factura.tipo_factura || 'A'} ${factura.punto_venta || '0001'}-${factura.numero_factura || ''}</td>
-                        </tr>
-                        <tr>
-                            <th>Proveedor:</th>
-                            <td>${factura.proveedor_nombre || factura.proveedor?.nombre || '-'}</td>
-                        </tr>
-                        <tr>
-                            <th>Fecha Emisión:</th>
-                            <td>${formatearFecha(factura.fecha_emision)}</td>
-                        </tr>
-                        <tr>
-                            <th>Fecha Vencimiento:</th>
-                            <td>${fechaVencimiento}</td>
-                        </tr>
-                        <tr>
-                            <th>Condición Pago:</th>
-                            <td>${factura.condicion_pago || 'CONTADO'}</td>
-                        </tr>
-                    </table>
-                </div>
-                <div class="col-md-6">
-                    <h6>Totales</h6>
-                    <table class="table table-sm">
-                        <tr>
-                            <th>Total Factura:</th>
-                            <td class="text-end">${formatearMoneda(total)}</td>
-                        </tr>
-                        <tr>
-                            <th>Pagado:</th>
-                            <td class="text-end">${formatearMoneda(pagado)}</td>
-                        </tr>
-                        <tr class="fw-bold">
-                            <th>Saldo Pendiente:</th>
-                            <td class="text-end ${saldo > 0 ? 'text-danger' : 'text-success'}">
-                                ${formatearMoneda(saldo)}
-                            </td>
-                        </tr>
-                        <tr>
-                            <th>Estado:</th>
-                            <td>${getEstadoBadge(factura.estado)}</td>
-                        </tr>
-                    </table>
-                </div>
+            <div class="form-grid">
+                <div class="field"><label>Factura</label><div><strong>${factura.tipo_factura || 'A'} ${factura.punto_venta || '0001'}-${factura.numero_factura || ''}</strong></div></div>
+                <div class="field"><label>Proveedor</label><div>${factura.proveedor_nombre || factura.proveedor?.nombre || '—'}</div></div>
+                <div class="field"><label>Emisión</label><div>${formatearFecha(factura.fecha_emision)}</div></div>
+                <div class="field"><label>Vencimiento</label><div>${fechaVencimiento}</div></div>
+                <div class="field"><label>Condición de pago</label><div>${factura.condicion_pago || 'CONTADO'}</div></div>
+                <div class="field"><label>Estado</label><div>${getEstadoBadge(factura.estado)}</div></div>
             </div>
+            <div class="panel" style="margin-top:16px"><div class="panel-body">
+                <div class="totales-inline">
+                    <div><span>Total factura</span><strong>${formatearMoneda(total)}</strong></div>
+                    <div><span>Pagado</span><strong>${formatearMoneda(pagado)}</strong></div>
+                    <div><span>Saldo pendiente</span><strong class="${saldo > 0 ? 'neg' : 'pos'}">${formatearMoneda(saldo)}</strong></div>
+                </div>
+            </div></div>
         `;
-        
-        // Agregar items si existen
+
         if (factura.items && factura.items.length > 0) {
             html += `
-                <hr>
-                <h6>Items de la Factura</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Artículo</th>
-                                <th>Cantidad</th>
-                                <th>Precio Unit.</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${factura.items.map(item => `
-                                <tr>
-                                    <td>${item.articulo_nombre || item.descripcion || '-'}</td>
-                                    <td>${item.cantidad || 0}</td>
-                                    <td>${formatearMoneda(item.precio_unitario)}</td>
-                                    <td>${formatearMoneda(item.total)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div class="panel" style="margin-top:16px">
+                    <div class="panel-head"><h3 style="margin:0;font-size:1rem">Items de la factura</h3></div>
+                    <div class="panel-body flush"><div class="table-wrap">
+                        <table class="t">
+                            <thead><tr><th>Artículo</th><th class="num">Cantidad</th><th class="num">Precio unit.</th><th class="num">Total</th></tr></thead>
+                            <tbody>
+                                ${factura.items.map(item => `
+                                    <tr>
+                                        <td>${item.articulo_nombre || item.descripcion || '—'}</td>
+                                        <td class="num" data-label="Cantidad">${item.cantidad || 0}</td>
+                                        <td class="num" data-label="Precio unit.">${formatearMoneda(item.precio_unitario)}</td>
+                                        <td class="num" data-label="Total">${formatearMoneda(item.total)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div></div>
                 </div>
             `;
         }
-        
-        // Mostrar en modal
+
         document.getElementById('detalleFacturaContent').innerHTML = html;
-        const modal = new bootstrap.Modal(document.getElementById('detalleFacturaModal'));
-        modal.show();
-        
+        document.getElementById('detalleFacturaModal').showModal();
+
     } catch (error) {
-        console.error('Error cargando detalle:', error);
-        alert('Error al cargar detalle de factura: ' + (error.message || 'Error desconocido'));
+        Shell.error(error, 'No se pudo cargar el detalle de la factura');
     }
 }
 
@@ -386,19 +220,19 @@ async function verDetalleFactura(facturaId) {
 function registrarPago(facturaId) {
     const factura = facturasCache.find(f => f.id === facturaId);
     if (!factura) {
-        alert('No se encontró la factura');
+        Shell.toast('err', 'No se encontró la factura');
         return;
     }
-    
+
     const total = parseFloat(factura.total) || 0;
     const pagado = parseFloat(factura.pagado) || 0;
     const saldo = total - pagado;
-    
+
     if (saldo <= 0) {
-        alert('Esta factura ya está pagada completamente');
+        Shell.toast('ok', 'Esta factura ya está pagada por completo');
         return;
     }
-    
+
     // Redirigir a la página de pagos con la factura seleccionada
     window.location.href = `pagos-proveedores.html?factura_id=${facturaId}`;
 }

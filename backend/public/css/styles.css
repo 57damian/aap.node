@@ -1240,6 +1240,14 @@ body:has(.login-container) {
   display: none !important;
 }
 
+/* El atributo hidden tiene que ganarle a cualquier display de una clase.
+   Sin esto, un elemento con hidden pero con .login-form (display:flex),
+   .panel, etc. se sigue viendo: la regla del navegador para [hidden] pierde
+   por especificidad contra cualquier regla de clase. */
+[hidden] {
+  display: none !important;
+}
+
 @media (min-width: 1024px) {
   .ficha-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -2158,9 +2166,30 @@ textarea:focus-visible {
 }
 
 /* Tabs personalizados */
+/* NOTA: esta página usa el patrón de tabs de Bootstrap (data-bs-toggle="tab",
+   .nav-tabs, .tab-content, .tab-pane) pero el CSS de Bootstrap nunca se
+   incluye en el <head> (solo el JS bundle) — por eso los <li> se veían como
+   lista con viñetas y clickear en una pestaña no cambiaba nada visualmente
+   (el JS sí togglea las clases .show/.active, pero no había CSS que las
+   interpretara). Las reglas de acá abajo son el mínimo necesario para que
+   los tabs funcionen, sin importar todo bootstrap.css (que rompería el
+   diseño propio del resto del sitio). */
 .nav-tabs {
+    list-style: none;
+    padding-left: 0;
+    display: flex;
+    flex-wrap: wrap;
     border-bottom: 2px solid #dee2e6;
     margin-bottom: 1.5rem !important;
+}
+
+.tab-content > .tab-pane {
+    display: none;
+}
+
+.tab-content > .tab-pane.active.show,
+.tab-content > .tab-pane.show.active {
+    display: block;
 }
 
 .nav-tabs .nav-link {
