@@ -168,6 +168,21 @@ async function cargarEstadoFacturacion() {
       // Bloquear remito
       bloquearCamposRemito(true);
 
+    } else if (ventaData?.orden_compra_id) {
+      // Los remitos de una OC se facturan juntos, en una sola factura,
+      // desde el detalle de la OC (ahí se ajustan dólar y precios).
+      divEstado.innerHTML = `
+        <div class="notice notice-warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <div>
+            <strong>Pendiente de facturación</strong>
+            <div class="muted">Los remitos de la orden de compra se facturan juntos, en una sola factura</div>
+          </div>
+          <a class="b b-primary" href="oc_detalle.html?id=${ventaData.orden_compra_id}&tab=facturas">Facturar desde la OC</a>
+        </div>
+      `;
+
+      bloquearCamposRemito(false);
+
     } else {
       divEstado.innerHTML = `
         <div class="notice notice-warn" style="display:flex;justify-content:space-between;align-items:center">
@@ -270,7 +285,7 @@ async function confirmarFacturacion() {
     const response = await apiFetch('/api/facturas', {
       method: 'POST',
       body: JSON.stringify({
-        venta_id: parseInt(ventaId),
+        venta_ids: [parseInt(ventaId)],
         numero_factura,
         tipo_factura,
         fecha,

@@ -64,10 +64,11 @@
             <th class="num">Pedido</th>
             <th class="num">Entregado</th>
             <th class="num">Pendiente</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="detalle">
-          <tr><td colspan="4" class="muted">Cargando…</td></tr>
+          <tr><td colspan="5" class="muted">Cargando…</td></tr>
         </tbody>
       </table>
     </div></div></div>
@@ -109,12 +110,13 @@
               <tr>
                 <th>Modelo</th>
                 <th class="num">Pendiente</th>
+                <th class="num">Stock disponible</th>
                 <th class="num">Entregar ahora</th>
                 <th>Incluir</th>
               </tr>
             </thead>
             <tbody id="entregaItems">
-              <tr><td colspan="4" class="muted">Cargando…</td></tr>
+              <tr><td colspan="5" class="muted">Cargando…</td></tr>
             </tbody>
           </table>
         </div></div>
@@ -132,11 +134,12 @@
             <th>Fecha</th>
             <th class="solo-escritorio">Venta</th>
             <th>Items</th>
+            <th>Factura</th>
             <th class="solo-escritorio">Observaciones</th>
           </tr>
         </thead>
         <tbody id="remitosList">
-          <tr><td colspan="5" class="muted">Cargando…</td></tr>
+          <tr><td colspan="6" class="muted">Cargando…</td></tr>
         </tbody>
       </table>
     </div></div></div>
@@ -144,6 +147,20 @@
 
   <!-- ============ FACTURAS Y PAGOS ============ -->
   <div id="tab-facturas" class="tab-content">
+    <!-- Los remitos (entregas parciales o totales) se facturan juntos en
+         una sola factura, no uno por uno. -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Pendiente de facturar</h2>
+        <div class="page-head-actions">
+          <button type="button" id="btnFacturarRemitos" class="b b-primary" disabled>Facturar remitos</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <p class="muted" id="pendienteFacturarTexto">Cargando…</p>
+      </div>
+    </div>
+
     <div class="panel"><div class="panel-body flush"><div class="table-wrap">
       <table class="t">
         <thead>
@@ -162,6 +179,135 @@
     </div></div></div>
   </div>
 
+  <!-- ================= Ventana: cotización del dólar =================
+       Antes eran un confirm() y un prompt() del navegador encadenados: en
+       algunos navegadores/contextos esos diálogos nativos quedan bloqueados
+       o no soportados, y la operación se cancelaba en silencio sin que
+       quedara claro por qué. -->
+  <dialog id="cotizacionModal" class="panel">
+    <div class="panel-head"><h2>Cotización del dólar</h2></div>
+    <div class="panel-body">
+      <p class="muted" id="cotizacionActualTexto">Cotización actual: —</p>
+      <div class="field">
+        <label for="cotizacion_valor">Tipo de cambio USD/ARS a usar</label>
+        <input class="input" type="number" id="cotizacion_valor" step="0.01" min="0.01" required>
+      </div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="cotizacionModal">Cancelar</button>
+        <button type="button" class="b b-primary" id="btnConfirmarCotizacion">Confirmar y registrar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ================= Ventana: corregir cantidad de un ítem ================= -->
+  <dialog id="editarItemModal" class="panel">
+    <div class="panel-head"><h2>Corregir ítem</h2></div>
+    <div class="panel-body">
+      <p class="muted" id="editarItemTexto"></p>
+      <div class="field">
+        <label for="editar_cantidad">Cantidad pedida</label>
+        <input class="input" type="number" id="editar_cantidad" min="1" step="1" required>
+      </div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="editarItemModal">Cancelar</button>
+        <button type="button" class="b b-primary" id="btnGuardarItem">Guardar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ================= Ventana: borrar un ítem ================= -->
+  <dialog id="eliminarItemModal" class="panel">
+    <div class="panel-head"><h2>Eliminar ítem</h2></div>
+    <div class="panel-body">
+      <p id="eliminarItemTexto"></p>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="eliminarItemModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarEliminarItem">Eliminar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ================= Ventana: facturar varios remitos juntos =================
+       Una factura por todo lo entregado (uno o varios remitos). El precio
+       puede haber cambiado desde la entrega: se edita la cotización del
+       dólar y el precio USD de cada modelo; el precio en pesos se calcula
+       solo pero también se puede escribir a mano. -->
+  <dialog id="facturarModal" class="panel" style="width:min(920px, calc(100% - 32px))">
+    <div class="panel-head"><h2>Facturar remitos</h2></div>
+    <div class="panel-body">
+      <h3 style="margin:0 0 8px">1. Remitos a incluir</h3>
+      <div class="table-wrap">
+        <table class="t">
+          <thead>
+            <tr><th>Incluir</th><th>Remito</th><th>Fecha</th><th>Items</th></tr>
+          </thead>
+          <tbody id="facturarRemitos"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin:20px 0 8px">2. Precios</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label for="facturar_cotizacion">Cotización del dólar (ARS por USD)</label>
+          <input class="input" type="number" id="facturar_cotizacion" step="0.01" min="0.01">
+          <small class="muted" id="facturarDolarActual"></small>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:8px">
+        <table class="t">
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th class="num">Cantidad</th>
+              <th class="num solo-escritorio">Precio entrega</th>
+              <th class="num">Precio USD</th>
+              <th class="num">Precio ARS s/IVA</th>
+              <th class="num">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody id="facturarRenglones"></tbody>
+        </table>
+      </div>
+      <small class="muted">El precio en pesos se calcula como USD × cotización. Si lo escribís a mano, ese renglón deja de recalcularse.</small>
+
+      <h3 style="margin:20px 0 8px">3. Datos de la factura</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label for="facturar_numero">Número de factura</label>
+          <input class="input" type="text" id="facturar_numero" placeholder="Ej: 0001-00001234" required>
+        </div>
+        <div class="field">
+          <label for="facturar_tipo">Tipo</label>
+          <select class="input" id="facturar_tipo" required>
+            <option value="">Elegí…</option>
+            <option value="A">Factura A</option>
+            <option value="B">Factura B</option>
+            <option value="C">Factura C</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="facturar_fecha">Fecha</label>
+          <input class="input" type="date" id="facturar_fecha" required>
+        </div>
+        <div class="field">
+          <label for="facturar_dias_credito">Días de crédito</label>
+          <input class="input" type="number" id="facturar_dias_credito" value="0" min="0">
+        </div>
+      </div>
+
+      <div class="totales-inline" style="margin-top:16px">
+        <div><span>Subtotal sin IVA</span><strong id="facturarSubtotal">$0.00</strong></div>
+        <div><span id="facturarIvaLabel">IVA</span><strong id="facturarIva">$0.00</strong></div>
+        <div><span>Total</span><strong id="facturarTotal">$0.00</strong></div>
+      </div>
+
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="facturarModal">Cancelar</button>
+        <button type="button" class="b b-primary" id="btnConfirmarFactura">Generar factura</button>
+      </div>
+    </div>
+  </dialog>
+
 </div>
 
 <script src="js/ayuda.js"></script>
@@ -177,6 +323,16 @@
       boton.classList.add('active');
       document.getElementById('tab-' + boton.dataset.tab)?.classList.add('active');
     });
+  });
+
+  // ?tab=facturas abre directo esa pestaña (lo usa "Facturar desde la OC"
+  // en venta_detalle.html).
+  const tabInicial = new URLSearchParams(location.search).get('tab');
+  if (tabInicial) document.querySelector(`.tab[data-tab="${tabInicial}"]`)?.click();
+
+  // Botones "Cancelar" de las ventanas.
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
   });
 </script>
 <script src="js/auth.js"></script>

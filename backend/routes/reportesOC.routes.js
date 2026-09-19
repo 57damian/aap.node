@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { getIVA } = require('../services/parametros');
 
 router.use(verificarToken);
 
@@ -23,14 +24,10 @@ router.get(
       // Acá se agrega cada cosa por separado con subconsultas LATERAL,
       // y el cobrado sale del circuito real (pago_items + aplicacion_pagos).
       //
-      // OJO — pregunta de diseño sin resolver (ver D1 completo en
-      // claude/auditoria-bugs-2026-09-13.md): no existe un vínculo directo
-      // entre una factura y la OC que la originó, así que "cobrado de la OC"
-      // se aproxima acá como "cobros de facturas del mismo cliente de la
-      // OC", lo que puede contar cobros de OTRA OC del mismo cliente si el
-      // cliente tiene más de una. El fix de fondo (agregar
-      // facturas.orden_compra_id al facturar) es una decisión de producto
-      // que hay que consultarle a Damian, no algo para decidir en el código.
+      // Desde migracion-factura-multi-remito.sql las facturas guardan
+      // orden_compra_id, así que facturado y cobrado salen de las facturas
+      // reales de esta OC (antes: "facturado" era lo entregado valorizado a
+      // precio de entrega, y "cobrado" se aproximaba por cliente — D1).
       const result = await pool.query(
         `SELECT
           oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, c.nombre AS cliente,
@@ -40,17 +37,17 @@ router.get(
         FROM ordenes_compra oc
         JOIN clientes c ON c.id = oc.cliente_id
         LEFT JOIN LATERAL (
-          SELECT SUM(vi.cantidad * vi.precio_unitario_pesos) AS total_facturado
-          FROM ventas v JOIN venta_items vi ON vi.venta_id = v.id
-          WHERE v.orden_compra_id = oc.id
+          SELECT SUM(fa.total) AS total_facturado
+          FROM facturas fa
+          WHERE fa.orden_compra_id = oc.id
+            AND upper(COALESCE(fa.estado, 'EMITIDA')) <> 'ANULADA'
         ) f ON true
         LEFT JOIN LATERAL (
           SELECT SUM(ap.monto_aplicado) AS total_cobrado
-          FROM ventas v
-          JOIN facturas fa        ON fa.cliente_id = v.cliente_id
+          FROM facturas fa
           JOIN aplicacion_pagos ap ON ap.factura_id = fa.id
           JOIN pago_items pi      ON pi.id = ap.pago_item_id
-          WHERE v.orden_compra_id = oc.id AND pi.estado = 'ACREDITADO'
+          WHERE fa.orden_compra_id = oc.id AND pi.estado = 'ACREDITADO'
         ) p ON true
         WHERE oc.id = $1`,
         [req.params.id]
@@ -78,14 +75,16 @@ router.get(
           ft.modelo,
           oci.cantidad_pedida,
           COALESCE(SUM(vi.cantidad),0) AS cantidad_entregada,
-          oci.cantidad_pedida - COALESCE(SUM(vi.cantidad),0) AS pendiente
+          oci.cantidad_pedida - COALESCE(SUM(vi.cantidad),0) AS pendiente,
+          COALESCE(sa.stock_actual, 0) AS stock_disponible
           FROM orden_compra_items oci
           JOIN ficha_transformador ft ON ft.id = oci.ficha_id
           LEFT JOIN ventas v ON v.orden_compra_id = oci.orden_compra_id
           LEFT JOIN venta_items vi
           ON vi.venta_id = v.id AND vi.ficha_id = oci.ficha_id
+          LEFT JOIN stock_actual sa ON sa.ficha_id = ft.id
           WHERE oci.orden_compra_id = $1
-          GROUP BY oci.id, ft.id, ft.modelo, oci.cantidad_pedida`,
+          GROUP BY oci.id, ft.id, ft.modelo, oci.cantidad_pedida, sa.stock_actual`,
         [req.params.id]
       );
 
@@ -107,64 +106,158 @@ router.get(
   soloAdmin,
   async (req, res) => {
     try {
+      // Una fila por factura (una factura puede agrupar varios remitos).
+      // Los items salen de lo FACTURADO (factura_venta_items), agrupados
+      // por modelo y precio, no de lo entregado: el precio de la factura
+      // puede ser distinto al de la entrega.
       const result = await pool.query(
         `SELECT
-          v.id AS venta_id,
-          f.numero_factura,
-          f.fecha AS fecha_factura,
-          f.tipo_factura,
+          fa.id AS factura_id,
+          fa.numero_factura,
+          fa.fecha AS fecha_factura,
+          fa.tipo_factura,
+          fa.estado,
+          fa.subtotal_sin_iva,
+          fa.iva_21,
+          fa.total AS total_factura,
           COALESCE(items.items, '[]'::json) AS items,
-          COALESCE(items.total_factura, 0) AS total_factura,
+          remitos.remitos,
           COALESCE(pagos.total_cobrado, 0) AS total_cobrado
-        FROM ventas v
-        -- Relacionar la venta con su factura real
-        JOIN LATERAL (
-          SELECT
-            fa.id,
-            fa.numero_factura,
-            fa.fecha,
-            fa.tipo_factura
-          FROM venta_items vi
-          JOIN factura_venta_items fi ON fi.venta_item_id = vi.id
-          JOIN facturas fa ON fa.id = fi.factura_id
-          WHERE vi.venta_id = v.id
-          ORDER BY fa.id DESC
-          LIMIT 1
-        ) f ON true
-        -- Items/totales de la venta
+        FROM facturas fa
         LEFT JOIN LATERAL (
-          SELECT
-            json_agg(
-              json_build_object(
-                'modelo', ft.modelo,
-                'cantidad', vi.cantidad,
-                'precio_unitario', vi.precio_unitario_pesos,
-                'subtotal', vi.cantidad * vi.precio_unitario_pesos
-              )
-              ORDER BY ft.modelo
-            ) AS items,
-            SUM(vi.cantidad * vi.precio_unitario_pesos) AS total_factura
-          FROM venta_items vi
-          JOIN ficha_transformador ft ON ft.id = vi.ficha_id
-          WHERE vi.venta_id = v.id
+          SELECT json_agg(
+            json_build_object(
+              'modelo', g.modelo,
+              'cantidad', g.cantidad,
+              'precio_unitario', g.precio_unitario,
+              'subtotal', g.subtotal
+            )
+            ORDER BY g.modelo
+          ) AS items
+          FROM (
+            SELECT ft.modelo, fvi.precio_unitario,
+                   SUM(fvi.cantidad) AS cantidad,
+                   SUM(fvi.subtotal) AS subtotal
+            FROM factura_venta_items fvi
+            JOIN ficha_transformador ft ON ft.id = fvi.ficha_id
+            WHERE fvi.factura_id = fa.id
+            GROUP BY ft.modelo, fvi.precio_unitario
+          ) g
         ) items ON true
-        -- Cobros aplicados a la venta (hallazgo D2: antes leía la tabla
-        -- legacy pagos_clientes, que nadie escribe desde que existe el
-        -- circuito de Cobros — siempre daba 0. Acá sí hay vínculo directo
-        -- vía f.id, que es la factura real de esta venta, así que no tiene
-        -- la ambigüedad del endpoint /resumen de arriba.)
+        LEFT JOIN LATERAL (
+          SELECT string_agg(DISTINCT COALESCE(v.remito_numero, 'venta #' || v.id), ', ') AS remitos
+          FROM factura_venta_items fvi
+          JOIN venta_items vi ON vi.id = fvi.venta_item_id
+          JOIN ventas v ON v.id = vi.venta_id
+          WHERE fvi.factura_id = fa.id
+        ) remitos ON true
+        -- Cobros aplicados a la factura (hallazgo D2: sale del circuito
+        -- real de Cobros, no de la tabla legacy pagos_clientes)
         LEFT JOIN LATERAL (
           SELECT SUM(ap.monto_aplicado) AS total_cobrado
           FROM aplicacion_pagos ap
           JOIN pago_items pi ON pi.id = ap.pago_item_id
-          WHERE ap.factura_id = f.id AND pi.estado = 'ACREDITADO'
+          WHERE ap.factura_id = fa.id AND pi.estado = 'ACREDITADO'
         ) pagos ON true
-        WHERE v.orden_compra_id = $1
-        ORDER BY v.id`,
+        WHERE fa.orden_compra_id = $1
+        ORDER BY fa.fecha, fa.id`,
         [req.params.id]
       );
 
       res.json(result.rows);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+/* ============================
+   REMITOS PENDIENTES DE FACTURAR
+   ----------------------------
+   Lo que usa la ventana "Facturar remitos" de oc_detalle: remitos de la
+   OC con items sin facturar, el precio de lista actual de cada modelo, la
+   cotización del dólar y el IVA vigentes.
+============================ */
+router.get(
+  '/orden-compra/:id/pendiente-facturar',
+  soloAdmin,
+  async (req, res) => {
+    try {
+      const ocRes = await pool.query(
+        `SELECT oc.numero_oc, c.nombre AS cliente
+         FROM ordenes_compra oc JOIN clientes c ON c.id = oc.cliente_id
+         WHERE oc.id = $1`,
+        [req.params.id]
+      );
+      if (!ocRes.rows.length) {
+        return res.status(404).json({ error: 'OC no encontrada' });
+      }
+
+      const itemsRes = await pool.query(
+        `SELECT
+           v.id AS venta_id, v.remito_numero, v.remito_fecha, v.tipo_cambio,
+           vi.id AS venta_item_id, vi.ficha_id, ft.modelo, vi.cantidad,
+           vi.precio_unitario_usd, vi.precio_unitario_pesos
+         FROM ventas v
+         JOIN venta_items vi ON vi.venta_id = v.id
+         JOIN ficha_transformador ft ON ft.id = vi.ficha_id
+         WHERE v.orden_compra_id = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM factura_venta_items fvi WHERE fvi.venta_item_id = vi.id
+           )
+         ORDER BY v.id, ft.modelo`,
+        [req.params.id]
+      );
+
+      const remitos = [];
+      const porVenta = new Map();
+      for (const row of itemsRes.rows) {
+        let remito = porVenta.get(row.venta_id);
+        if (!remito) {
+          remito = {
+            venta_id: row.venta_id,
+            remito_numero: row.remito_numero,
+            remito_fecha: row.remito_fecha,
+            tipo_cambio: row.tipo_cambio,
+            items: []
+          };
+          porVenta.set(row.venta_id, remito);
+          remitos.push(remito);
+        }
+        remito.items.push({
+          venta_item_id: row.venta_item_id,
+          ficha_id: row.ficha_id,
+          modelo: row.modelo,
+          cantidad: row.cantidad,
+          precio_unitario_usd: row.precio_unitario_usd,
+          precio_unitario_pesos: row.precio_unitario_pesos
+        });
+      }
+
+      const fichaIds = [...new Set(itemsRes.rows.map(r => r.ficha_id))];
+      const preciosRes = fichaIds.length
+        ? await pool.query(
+            `SELECT DISTINCT ON (ficha_id) ficha_id, precio
+             FROM precios_modelo
+             WHERE ficha_id = ANY($1)
+             ORDER BY ficha_id, fecha_desde DESC`,
+            [fichaIds]
+          )
+        : { rows: [] };
+      const precios_lista = {};
+      preciosRes.rows.forEach(p => { precios_lista[p.ficha_id] = Number(p.precio); });
+
+      const dolarRes = await pool.query(
+        "SELECT valor FROM parametros WHERE clave = 'dolar_banco'"
+      );
+
+      res.json({
+        ...ocRes.rows[0],
+        iva: await getIVA(pool),
+        dolar_actual: dolarRes.rows.length ? Number(dolarRes.rows[0].valor) : null,
+        remitos,
+        precios_lista
+      });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

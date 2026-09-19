@@ -105,6 +105,25 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-factura-multi-remito.sql (19/09): facturas.orden_compra_id,
+  // facturas.tipo_cambio y factura_venta_items.precio_unitario_usd.
+  {
+    const columnas = [
+      ['facturas', 'orden_compra_id'],
+      ['facturas', 'tipo_cambio'],
+      ['factura_venta_items', 'precio_unitario_usd']
+    ];
+    const falta = [];
+    for (const [tabla, columna] of columnas) {
+      if (!(await existeColumna(tabla, columna))) falta.push(`falta la columna ${tabla}.${columna}`);
+    }
+    resultados.push({
+      migracion: 'migracion-factura-multi-remito.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;
@@ -120,10 +139,10 @@ async function existeIndice(nombre) {
   const pendientes = resultados.filter(r => !r.aplicada);
   console.log('');
   if (pendientes.length === 0) {
-    console.log('Las 4 migraciones están aplicadas. Se puede seguir con el Paso 2.');
+    console.log(`Las ${resultados.length} migraciones están aplicadas.`);
   } else {
     console.log(
-      `Faltan ${pendientes.length} de 4: ${pendientes.map(r => r.migracion).join(', ')}.\n` +
+      `Faltan ${pendientes.length} de ${resultados.length}: ${pendientes.map(r => r.migracion).join(', ')}.\n` +
       'Correrlas (con el backup ya hecho) antes de seguir al Paso 2.'
     );
   }

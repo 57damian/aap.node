@@ -74,7 +74,8 @@ router.post('/', soloAdmin, async (req, res) => {
     tipo_cambio,
     remito_numero,
     remito_fecha,
-    remito_observaciones
+    remito_observaciones,
+    items
   } = req.body;
 
   if (!orden_compra_id) {
@@ -85,31 +86,45 @@ router.post('/', soloAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Si ingresa número de remito, la fecha es obligatoria' });
   }
 
+  if (items !== undefined && (!Array.isArray(items) || !items.length)) {
+    return res.status(400).json({ error: 'La lista de items no es válida' });
+  }
+
+  // La venta y sus items se crean en la misma transacción: antes eran dos
+  // pasos separados (POST / y POST /:id/items por cada item) y si un item
+  // fallaba (stock insuficiente, modelo sin precio) quedaba una venta con el
+  // remito ya asignado pero sin ningún item — un remito fantasma que además
+  // dejaba el número de remito "gastado".
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     // Obtener el cliente de la OC
-    const clienteRes = await pool.query(
+    const clienteRes = await client.query(
       `SELECT cliente_id FROM ordenes_compra WHERE id = $1`,
       [orden_compra_id]
     );
 
     if (!clienteRes.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'OC no encontrada' });
     }
 
     const cliente_id = clienteRes.rows[0].cliente_id;
-    
+
     // ✅ USAR EL TIPO DE CAMBIO RECIBIDO (DEL FRONTEND)
     let tipoCambio = parseFloat(tipo_cambio);
-    
+
     // Si no viene tipo_cambio, obtener el último registrado. Antes había
     // un fallback hardcodeado (1415.00) que dejaba cargar una venta con
     // un dólar inventado de hace meses si no había cotización — ahora se
     // rechaza explícitamente (hallazgo D8 de la auditoría).
     if (!tipoCambio || isNaN(tipoCambio)) {
-      const dolarRes = await pool.query(
+      const dolarRes = await client.query(
         "SELECT valor FROM parametros WHERE clave = 'dolar_banco'"
       );
       if (!dolarRes.rows.length || !parseFloat(dolarRes.rows[0].valor)) {
+        await client.query('ROLLBACK');
         return res.status(400).json({
           error: 'No hay cotización del dólar cargada. Cargala en Precios antes de registrar la venta.'
         });
@@ -117,7 +132,7 @@ router.post('/', soloAdmin, async (req, res) => {
       tipoCambio = parseFloat(dolarRes.rows[0].valor);
     }
 
-    const result = await pool.query(
+    const ventaRes = await client.query(
       `INSERT INTO ventas
        (cliente_id, orden_compra_id, tipo_cambio, remito_numero, remito_fecha, remito_observaciones)
        VALUES ($1,$2,$3,$4,$5,$6)
@@ -131,11 +146,61 @@ router.post('/', soloAdmin, async (req, res) => {
         remito_observaciones || null
       ]
     );
+    const venta = ventaRes.rows[0];
+    venta.items = [];
 
-    res.json(result.rows[0]);
+    if (items && items.length) {
+      for (const it of items) {
+        const fichaId = Number.parseInt(it.ficha_id, 10);
+        const cantidad = Number.parseInt(it.cantidad, 10);
+
+        if (!fichaId || !cantidad || cantidad <= 0) {
+          const e = new Error('Datos de item incompletos');
+          e.status = 400;
+          throw e;
+        }
+
+        const precioRes = await client.query(
+          `SELECT precio FROM precios_modelo WHERE ficha_id = $1 ORDER BY fecha_desde DESC LIMIT 1`,
+          [fichaId]
+        );
+
+        if (!precioRes.rows.length) {
+          const modeloRes = await client.query(
+            `SELECT modelo FROM ficha_transformador WHERE id = $1`,
+            [fichaId]
+          );
+          const nombreModelo = modeloRes.rows[0]?.modelo || `ficha ${fichaId}`;
+          const e = new Error(`El modelo ${nombreModelo} no tiene precio cargado`);
+          e.status = 400;
+          throw e;
+        }
+
+        const precio_usd = precioRes.rows[0].precio;
+        const precio_pesos = precio_usd * tipoCambio;
+
+        // Si la cantidad supera el stock disponible, trigger_verificar_stock
+        // (sobre venta_items) rechaza el INSERT con una excepción — el
+        // ROLLBACK del catch se lleva puesta también la venta recién creada.
+        const itemRes = await client.query(
+          `INSERT INTO venta_items
+           (venta_id, ficha_id, cantidad, precio_unitario_usd, precio_unitario_pesos)
+           VALUES ($1,$2,$3,$4,$5)
+           RETURNING *`,
+          [venta.id, fichaId, cantidad, precio_usd, precio_pesos]
+        );
+        venta.items.push(itemRes.rows[0]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json(venta);
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await client.query('ROLLBACK');
+    res.status(err.status || 500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

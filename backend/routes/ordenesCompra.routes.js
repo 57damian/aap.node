@@ -91,6 +91,111 @@ router.post(
   }
 );
 
+// Trae un item de la OC con lo ya entregado de ese modelo, bloqueando la
+// fila para que no cambie mientras se valida. Devuelve null si el item no
+// es de esa OC. Lo usan PUT y DELETE de abajo.
+async function itemConEntregado(client, ocId, itemId) {
+  const r = await client.query(
+    `SELECT oci.id, oci.ficha_id, oci.cantidad_pedida, oc.estado,
+       (SELECT COALESCE(SUM(vi.cantidad), 0)
+        FROM ventas v
+        JOIN venta_items vi ON vi.venta_id = v.id
+        WHERE v.orden_compra_id = oci.orden_compra_id
+          AND vi.ficha_id = oci.ficha_id) AS entregado
+     FROM orden_compra_items oci
+     JOIN ordenes_compra oc ON oc.id = oci.orden_compra_id
+     WHERE oci.id = $1 AND oci.orden_compra_id = $2
+     FOR UPDATE OF oci`,
+    [itemId, ocId]
+  );
+  return r.rows[0] || null;
+}
+
+// Corregir la cantidad de un item mal cargado. Fija la cantidad (el POST
+// de arriba, en cambio, suma). No se puede bajar por debajo de lo que ya
+// se entregó de ese modelo.
+router.put(
+  '/:id/items/:itemId',
+  soloAdmin,
+  async (req, res) => {
+    const cantidad = parseInt(req.body.cantidad_pedida, 10);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      return res.status(400).json({ error: 'La cantidad tiene que ser un entero positivo' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const item = await itemConEntregado(client, req.params.id, req.params.itemId);
+
+      if (!item) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Item no encontrado en esta orden' });
+      }
+      if (item.estado === 'cerrada') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'La orden está cerrada, no se puede modificar' });
+      }
+      if (cantidad < Number(item.entregado)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya se entregaron ${item.entregado} unidades de este modelo: la cantidad no puede ser menor`
+        });
+      }
+
+      const result = await client.query(
+        `UPDATE orden_compra_items SET cantidad_pedida = $1 WHERE id = $2 RETURNING *`,
+        [cantidad, item.id]
+      );
+      await client.query('COMMIT');
+      res.json(result.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// Borrar un item mal cargado. Solo si todavía no se entregó nada de ese
+// modelo: si ya hay remitos, se puede bajar la cantidad hasta lo entregado.
+router.delete(
+  '/:id/items/:itemId',
+  soloAdmin,
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const item = await itemConEntregado(client, req.params.id, req.params.itemId);
+
+      if (!item) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Item no encontrado en esta orden' });
+      }
+      if (item.estado === 'cerrada') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'La orden está cerrada, no se puede modificar' });
+      }
+      if (Number(item.entregado) > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya se entregaron ${item.entregado} unidades de este modelo: no se puede borrar, solo bajar la cantidad hasta lo entregado`
+        });
+      }
+
+      await client.query(`DELETE FROM orden_compra_items WHERE id = $1`, [item.id]);
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 router.get(
   '/:id/estado',
   soloAdmin,
