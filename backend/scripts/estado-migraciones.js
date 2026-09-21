@@ -171,6 +171,26 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-ficha-devanados.sql (21/09): espiras del primario/secundario
+  // como texto ("422 + 422") y tabla ficha_devanados_extra.
+  {
+    const r = await pool.query(
+      `SELECT data_type FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'ficha_transformador'
+         AND column_name = 'espiras_secundario'`
+    );
+    const falta = [];
+    if (!r.rows.length || r.rows[0].data_type !== 'character varying') {
+      falta.push('ficha_transformador.espiras_secundario todavía no es texto');
+    }
+    if (!(await existeTabla('ficha_devanados_extra'))) falta.push('falta la tabla ficha_devanados_extra');
+    resultados.push({
+      migracion: 'migracion-ficha-devanados.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

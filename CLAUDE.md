@@ -43,10 +43,12 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 8. `migracion-fix-retenciones.sql` (19/09) — elimina el CHECK viejo `pago_items_tipo_check`, que no admitía `RETENCION`: sin esto **no se puede registrar ninguna retención** desde Cobros. Aplicada en Neon; **en la base local falta correrla** (`psql -U postgres -h localhost -d transformadores -f backend/scripts/migracion-fix-retenciones.sql`).
 
-9. `migracion-anulacion-facturas.sql` (21/09) — tabla `auditoria_anulaciones`, columnas `facturas.anulada_en/anulada_por/motivo_anulacion` y reemplazo del UNIQUE `unique_numero_factura` por el índice único parcial `uq_facturas_numero_vigente` (el número de una factura ANULADA se puede reusar). Sin esto no funciona "Anular factura" ni se puede dar de alta una factura (el código nuevo espera el índice). **Falta correrla en local y en Neon** (ver "Anular facturas, remitos y OC" abajo).
-10. `migracion-anulacion-remitos-oc.sql` (21/09) — columnas `anulada_en/anulada_por/motivo_anulacion` en `ventas` (remitos) y `ordenes_compra`. **Requiere la 9** (usa `auditoria_anulaciones`). Sin esto fallan el listado de remitos y las anulaciones de remitos y OC. **Falta correrla en local y en Neon.**
+9. `migracion-anulacion-facturas.sql` (21/09) — tabla `auditoria_anulaciones`, columnas `facturas.anulada_en/anulada_por/motivo_anulacion` y reemplazo del UNIQUE `unique_numero_factura` por el índice único parcial `uq_facturas_numero_vigente` (el número de una factura ANULADA se puede reusar). Sin esto no funciona "Anular factura" ni se puede dar de alta una factura (el código nuevo espera el índice). **Aplicada en Neon el 21/09/2026; falta correrla en la base local** (ver "Anular facturas, remitos y OC" abajo).
+10. `migracion-anulacion-remitos-oc.sql` (21/09) — columnas `anulada_en/anulada_por/motivo_anulacion` en `ventas` (remitos) y `ordenes_compra`. **Requiere la 9** (usa `auditoria_anulaciones`). Sin esto fallan el listado de remitos y las anulaciones de remitos y OC. **Aplicada en Neon el 21/09/2026 (junto con la 9, con backup en `docs/_backup/neon-datos-antes-de-migraciones-9-10-2026-09-21.json`); falta correrla en la base local.**
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 10, no la 5 ni la 6).
+11. `migracion-ficha-devanados.sql` (21/09) — pasa `ficha_transformador.espiras_primario/espiras_secundario` de `integer` a `varchar(40)` (para guardar "422 + 422" de un secundario con punto medio; los valores existentes se conservan) y crea `ficha_devanados_extra` (devanados terciario, cuarto…). Sin esto falla **el detalle y el guardado de toda ficha** (la API lee/escribe la tabla nueva). **Aplicada en Neon el 21/09/2026 (backup en `docs/_backup/neon-datos-antes-de-migracion-11-2026-09-21.json`); falta correrla en la base local.**
+
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 11, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -83,6 +85,12 @@ Decisión (21/09/2026): **anular, no borrar**. No hay rol superadmin ni borrado 
 - `GET /api/facturas/anulaciones` devuelve el historial de las tres entidades (`entidad` = `FACTURA_VENTA` | `REMITO` | `ORDEN_COMPRA`). El número de un remito o de una OC anulados se puede reusar (no hay restricción de unicidad).
 - Orden para anular todo un circuito: primero la factura, después los remitos, al final la OC.
 - Pendiente: anular recibo y nota de crédito, y reemplazar los `prompt()`/`confirm()` de cobros y pagos a proveedores por diálogos.
+
+## Fichas técnicas: devanados
+
+- Primario y secundario viven en columnas de `ficha_transformador`; las **espiras son texto** (`"422 + 422"` si el secundario tiene punto medio). Los devanados **terciario, cuarto… hasta décimo** (máximo 8 adicionales) viven en `ficha_devanados_extra` (`orden` 3 en adelante, un renglón por devanado: alambre, diámetro, espiras, pines, peso).
+- `ficha.html` tiene el botón "Agregar devanado" (cada uno con "Quitar"). El formulario manda la lista como JSON en el campo `devanados_extra`; `POST`/`PUT /api/ficha-transformador` la validan y **reemplazan** los guardados en la misma transacción que la ficha (si el campo no viene en un `PUT`, no se tocan). `GET /api/ficha-transformador/:id` devuelve `devanados_extra`; el listado no.
+- Todo lo tipeado se escapa al mostrarlo (`escHtml` en `ficha.js`).
 
 ## Convenciones
 
