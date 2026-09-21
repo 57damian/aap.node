@@ -124,6 +124,38 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-fix-retenciones.sql (19/09): elimina el CHECK viejo
+  // pago_items_tipo_check, que no admitía RETENCION.
+  {
+    const r = await pool.query(
+      `SELECT EXISTS (
+         SELECT FROM pg_constraint
+         WHERE conrelid = 'pago_items'::regclass AND conname = 'pago_items_tipo_check'
+       )`
+    );
+    const sigueViejo = r.rows[0].exists;
+    resultados.push({
+      migracion: 'migracion-fix-retenciones.sql',
+      aplicada: !sigueViejo,
+      falta: sigueViejo ? 'todavía existe el CHECK pago_items_tipo_check (bloquea las retenciones)' : ''
+    });
+  }
+
+  // migracion-anulacion-facturas.sql (21/09): tabla auditoria_anulaciones,
+  // columnas de anulación en facturas e índice único parcial del número.
+  {
+    const falta = [];
+    if (!(await existeTabla('auditoria_anulaciones'))) falta.push('falta la tabla auditoria_anulaciones');
+    if (!(await existeColumna('facturas', 'anulada_en'))) falta.push('falta la columna facturas.anulada_en');
+    if (!(await existeIndice('uq_facturas_numero_vigente'))) falta.push('falta el índice uq_facturas_numero_vigente');
+    if (await existeIndice('unique_numero_factura')) falta.push('todavía existe el UNIQUE viejo unique_numero_factura');
+    resultados.push({
+      migracion: 'migracion-anulacion-facturas.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

@@ -311,17 +311,24 @@ async function cargarFacturas() {
     // Una fila por factura (puede agrupar varios remitos) y debajo sus
     // renglones por modelo, al precio facturado.
     facturas.forEach((factura) => {
+      // Una factura anulada se ve como tal y no ofrece más acciones; una
+      // vigente enlaza a Correcciones, donde se anula con confirmación.
+      const anulada = String(factura.estado || '').toUpperCase() === 'ANULADA';
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td colspan="5" class="muted" style="background:var(--gray-50,#f8fafc)">
-          <strong>Factura ${factura.tipo_factura || ''} ${factura.numero_factura || '—'}</strong>
+          <strong class="${anulada ? 'tachado' : ''}">Factura ${factura.tipo_factura || ''} ${factura.numero_factura || '—'}</strong>
+          ${anulada ? Shell.pill('ANULADA') : ''}
           · ${Shell.fecha(factura.fecha_factura)}
           · Remitos: ${factura.remitos || '—'}
           · Total ${Shell.money(factura.total_factura)} (con IVA)
-          · Cobrado ${Shell.money(factura.total_cobrado)}
+          ${anulada ? '' : `· Cobrado ${Shell.money(factura.total_cobrado)}
+          · <a href="correcciones.html?factura=${encodeURIComponent(factura.factura_id)}">Anular…</a>`}
         </td>
       `;
       tbody.appendChild(tr);
+
+      if (anulada) return;
 
       if (factura.items && factura.items.length) {
         factura.items.forEach((item) => {

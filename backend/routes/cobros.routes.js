@@ -23,6 +23,7 @@ const {
   CTE_FACTURAS, CTE_A_FAVOR, EXCESO_COBRADO, ESTADO_FACTURA,
   resumenCliente, cuentaCorriente
 } = require('../services/cuenta-cliente');
+const { anularCobro } = require('../services/anulaciones');
 
 router.use(verificarToken);
 
@@ -1027,24 +1028,17 @@ router.post('/:id/anular', soloAdmin, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const pago = await client.query('SELECT * FROM pagos WHERE id = $1 FOR UPDATE', [req.params.id]);
-    if (!pago.rows.length) throw new Error('Cobro no encontrado');
-    if (pago.rows[0].recibo_id) throw new Error('El cobro ya tiene un recibo emitido: anulá primero el recibo');
-
-    await client.query('DELETE FROM aplicacion_pagos WHERE pago_id = $1', [req.params.id]);
-    await client.query(`UPDATE pago_items SET estado = 'ANULADO', updated_at = now() WHERE pago_id = $1`, [req.params.id]);
-    await client.query(`
-      UPDATE pagos SET anulado = true, updated_at = now(),
-        observaciones = COALESCE(observaciones, '') || ' [ANULADO: ' || $2 || ']'
-      WHERE id = $1
-    `, [req.params.id, req.body.motivo || 'sin motivo']);
+    // La lógica vive en services/anulaciones.js porque también la usa la
+    // anulación de facturas. Además de lo de antes, ahora rechaza un cobro
+    // que ya estaba anulado o que tiene un cheque endosado a un proveedor.
+    await anularCobro(client, req.params.id, req.body.motivo);
 
     await client.query('COMMIT');
     res.json({ message: 'Cobro anulado. La deuda de las facturas imputadas volvió a quedar abierta.' });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error anulando cobro:', err);
-    fallar(res, 400, err.message);
+    fallar(res, err.status || 400, err.message);
   } finally {
     client.release();
   }

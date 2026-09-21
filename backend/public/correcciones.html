@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Correcciones — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Correcciones</h1>
+      <p>Anular una factura de venta cargada con errores. Nada se borra: queda registrado quién, cuándo y por qué.</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button type="button" class="tab active" data-tab="facturas">Facturas de venta</button>
+    <button type="button" class="tab" data-tab="historial">Historial de anulaciones</button>
+  </div>
+
+  <!-- ================= Facturas de venta ================= -->
+  <div id="tab-facturas" class="tab-content active">
+    <div class="filters">
+      <div class="field grow">
+        <label for="filtroNumero">Número de factura</label>
+        <input class="input" type="text" id="filtroNumero" placeholder="00003-00000241">
+      </div>
+      <div class="field">
+        <label for="filtroEstado">Estado</label>
+        <select class="select" id="filtroEstado">
+          <option value="">Todas</option>
+          <option value="EMITIDA">Vigentes</option>
+          <option value="ANULADA">Anuladas</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button type="button" class="b b-ghost" id="btnLimpiar">Limpiar</button>
+        <button type="button" class="b b-primary" id="btnBuscar">Buscar</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:var(--space-4)"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Factura</th>
+            <th>Cliente</th>
+            <th class="num">Total</th>
+            <th class="num solo-escritorio">Cobrado</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="facturasGrid">
+          <tr><td colspan="7" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
+  </div>
+
+  <!-- ================= Historial ================= -->
+  <div id="tab-historial" class="tab-content">
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Cuándo</th>
+            <th>Factura</th>
+            <th>Motivo</th>
+            <th>Quién</th>
+            <th class="solo-escritorio">Qué pasó</th>
+          </tr>
+        </thead>
+        <tbody id="historialGrid">
+          <tr><td colspan="5" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
+  </div>
+
+  <!-- ================= Ventanas =================
+       Van adentro de [data-content]: Shell.montar() reemplaza el body y solo
+       conserva lo de adentro. -->
+
+  <dialog id="anularModal" class="panel">
+    <div class="panel-head"><h2 id="anularTitulo">Anular factura</h2></div>
+    <div class="panel-body">
+
+      <div class="notice notice-warn dialog-bloque">
+        Anular <strong>no borra</strong> la factura: queda registrada como ANULADA, con quién la anuló y por qué.
+        Revisá lo que va a pasar antes de confirmar.
+      </div>
+
+      <div class="dialog-bloque" id="anularResumen"></div>
+
+      <div class="dialog-bloque" id="anularBloqueos" hidden></div>
+
+      <div class="dialog-bloque">
+        <h3>Qué va a pasar</h3>
+        <ul class="consecuencias" id="anularConsecuencias"></ul>
+      </div>
+
+      <div class="dialog-bloque" id="anularCobrosBloque" hidden>
+        <h3>Cobros imputados a esta factura</h3>
+        <p class="muted" style="margin:0 0 var(--space-2)">Elegí qué hacer con cada uno. Si lo dejás a cuenta, la plata queda como saldo a favor del cliente y anotada de qué factura viene.</p>
+        <div id="anularCobros"></div>
+      </div>
+
+      <div class="dialog-bloque" id="anularFormBloque">
+        <div class="field" style="margin-bottom:var(--space-3)">
+          <label for="anularMotivo">Motivo de la anulación <span class="muted">(obligatorio, al menos 10 caracteres)</span></label>
+          <textarea class="input" id="anularMotivo" rows="3" maxlength="500" placeholder="Ej.: se cargó el precio con el dólar equivocado"></textarea>
+        </div>
+        <div class="field">
+          <label for="anularConfirmar">Para confirmar, escribí el número de la factura: <strong id="anularNumeroRef"></strong></label>
+          <input class="input" type="text" id="anularConfirmar" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="notice notice-err dialog-bloque" id="anularError" role="alert" hidden></div>
+
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="anularModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarAnular" disabled>Anular factura</button>
+      </div>
+    </div>
+  </dialog>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Correcciones', sub: 'Anular facturas de venta' });
+
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  // La seguridad real es soloAdmin en el backend; esto solo evita ver la pantalla.
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/correcciones.js"></script>
+</body>
+</html>
