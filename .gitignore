@@ -10,3 +10,9 @@ backend/uploads/
 # Backups de base de datos y scripts de verificacion de migraciones.
 # Contienen datos reales de la base: no van al repo.
 docs/_backup/
+
+# Datos de negocio para cargas iniciales: el Excel con las cuentas de los
+# clientes (facturas, números de cheque, importes) y las cotizaciones del
+# dólar. Se usan de origen para importar, no forman parte del código.
+FACTURAS-*.xlsx
+cotizaciones_*.csv
