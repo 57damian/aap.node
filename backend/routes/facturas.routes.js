@@ -78,6 +78,9 @@ router.post('/', soloAdmin, async (req, res) => {
     const ventas = ventasRes.rows;
     const venta = ventas[0];
 
+    if (ventas.some(v => v.anulada_en)) {
+      throw new Error('Alguno de los remitos seleccionados está anulado');
+    }
     if (ventas.some(v => v.cliente_id !== venta.cliente_id)) {
       throw new Error('Los remitos seleccionados son de clientes distintos');
     }
@@ -308,7 +311,8 @@ router.get('/anulaciones', soloAdmin, async (req, res) => {
     const { rows } = await pool.query(`
       SELECT id, entidad, entidad_id, numero, motivo, usuario_nombre, creado_en,
              snapshot->'remitos'  AS remitos,
-             snapshot->'acciones' AS acciones
+             snapshot->'acciones' AS acciones,
+             snapshot->'items'    AS items
       FROM auditoria_anulaciones
       ORDER BY creado_en DESC, id DESC
       LIMIT 500

@@ -43,9 +43,10 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 8. `migracion-fix-retenciones.sql` (19/09) — elimina el CHECK viejo `pago_items_tipo_check`, que no admitía `RETENCION`: sin esto **no se puede registrar ninguna retención** desde Cobros. Aplicada en Neon; **en la base local falta correrla** (`psql -U postgres -h localhost -d transformadores -f backend/scripts/migracion-fix-retenciones.sql`).
 
-9. `migracion-anulacion-facturas.sql` (21/09) — tabla `auditoria_anulaciones`, columnas `facturas.anulada_en/anulada_por/motivo_anulacion` y reemplazo del UNIQUE `unique_numero_factura` por el índice único parcial `uq_facturas_numero_vigente` (el número de una factura ANULADA se puede reusar). Sin esto no funciona "Anular factura" ni se puede dar de alta una factura (el código nuevo espera el índice). **Falta correrla en local y en Neon** (ver "Anular facturas" abajo).
+9. `migracion-anulacion-facturas.sql` (21/09) — tabla `auditoria_anulaciones`, columnas `facturas.anulada_en/anulada_por/motivo_anulacion` y reemplazo del UNIQUE `unique_numero_factura` por el índice único parcial `uq_facturas_numero_vigente` (el número de una factura ANULADA se puede reusar). Sin esto no funciona "Anular factura" ni se puede dar de alta una factura (el código nuevo espera el índice). **Falta correrla en local y en Neon** (ver "Anular facturas, remitos y OC" abajo).
+10. `migracion-anulacion-remitos-oc.sql` (21/09) — columnas `anulada_en/anulada_por/motivo_anulacion` en `ventas` (remitos) y `ordenes_compra`. **Requiere la 9** (usa `auditoria_anulaciones`). Sin esto fallan el listado de remitos y las anulaciones de remitos y OC. **Falta correrla en local y en Neon.**
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4, la 7, la 8 y la 9, no la 5 ni la 6).
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 10, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -68,16 +69,20 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 - **Los remitos se facturan juntos, no uno por uno**: `oc_detalle.html` → "Facturas y pagos" → "Facturar remitos". Una factura = uno o varios remitos de la misma OC; un renglón por modelo; cotización del dólar y precio USD editables, precio ARS calculado o cargado a mano. `POST /api/facturas` con `venta_ids` y `precios`.
 - `factura_venta_items` tiene una fila por `venta_item` (índice único → cada ítem se factura una sola vez). `venta_items.precio_unitario_*` es el precio histórico de la entrega y **no** se modifica al facturar.
 
-## Anular facturas (pantalla Correcciones)
+## Anular facturas, remitos y OC (pantalla Correcciones)
 
 Decisión (21/09/2026): **anular, no borrar**. No hay rol superadmin ni borrado desde la app; el borrado físico de datos sigue siendo por script con backup (como las limpiezas de Neon). La anulación la hace cualquier `admin`.
 
-- Pantalla `correcciones.html` (menú Configuración → Correcciones, solo admin): listado de facturas de venta con "Anular…" e historial de anulaciones. Desde `oc_detalle.html` (tab Facturas y pagos) hay un enlace "Anular…" que abre `correcciones.html?factura=ID`.
-- Diálogo de confirmación: muestra qué va a pasar (remitos que vuelven a quedar pendientes de facturar, cobros imputados), pide un **motivo** (≥ 10 caracteres) y que se **tipee el número de la factura**; los errores del servidor salen dentro del diálogo.
+- Pantalla `correcciones.html` (menú Configuración → Correcciones, solo admin): solapas **Facturas de venta**, **Remitos**, **Órdenes de compra** e **Historial de anulaciones**, cada una con "Anular…". Desde `oc_detalle.html` (tab Facturas y pagos) hay un enlace "Anular…" que abre `correcciones.html?factura=ID`.
+- Diálogo de confirmación: muestra qué va a pasar (remitos que vuelven a quedar pendientes de facturar, cobros imputados), pide un **motivo** (≥ 10 caracteres) y que se **tipee el número** de la factura, del remito o de la OC; los errores del servidor salen dentro del diálogo.
 - API (`routes/facturas.routes.js`, lógica en `services/anulaciones.js`): `GET /api/facturas`, `GET /api/facturas/:id/anulacion-preview`, `POST /api/facturas/:id/anular` con `{ motivo, confirmar_numero, acciones_cobros: [{ pago_id, accion }] }` (`accion` = `A_CUENTA` por defecto | `ANULAR_COBRO`), `GET /api/facturas/anulaciones`. Una sola transacción; queda una fila en `auditoria_anulaciones` con copia (`snapshot`) de lo tocado.
 - Qué hace: la factura pasa a `ANULADA` (`CTE_FACTURAS` la excluye de la deuda); se borran sus `factura_venta_items` (los remitos vuelven a ser facturables); cada cobro imputado queda **a cuenta** del cliente con una nota en `pagos.observaciones` de qué factura venía, o se anula entero. El stock no cambia (se mueve con el remito).
 - No se puede anular si la factura tiene notas de crédito (todavía no hay forma de anular una NC), ni anular un cobro con recibo o con cheque endosado a un proveedor. `POST /api/cobros/:id/anular` usa la misma función (`anularCobro`) y ahora rechaza un cobro ya anulado.
-- Pendiente: anular remito y OC (mismo molde), anular recibo y NC, reemplazar los `prompt()`/`confirm()` de cobros y pagos a proveedores por diálogos.
+- **Remito** (`routes/ventas.routes.js`): `GET|POST /api/ventas/:id/anulacion-preview|anular`. Solo si **no está facturado** (si lo está: anular primero la factura). Se guarda una copia de sus ítems en la auditoría y se **borran los `venta_items`**: el stock (`stock_actual`, `stock_produccion`) y el "entregado" de la OC se calculan de esa tabla, así que vuelven solos. La fila de `ventas` queda con `anulada_en` y **desaparece del listado** `GET /api/ventas` (se ve en el historial). No se puede editar, agregar ítems ni facturar un remito anulado.
+- **OC** (`routes/ordenesCompra.routes.js`): `GET|POST /api/ordenes-compra/:id/anulacion-preview|anular`. Solo si **no tiene remitos con entregas ni facturas vigentes**. Pasa a `estado = 'anulada'` (minúscula, como `abierta`/`cerrada`), conserva sus ítems y ya no admite ítems nuevos, edición de ítems, cierre ni entregas.
+- `GET /api/facturas/anulaciones` devuelve el historial de las tres entidades (`entidad` = `FACTURA_VENTA` | `REMITO` | `ORDEN_COMPRA`). El número de un remito o de una OC anulados se puede reusar (no hay restricción de unicidad).
+- Orden para anular todo un circuito: primero la factura, después los remitos, al final la OC.
+- Pendiente: anular recibo y nota de crédito, y reemplazar los `prompt()`/`confirm()` de cobros y pagos a proveedores por diálogos.
 
 ## Convenciones
 

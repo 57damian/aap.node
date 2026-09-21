@@ -156,6 +156,21 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-anulacion-remitos-oc.sql (21/09): columnas de anulación en
+  // ventas (remitos) y ordenes_compra.
+  {
+    const columnas = [['ventas', 'anulada_en'], ['ordenes_compra', 'anulada_en']];
+    const falta = [];
+    for (const [tabla, columna] of columnas) {
+      if (!(await existeColumna(tabla, columna))) falta.push(`falta la columna ${tabla}.${columna}`);
+    }
+    resultados.push({
+      migracion: 'migracion-anulacion-remitos-oc.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

@@ -1,8 +1,9 @@
 /* =====================================================================
- * ANULACIONES — cobros y facturas de venta
+ * ANULACIONES — cobros, facturas de venta, remitos y OC de cliente
  * ---------------------------------------------------------------------
- * Anular no borra: la factura queda ANULADA (con quién, cuándo y por qué)
- * y se guarda una copia de lo que se tocó en auditoria_anulaciones.
+ * Anular no borra el registro: queda marcado como anulado (con quién,
+ * cuándo y por qué) y se guarda una copia de lo que se tocó en
+ * auditoria_anulaciones.
  *
  * Todas las funciones reciben un `client` que YA está dentro de una
  * transacción (el router hace BEGIN/COMMIT/ROLLBACK). Los errores de
@@ -235,4 +236,179 @@ async function anularFactura(client, facturaId, { motivo, confirmar_numero, acci
   };
 }
 
-module.exports = { anularCobro, vistaPreviaAnulacion, anularFactura, MOTIVO_MIN };
+/* ---------------------------------------------------------------------
+ * COMÚN A REMITOS Y OC
+ * ------------------------------------------------------------------- */
+
+/** Valida motivo y confirmación por número, igual que en las facturas. */
+function validarConfirmacion(motivo, confirmar, identificador) {
+  const motivoLimpio = String(motivo || '').trim();
+  if (motivoLimpio.length < MOTIVO_MIN) {
+    throw fallo(400, `Escribí el motivo de la anulación (al menos ${MOTIVO_MIN} caracteres)`);
+  }
+  if (String(confirmar || '').trim() !== String(identificador).trim()) {
+    throw fallo(400, 'El número escrito no coincide. No se anuló nada.');
+  }
+  return motivoLimpio;
+}
+
+async function registrarAuditoria(client, entidad, entidadId, numero, motivo, usuario, snapshot) {
+  await client.query(`
+    INSERT INTO auditoria_anulaciones (entidad, entidad_id, numero, motivo, usuario_id, usuario_nombre, snapshot)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+  `, [entidad, entidadId, numero, motivo, usuario?.id || null, usuario?.nombre_usuario || 'desconocido', JSON.stringify(snapshot)]);
+}
+
+/* ---------------------------------------------------------------------
+ * REMITOS (filas de `ventas`)
+ * ------------------------------------------------------------------- */
+
+/** Qué pasaría al anular un remito. Con `bloquear`, FOR UPDATE del remito. */
+async function vistaPreviaAnulacionRemito(client, ventaId, { bloquear = false } = {}) {
+  const r = await client.query(`
+    SELECT v.*, c.nombre AS cliente_nombre, oc.numero_oc
+    FROM ventas v
+    JOIN clientes c ON c.id = v.cliente_id
+    LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
+    WHERE v.id = $1
+    ${bloquear ? 'FOR UPDATE OF v' : ''}
+  `, [ventaId]);
+  if (!r.rows.length) throw fallo(404, 'Remito no encontrado');
+  const venta = r.rows[0];
+  venta.identificador = venta.remito_numero || `venta #${venta.id}`;
+
+  const items = (await client.query(`
+    SELECT vi.id, vi.ficha_id, ft.modelo, vi.cantidad, vi.precio_unitario_usd, vi.precio_unitario_pesos
+    FROM venta_items vi
+    LEFT JOIN ficha_transformador ft ON ft.id = vi.ficha_id
+    WHERE vi.venta_id = $1
+    ORDER BY vi.id
+  `, [ventaId])).rows;
+
+  // Solo hay filas en factura_venta_items de facturas vigentes: al anular una
+  // factura se borran (ver anularFactura).
+  const facturas = (await client.query(`
+    SELECT DISTINCT f.id, f.numero_factura
+    FROM factura_venta_items fvi
+    JOIN venta_items vi ON vi.id = fvi.venta_item_id
+    JOIN facturas f ON f.id = fvi.factura_id
+    WHERE vi.venta_id = $1
+    ORDER BY f.numero_factura
+  `, [ventaId])).rows;
+
+  const bloqueos = [];
+  if (venta.anulada_en) bloqueos.push('El remito ya está anulado.');
+  if (facturas.length) {
+    bloqueos.push(
+      `El remito está facturado en la factura ${facturas.map(f => f.numero_factura).join(', ')}. ` +
+      'Anulá primero la factura (en la solapa Facturas de venta) y después el remito.');
+  }
+  return { venta, items, facturas, bloqueos };
+}
+
+async function anularRemito(client, ventaId, { motivo, confirmar_numero, usuario }) {
+  const prev = await vistaPreviaAnulacionRemito(client, ventaId, { bloquear: true });
+  const { venta } = prev;
+  if (venta.anulada_en) throw fallo(409, 'El remito ya estaba anulado');
+  if (prev.facturas.length) throw fallo(409, prev.bloqueos[0]);
+  const motivoLimpio = validarConfirmacion(motivo, confirmar_numero, venta.identificador);
+
+  // Las unidades vuelven al stock al borrar los ítems: stock_actual y el
+  // "entregado" de la OC se calculan sumando venta_items.
+  await client.query('DELETE FROM venta_items WHERE venta_id = $1', [ventaId]);
+  await client.query(`
+    UPDATE ventas SET anulada_en = now(), anulada_por = $2, motivo_anulacion = $3 WHERE id = $1
+  `, [ventaId, usuario?.id || null, motivoLimpio]);
+
+  await registrarAuditoria(client, 'REMITO', ventaId, venta.identificador, motivoLimpio, usuario,
+    { venta, items: prev.items });
+
+  return {
+    venta_id: ventaId,
+    identificador: venta.identificador,
+    unidades_devueltas_al_stock: prev.items.reduce((a, i) => a + Number(i.cantidad), 0)
+  };
+}
+
+/* ---------------------------------------------------------------------
+ * ÓRDENES DE COMPRA DE CLIENTE
+ * ------------------------------------------------------------------- */
+
+async function vistaPreviaAnulacionOC(client, ocId, { bloquear = false } = {}) {
+  const r = await client.query(`
+    SELECT oc.*, c.nombre AS cliente_nombre
+    FROM ordenes_compra oc
+    JOIN clientes c ON c.id = oc.cliente_id
+    WHERE oc.id = $1
+    ${bloquear ? 'FOR UPDATE OF oc' : ''}
+  `, [ocId]);
+  if (!r.rows.length) throw fallo(404, 'Orden de compra no encontrada');
+  const oc = r.rows[0];
+  oc.identificador = oc.numero_oc;
+
+  const items = (await client.query(`
+    SELECT oci.ficha_id, ft.modelo, oci.cantidad_pedida
+    FROM orden_compra_items oci
+    LEFT JOIN ficha_transformador ft ON ft.id = oci.ficha_id
+    WHERE oci.orden_compra_id = $1
+    ORDER BY oci.id
+  `, [ocId])).rows;
+
+  // Remitos con entregas (los anulados ya no tienen ítems).
+  const remitos = (await client.query(`
+    SELECT v.id, v.remito_numero, SUM(vi.cantidad)::int AS unidades
+    FROM ventas v
+    JOIN venta_items vi ON vi.venta_id = v.id
+    WHERE v.orden_compra_id = $1
+    GROUP BY v.id
+    ORDER BY v.id
+  `, [ocId])).rows;
+
+  const facturas = (await client.query(`
+    SELECT id, numero_factura
+    FROM facturas
+    WHERE orden_compra_id = $1 AND COALESCE(upper(estado), 'EMITIDA') <> 'ANULADA'
+    ORDER BY numero_factura
+  `, [ocId])).rows;
+
+  const bloqueos = [];
+  if (oc.estado === 'anulada') bloqueos.push('La orden de compra ya está anulada.');
+  if (facturas.length) {
+    bloqueos.push(
+      `Tiene facturas vigentes (${facturas.map(f => f.numero_factura).join(', ')}). ` +
+      'Anulalas primero en la solapa Facturas de venta.');
+  }
+  if (remitos.length) {
+    bloqueos.push(
+      `Tiene remitos con entregas (${remitos.map(v => v.remito_numero || `venta #${v.id}`).join(', ')}). ` +
+      'Anulalos primero en la solapa Remitos.');
+  }
+  return { oc, items, remitos, facturas, bloqueos };
+}
+
+async function anularOC(client, ocId, { motivo, confirmar_numero, usuario }) {
+  const prev = await vistaPreviaAnulacionOC(client, ocId, { bloquear: true });
+  const { oc } = prev;
+  if (oc.estado === 'anulada') throw fallo(409, 'La orden de compra ya estaba anulada');
+  if (prev.bloqueos.length) throw fallo(409, prev.bloqueos[0]);
+  const motivoLimpio = validarConfirmacion(motivo, confirmar_numero, oc.identificador);
+
+  await client.query(`
+    UPDATE ordenes_compra
+       SET estado = 'anulada', anulada_en = now(), anulada_por = $2, motivo_anulacion = $3
+     WHERE id = $1
+  `, [ocId, usuario?.id || null, motivoLimpio]);
+
+  await registrarAuditoria(client, 'ORDEN_COMPRA', ocId, oc.identificador, motivoLimpio, usuario,
+    { oc, items: prev.items });
+
+  return { oc_id: ocId, identificador: oc.identificador };
+}
+
+module.exports = {
+  anularCobro,
+  vistaPreviaAnulacion, anularFactura,
+  vistaPreviaAnulacionRemito, anularRemito,
+  vistaPreviaAnulacionOC, anularOC,
+  MOTIVO_MIN
+};

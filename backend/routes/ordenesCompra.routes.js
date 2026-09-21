@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { vistaPreviaAnulacionOC, anularOC } = require('../services/anulaciones');
 
 router.use(verificarToken);
 const upload = require('../middlewares/uploadModelo'); // reutilizamos multer
@@ -73,6 +74,12 @@ router.post(
     }
 
     try {
+      const oc = await pool.query('SELECT estado FROM ordenes_compra WHERE id = $1', [req.params.id]);
+      if (!oc.rows.length) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+      if (oc.rows[0].estado === 'anulada') {
+        return res.status(400).json({ error: 'La orden está anulada, no se puede modificar' });
+      }
+
       const result = await pool.query(
         `INSERT INTO orden_compra_items
           (orden_compra_id, ficha_id, cantidad_pedida)
@@ -132,9 +139,9 @@ router.put(
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Item no encontrado en esta orden' });
       }
-      if (item.estado === 'cerrada') {
+      if (item.estado === 'cerrada' || item.estado === 'anulada') {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'La orden está cerrada, no se puede modificar' });
+        return res.status(400).json({ error: `La orden está ${item.estado}, no se puede modificar` });
       }
       if (cantidad < Number(item.entregado)) {
         await client.query('ROLLBACK');
@@ -173,9 +180,9 @@ router.delete(
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Item no encontrado en esta orden' });
       }
-      if (item.estado === 'cerrada') {
+      if (item.estado === 'cerrada' || item.estado === 'anulada') {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'La orden está cerrada, no se puede modificar' });
+        return res.status(400).json({ error: `La orden está ${item.estado}, no se puede modificar` });
       }
       if (Number(item.entregado) > 0) {
         await client.query('ROLLBACK');
@@ -230,6 +237,11 @@ router.put(
   soloAdmin,
   async (req, res) => {
     try {
+      const ocEstado = await pool.query('SELECT estado FROM ordenes_compra WHERE id = $1', [req.params.id]);
+      if (ocEstado.rows[0]?.estado === 'anulada') {
+        return res.status(400).json({ error: 'La orden está anulada, no se puede cerrar' });
+      }
+
       // La versión anterior hacía SUM(... - SUM(...)) en el mismo nivel:
       // Postgres no permite anidar funciones de agregación así y tiraba
       // "aggregate function calls cannot be nested" (hallazgo C5). Hay que
@@ -268,5 +280,41 @@ router.put(
     }
   }
 );
+
+/* =========================
+   ANULAR OC
+   preview: qué va a pasar. anular: { motivo, confirmar_numero }
+========================= */
+router.get('/:id/anulacion-preview', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    res.json(await vistaPreviaAnulacionOC(client, req.params.id));
+  } catch (err) {
+    if (!err.status) console.error('Error en vista previa de anulación (OC):', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo preparar la anulación' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/anular', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await anularOC(client, req.params.id, {
+      motivo: req.body.motivo,
+      confirmar_numero: req.body.confirmar_numero,
+      usuario: req.usuario
+    });
+    await client.query('COMMIT');
+    res.json({ message: `Orden de compra ${r.identificador} anulada.`, ...r });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (!err.status) console.error('Error anulando OC:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo anular la orden de compra' });
+  } finally {
+    client.release();
+  }
+});
 
 module.exports = router;
