@@ -5,7 +5,9 @@ const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { vistaPreviaAnulacionOC, anularOC } = require('../services/anulaciones');
 
 router.use(verificarToken);
-const upload = require('../middlewares/uploadModelo'); // reutilizamos multer
+// La foto de la OC va a uploads/ordenes_compra (antes caía en uploads/modelos
+// y la ruta guardada en la base no coincidía con el archivo).
+const upload = require('../middlewares/uploadImagen').crearUpload('ordenes_compra');
 
 
 router.get(

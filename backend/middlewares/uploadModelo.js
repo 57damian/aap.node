@@ -1,23 +1,5 @@
-const multer = require('multer');
-const path = require('path');
+// Fotos de modelos (fichas técnicas). La lógica de seguridad está en
+// uploadImagen.js, que también usan las fotos de OC.
+const { crearUpload } = require('./uploadImagen');
 
-const storage = multer.diskStorage({
-  destination: 'uploads/modelos',
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const name = Date.now() + ext;
-    cb(null, name);
-  }
-});
-
-const upload = multer({
-  storage,
-  fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      cb(new Error('Solo imágenes'));
-    }
-    cb(null, true);
-  }
-});
-
-module.exports = upload;
+module.exports = crearUpload('modelos');

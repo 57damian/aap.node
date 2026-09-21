@@ -28,6 +28,11 @@ router.post('/', adminYOperario, async (req, res) => {
     });
   }
 
+  // Las observaciones las escribe el operario y las lee el administrador: sin HTML.
+  if (observaciones !== undefined && observaciones !== null && /[<>]/.test(String(observaciones))) {
+    return res.status(400).json({ error: 'Las observaciones no pueden contener < ni >' });
+  }
+
   try {
     // Verificar que la ficha existe
     const fichaCheck = await pool.query(

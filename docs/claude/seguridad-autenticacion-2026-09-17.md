@@ -30,7 +30,7 @@ El resultado, medido contra la API con un token real de operario: **podía leer 
 
 Además estaban cruzados: un `control` no podía cargar producción, y el operario —el que la carga— no podía ver el stock de producto terminado, que sí veía el `empleado`.
 
-Mapeo de los usuarios que había: `empleado` → `operario`, `control` → `admin`. `control1` y `test_final` se borraron (cuentas de prueba que nunca iniciaron sesión). Quedaron `admin`, `silvia` (admin) y `javier` (operario).
+Mapeo de los usuarios que había: `empleado` → `operario`, `control` → `admin`. `control1` y `test_final` se borraron (cuentas de prueba que nunca iniciaron sesión). Quedaron los usuarios reales: administradores y operarios.
 
 ### Dónde se define
 

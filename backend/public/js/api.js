@@ -88,3 +88,26 @@ async function apiFetch(endpoint, options = {}) {
     throw error;
   }
 }
+
+// =====================
+// IMÁGENES PROTEGIDAS (/uploads)
+// =====================
+// Las fotos subidas no son públicas: el server las entrega solo con sesión.
+// Un <img src> no manda el token, así que se piden con fetch y se muestran
+// como blob local.
+async function cargarImagenProtegida(img, ruta) {
+  if (!img || !ruta) return;
+  try {
+    const r = await fetch(API_URL + '/' + String(ruta).replace(/^\/+/, ''), {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const url = URL.createObjectURL(await r.blob());
+    if (img.dataset.blobUrl) URL.revokeObjectURL(img.dataset.blobUrl);
+    img.dataset.blobUrl = url;
+    img.src = url;
+  } catch (e) {
+    console.warn('No se pudo cargar la imagen:', e.message);
+    img.alt = 'No se pudo cargar la imagen';
+  }
+}
