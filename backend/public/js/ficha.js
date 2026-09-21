@@ -348,7 +348,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Espiras</span>
-          <span class="detail-card-value">${ficha.espiras_primario || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.espiras_primario) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Pines</span>
@@ -375,7 +375,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Espiras</span>
-          <span class="detail-card-value">${ficha.espiras_secundario || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.espiras_secundario) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Pines</span>
@@ -387,6 +387,34 @@ async function verDetalles(id) {
         </div>
       </div>
     `;
+
+    // Devanados adicionales (terciario, cuarto…), si la ficha los tiene
+    (ficha.devanados_extra || []).forEach((d, i) => {
+      html += `
+      <div class="detail-card">
+        <h4>🔄 Devanado ${NOMBRES_DEVANADO[i] ? NOMBRES_DEVANADO[i].charAt(0).toUpperCase() + NOMBRES_DEVANADO[i].slice(1) : (i + 3) + '°'}</h4>
+        <div class="detail-card-row">
+          <span class="detail-card-label">Alambre</span>
+          <span class="detail-card-value">${escHtml(d.alambre) || '-'}</span>
+        </div>
+        <div class="detail-card-row">
+          <span class="detail-card-label">Diámetro</span>
+          <span class="detail-card-value">${escHtml(d.diametro_mm) || '-'} mm</span>
+        </div>
+        <div class="detail-card-row">
+          <span class="detail-card-label">Espiras</span>
+          <span class="detail-card-value">${escHtml(d.espiras) || '-'}</span>
+        </div>
+        <div class="detail-card-row">
+          <span class="detail-card-label">Pines</span>
+          <span class="detail-card-value">${escHtml(d.pines) || '-'}</span>
+        </div>
+        <div class="detail-card-row">
+          <span class="detail-card-label">Peso</span>
+          <span class="detail-card-value">${escHtml(d.peso_kg) || '-'} kg</span>
+        </div>
+      </div>`;
+    });
 
     html += `</div>`; // Cierre de la grid de devanados
 
@@ -491,6 +519,124 @@ function rolPermiteEliminar() {
 }
 
 /* =====================
+   DEVANADOS ADICIONALES (terciario, cuarto…)
+   Se agregan con el botón del formulario. Se mandan al servidor como una
+   lista JSON (`devanados_extra`) y ahí reemplazan a los guardados.
+===================== */
+const NOMBRES_DEVANADO = ['terciario', 'cuarto', 'quinto', 'sexto', 'séptimo', 'octavo', 'noveno', 'décimo'];
+let contadorDevanados = 0;
+
+// Lo que viene de la base o de lo tipeado se escapa antes de armar HTML.
+function escHtml(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function agregarDevanadoExtra(datos) {
+  const cont = document.getElementById('devanadosExtra');
+  if (!cont) return;
+  if (cont.children.length >= NOMBRES_DEVANADO.length) {
+    showAlert(`Se pueden agregar hasta ${NOMBRES_DEVANADO.length} devanados además del primario y el secundario`, 'error');
+    return;
+  }
+  const d = datos || {};
+  const id = 'dx' + (++contadorDevanados);
+  const panel = document.createElement('div');
+  panel.className = 'panel devanado-extra';
+  panel.innerHTML = `
+    <div class="panel-head">
+      <h2 data-titulo-devanado></h2>
+      <div class="page-head-actions">
+        <button type="button" class="b b-danger b-sm" data-quitar-devanado>Quitar</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <div class="field ancho-total">
+          <label for="${id}_alambre">Alambre</label>
+          <input class="input" type="text" id="${id}_alambre" data-campo="alambre" maxlength="100"
+                 placeholder="Ej: Esmaltado 1.0mm" value="${escHtml(d.alambre)}">
+        </div>
+        <div class="field">
+          <label for="${id}_diametro">Diámetro</label>
+          <div class="field-unit">
+            <input class="input" type="number" id="${id}_diametro" data-campo="diametro_mm" step="0.01" min="0"
+                   value="${escHtml(d.diametro_mm)}"><span>mm</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="${id}_espiras">Espiras</label>
+          <input class="input" type="text" id="${id}_espiras" data-campo="espiras" maxlength="40"
+                 placeholder="Ej: 120 o 60 + 60" value="${escHtml(d.espiras)}">
+        </div>
+        <div class="field">
+          <label for="${id}_pines">Pines</label>
+          <input class="input" type="text" id="${id}_pines" data-campo="pines" maxlength="50"
+                 placeholder="5-6" value="${escHtml(d.pines)}">
+        </div>
+        <div class="field">
+          <label for="${id}_peso">Peso</label>
+          <div class="field-unit">
+            <input class="input" type="number" id="${id}_peso" data-campo="peso_kg" step="0.001" min="0"
+                   value="${escHtml(d.peso_kg)}"><span>kg</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  cont.appendChild(panel);
+  renumerarDevanados();
+}
+
+// Los títulos dependen del lugar: tras quitar uno, los demás se corren.
+function renumerarDevanados() {
+  const cont = document.getElementById('devanadosExtra');
+  if (!cont) return;
+  Array.from(cont.children).forEach((panel, i) => {
+    const t = panel.querySelector('[data-titulo-devanado]');
+    if (t) t.textContent = 'Devanado ' + NOMBRES_DEVANADO[i];
+  });
+  const btn = document.getElementById('btnAgregarDevanado');
+  if (btn) btn.disabled = cont.children.length >= NOMBRES_DEVANADO.length;
+}
+
+function limpiarDevanadosExtra() {
+  const cont = document.getElementById('devanadosExtra');
+  if (cont) cont.innerHTML = '';
+  renumerarDevanados();
+}
+
+function cargarDevanadosExtra(lista) {
+  limpiarDevanadosExtra();
+  (lista || []).forEach(d => agregarDevanadoExtra(d));
+}
+
+// Un devanado sin ningún dato no se guarda (se agregó y se dejó en blanco).
+function leerDevanadosExtra() {
+  const cont = document.getElementById('devanadosExtra');
+  if (!cont) return [];
+  return Array.from(cont.children).map(panel => {
+    const d = {};
+    panel.querySelectorAll('[data-campo]').forEach(inp => { d[inp.dataset.campo] = inp.value.trim(); });
+    return d;
+  }).filter(d => Object.values(d).some(v => v !== ''));
+}
+
+// Delegación: el shell vuelve a armar el body, así que no se enganchan
+// listeners a elementos concretos al cargar el archivo.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#btnAgregarDevanado')) {
+    agregarDevanadoExtra();
+    return;
+  }
+  const quitar = e.target.closest('[data-quitar-devanado]');
+  if (quitar) {
+    quitar.closest('.devanado-extra')?.remove();
+    renumerarDevanados();
+  }
+});
+
+/* =====================
    SUBMIT FORMULARIO
 ===================== */
 async function handleSubmit(e) {
@@ -519,6 +665,10 @@ async function handleSubmit(e) {
       formData.append(field, element.value);
     }
   });
+
+  // Siempre se manda la lista (aunque esté vacía): así, al editar, quitar
+  // todos los devanados adicionales también se guarda.
+  formData.append('devanados_extra', JSON.stringify(leerDevanadosExtra()));
 
   const fotoInput = document.getElementById('foto');
   if (fotoInput?.files[0]) {
@@ -568,6 +718,7 @@ async function editarFicha(id) {
         el.value = ficha[key] || '';
       }
     });
+    cargarDevanadosExtra(ficha.devanados_extra);
 
     // Mostrar foto actual si existe
     const preview = document.getElementById('fotoPreview');
@@ -596,6 +747,7 @@ async function editarFicha(id) {
 ===================== */
 function resetForm() {
   document.getElementById('fichaForm').reset();
+  limpiarDevanadosExtra();
   const preview = document.getElementById('fotoPreview');
   if (preview) {
     preview.src = '#';

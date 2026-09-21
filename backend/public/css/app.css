@@ -678,3 +678,31 @@ dialog.panel .page-head-actions {
 .foto-upload:hover { border-color: var(--primary-500, #667eea); }
 .foto-preview { display: none; width: 100%; border-radius: var(--radius, 8px); margin-top: var(--space-3, 12px); }
 .foto-preview.show { display: block; }
+
+/* =====================================================================
+ * Correcciones / anulaciones (21/09/2026)
+ * ===================================================================== */
+/* Texto secundario fuera de tablas (antes .muted solo existía dentro de table.t). */
+.muted { color: var(--text-muted); }
+.tachado { text-decoration: line-through; }
+
+/* <textarea> con el aspecto de .input, que tiene 32 px de alto fijo. */
+textarea.input { height: auto; min-height: 72px; padding: var(--space-2); resize: vertical; line-height: 1.4; }
+.input.is-invalid, textarea.input.is-invalid { border-color: var(--danger-500); }
+
+/* Lista de consecuencias dentro de un diálogo de confirmación. */
+.consecuencias { margin: 0 0 var(--space-3); padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.consecuencias li + li { margin-top: 2px; }
+
+/* Un cobro imputado a la factura: datos a la izquierda, decisión a la derecha. */
+.cobro-linea {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.cobro-linea + .cobro-linea { margin-top: var(--space-2); }
+.cobro-linea .select { max-width: 100%; }
+.dialog-bloque { margin-bottom: var(--space-4); }
+.dialog-bloque > h3 { margin: 0 0 var(--space-2); font-size: 13px; }

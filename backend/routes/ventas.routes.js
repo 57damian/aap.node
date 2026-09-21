@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { asyncHandler } = require('../middlewares/asyncHandler');
+const { vistaPreviaAnulacionRemito, anularRemito } = require('../services/anulaciones');
 
 router.use(verificarToken);
 
@@ -32,11 +33,12 @@ router.get('/', soloAdmin, async (req, res) => {
           JOIN venta_items vi ON vi.id = fi.venta_item_id
           WHERE vi.venta_id = v.id
           LIMIT 1
-        ) AS numero_factura
+        ) AS numero_factura,
+        (SELECT COALESCE(SUM(vi.cantidad), 0)::int FROM venta_items vi WHERE vi.venta_id = v.id) AS unidades
       FROM ventas v
       JOIN clientes c ON c.id = v.cliente_id
       LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
-      WHERE 1=1
+      WHERE v.anulada_en IS NULL
     `;
 
     const params = [];
@@ -101,13 +103,18 @@ router.post('/', soloAdmin, async (req, res) => {
 
     // Obtener el cliente de la OC
     const clienteRes = await client.query(
-      `SELECT cliente_id FROM ordenes_compra WHERE id = $1`,
+      `SELECT cliente_id, estado FROM ordenes_compra WHERE id = $1`,
       [orden_compra_id]
     );
 
     if (!clienteRes.rows.length) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'OC no encontrada' });
+    }
+
+    if (clienteRes.rows[0].estado === 'anulada') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'La orden de compra está anulada: no se pueden registrar entregas' });
     }
 
     const cliente_id = clienteRes.rows[0].cliente_id;
@@ -234,12 +241,15 @@ router.post('/:id/items', soloAdmin, async (req, res) => {
     const precio_usd = precioRes.rows[0].precio;
 
     const ventaRes = await pool.query(
-      `SELECT tipo_cambio FROM ventas WHERE id = $1`,
+      `SELECT tipo_cambio, anulada_en FROM ventas WHERE id = $1`,
       [req.params.id]
     );
 
     if (!ventaRes.rows.length) {
       return res.status(404).json({ error: 'Venta no encontrada' });
+    }
+    if (ventaRes.rows[0].anulada_en) {
+      return res.status(400).json({ error: 'El remito está anulado: no se le pueden agregar ítems' });
     }
 
     const tipo_cambio = ventaRes.rows[0].tipo_cambio;
@@ -356,7 +366,7 @@ router.put('/:id/remito', soloAdmin, asyncHandler(async (req, res) => {
     SET remito_numero=$1,
         remito_fecha=$2,
         remito_observaciones=$3
-    WHERE id=$4
+    WHERE id=$4 AND anulada_en IS NULL
     RETURNING id
     `,
     [
@@ -406,6 +416,42 @@ router.get('/:id/factura', soloAdmin, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   ANULAR REMITO
+   preview: qué va a pasar. anular: { motivo, confirmar_numero }
+========================= */
+router.get('/:id/anulacion-preview', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    res.json(await vistaPreviaAnulacionRemito(client, req.params.id));
+  } catch (err) {
+    if (!err.status) console.error('Error en vista previa de anulación (REMITO):', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo preparar la anulación' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/anular', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await anularRemito(client, req.params.id, {
+      motivo: req.body.motivo,
+      confirmar_numero: req.body.confirmar_numero,
+      usuario: req.usuario
+    });
+    await client.query('COMMIT');
+    res.json({ message: `Remito ${r.identificador} anulado. ${r.unidades_devueltas_al_stock} unidad(es) volvieron al stock.`, ...r });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (!err.status) console.error('Error anulando REMITO:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo anular el remito' });
+  } finally {
+    client.release();
   }
 });
 

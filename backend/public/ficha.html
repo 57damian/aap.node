@@ -95,7 +95,7 @@
                 </div>
                 <div class="field">
                   <label for="espiras_primario">Espiras</label>
-                  <input class="input" type="number" id="espiras_primario">
+                  <input class="input" type="text" id="espiras_primario" maxlength="40" placeholder="Ej: 420 o 210 + 210">
                 </div>
                 <div class="field">
                   <label for="pines_primario">Pines</label>
@@ -127,7 +127,7 @@
                 </div>
                 <div class="field">
                   <label for="espiras_secundario">Espiras</label>
-                  <input class="input" type="number" id="espiras_secundario">
+                  <input class="input" type="text" id="espiras_secundario" maxlength="40" placeholder="Ej: 422 o 422 + 422">
                 </div>
                 <div class="field">
                   <label for="pines_secundario">Pines</label>
@@ -140,7 +140,14 @@
                   </div>
                 </div>
               </div>
+              <p class="muted" style="margin:var(--space-2) 0 0;font-size:.85rem">Si tiene punto medio, escribí las dos mitades: <strong>422 + 422</strong>.</p>
             </div>
+          </div>
+
+          <!-- Devanados adicionales (terciario, cuarto…): los agrega el botón de abajo -->
+          <div id="devanadosExtra"></div>
+          <div style="margin-bottom:var(--space-4)">
+            <button type="button" class="b b-ghost" id="btnAgregarDevanado">＋ Agregar devanado (terciario, cuarto…)</button>
           </div>
 
           <div class="panel">
