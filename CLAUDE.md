@@ -48,7 +48,9 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 11. `migracion-ficha-devanados.sql` (21/09) — pasa `ficha_transformador.espiras_primario/espiras_secundario` de `integer` a `varchar(40)` (para guardar "422 + 422" de un secundario con punto medio; los valores existentes se conservan) y crea `ficha_devanados_extra` (devanados terciario, cuarto…). Sin esto falla **el detalle y el guardado de toda ficha** (la API lee/escribe la tabla nueva). **Aplicada en Neon el 21/09/2026 (backup en `docs/_backup/neon-datos-antes-de-migracion-11-2026-09-21.json`); falta correrla en la base local.**
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 11, no la 5 ni la 6).
+12. `migracion-pedidos-proveedor.sql` (22/09) — tablas `pedidos_proveedor` y `pedido_proveedor_items` (el pedido de materia prima que se le manda por PDF a un proveedor; ver "Pedidos a proveedores" abajo). Sin esto no existe la pantalla `pedidos-proveedor.html`. **Aplicada en local el 22/09/2026; falta correrla en Neon.**
+
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 12, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -85,6 +87,15 @@ Decisión (21/09/2026): **anular, no borrar**. No hay rol superadmin ni borrado 
 - `GET /api/facturas/anulaciones` devuelve el historial de las tres entidades (`entidad` = `FACTURA_VENTA` | `REMITO` | `ORDEN_COMPRA`). El número de un remito o de una OC anulados se puede reusar (no hay restricción de unicidad).
 - Orden para anular todo un circuito: primero la factura, después los remitos, al final la OC.
 - Pendiente: anular recibo y nota de crédito, y reemplazar los `prompt()`/`confirm()` de cobros y pagos a proveedores por diálogos.
+
+## Pedidos a proveedores (PDF de materia prima)
+
+- No es `ordenes_compra` (esa es la orden que manda el **cliente**). Es un documento propio para pedirle materia prima a un **proveedor**: se arma en `pedidos-proveedor.html`, queda guardado como borrador y se descarga como PDF con membrete para mandarlo por correo a mano (el sistema no manda el correo, solo genera el PDF).
+- Tablas `pedidos_proveedor` (cabecera: número autogenerado `PP-000001`, proveedor, fecha, estado, observaciones) y `pedido_proveedor_items` (materia prima, cantidad, unidad, `aproximado`, precio de referencia, observaciones). Rutas en `routes/pedidos-proveedor.routes.js`, todas `soloAdmin`.
+- Estados: `BORRADOR` (se puede editar/borrar) → `ENVIADO` (`POST .../enviar`, solo deja constancia de que ya se mandó) → `ANULADO` (`POST .../anular` con `{ motivo }`, ≥ 5 caracteres). Sin auditoría tipo `auditoria_anulaciones`: a diferencia de facturas/remitos/OC, esto no mueve stock ni plata, así que anular acá es liviano (solo cambia el estado y guarda el motivo en la misma fila).
+- `aproximado` por ítem: para materiales donde la cantidad real no va a coincidir exacto con la pedida (ejemplo típico: se piden 500gr de alambre de cobre y el rollo real pesa 540gr). El PDF le agrega "(aprox.)" al lado de la cantidad y una nota al pie aclarando que es de referencia.
+- El PDF lo arma `services/pdf-pedido-proveedor.js` con `pdfkit` (sin dependencias nativas ni navegador headless), membretado con `config/empresa.js` (nombre "Campbell Electrónica" + logo). **El logo todavía no está cargado**: va en `backend/public/img/logo-empresa.png` (PNG o JPG); si el archivo no existe el PDF sale igual, solo que sin la imagen. `GET /api/pedidos-proveedor/:id/pdf` devuelve el PDF; el frontend lo pide con el token vía `descargarArchivoProtegido` (`js/api.js`, mismo patrón que `cargarImagenProtegida` para `/uploads`) porque un link directo no manda el header `Authorization`.
+- Pendiente: no tiene edición desde la pantalla (para corregir un borrador hoy hay que borrarlo y cargarlo de nuevo); la ruta `PUT /api/pedidos-proveedor/:id` ya existe en el backend por si se agrega esa UI más adelante.
 
 ## Fichas técnicas: devanados
 

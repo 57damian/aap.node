@@ -28,6 +28,7 @@ const stockRoutes = require('./routes/stock.routes');                     // Mov
 const stockProduccionRoutes = require('./routes/stock-produccion.routes'); // Stock de productos terminados
 const facturasCompraRoutes = require('./routes/facturas-compra.routes');   // Facturas de compra
 const pagosProveedoresRoutes = require('./routes/pagos-proveedores.routes'); // Pagos a proveedores (reemplaza pagos.routes.js)
+const pedidosProveedorRoutes = require('./routes/pedidos-proveedor.routes'); // Pedidos de materia prima a proveedores (PDF)
 const cobrosRoutes = require('./routes/cobros.routes');                   // Cobros a clientes (reemplaza pagos-clientes.routes.js)
 // =====================================================================
 
@@ -267,6 +268,7 @@ app.use('/api/stock', stockRoutes);
 app.use('/api/stock-produccion', stockProduccionRoutes);
 app.use('/api/facturas-compra', facturasCompraRoutes);
 app.use('/api/pagos-proveedores', pagosProveedoresRoutes);
+app.use('/api/pedidos-proveedor', pedidosProveedorRoutes);
 app.use('/api/cobros', cobrosRoutes);
 // Alias del prefijo viejo: la pantalla anterior llamaba a /api/pagos/... y a
 // /api/pagos-clientes/..., que nunca estuvo montado del todo. Se deja el alias

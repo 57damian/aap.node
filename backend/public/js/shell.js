@@ -28,6 +28,7 @@
     panel:    'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
     clientes: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
     oc:       'M9 11H3v10h6zM21 3h-6v18h6zM15 7H9v14h6z',
+    pedido:   'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M9 3a2 2 0 0 0 0 4h6a2 2 0 0 0 0-4M9 12h6M9 16h6',
     ventas:   'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 18.5a2.5 2.5 0 1 0 0 1M18.5 18.5a2.5 2.5 0 1 0 0 1',
     cobros:   'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
     prov:     'M20 7h-9M14 17H5M17 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8M7 13a4 4 0 1 0 0 8 4 4 0 0 0 0-8',
@@ -71,6 +72,7 @@
     ]},
     { grupo: 'Compras', items: [
       { id: 'proveedores', txt: 'Proveedores',        url: 'proveedores.html',        icon: 'prov',    roles: ['admin'] },
+      { id: 'pedidosprov', txt: 'Pedidos a proveedores', url: 'pedidos-proveedor.html', icon: 'pedido', roles: ['admin'], alias: 'pedir materia prima pdf orden de compra remito proveedor' },
       { id: 'fc',          txt: 'Facturas de compra', url: 'facturas-compra.html',    icon: 'factura', roles: ['admin'], alias: 'compras remitos proveedor' },
       { id: 'pagosprov',   txt: 'Pagos a proveedores',url: 'pagos-proveedores.html',  icon: 'pagos',   roles: ['admin'], alias: 'deuda pagar cheques endoso a quien le debo' },
       { id: 'alertas',     txt: 'Alertas de pago',    url: 'alertas-pagos.html',      icon: 'alerta',  roles: ['admin'], alias: 'vencimientos vencidas' }

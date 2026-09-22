@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pedidos a proveedores — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Pedidos a proveedores</h1>
+      <p>Armá el pedido de materia prima y descargá el PDF para mandarlo por correo.</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-primary" id="btnNuevoPedido">Nuevo pedido</button>
+    </div>
+  </div>
+
+  <div class="panel" id="panelNuevoPedido" hidden>
+    <div class="panel-head"><h2>Nuevo pedido</h2></div>
+    <div class="panel-body">
+      <form id="pedidoForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="pp_proveedor_id">Proveedor</label>
+            <select class="select" id="pp_proveedor_id" required>
+              <option value="">Elegí un proveedor…</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="pp_fecha">Fecha</label>
+            <input class="input" type="date" id="pp_fecha" required>
+          </div>
+          <div class="field ancho-total">
+            <label for="pp_observaciones">Observaciones generales</label>
+            <input class="input" type="text" id="pp_observaciones" maxlength="500" placeholder="Opcional: aclaraciones para el proveedor">
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top:var(--space-3)">
+          <table class="t">
+            <thead>
+              <tr>
+                <th style="width:30%">Material</th>
+                <th style="width:14%">Cantidad</th>
+                <th style="width:12%">Unidad</th>
+                <th style="width:10%" title="Marcar si la cantidad es de referencia (ej.: un rollo de alambre puede pesar algo más o menos que lo pedido)">¿Aprox.?</th>
+                <th>Observaciones</th>
+                <th style="width:4%"></th>
+              </tr>
+            </thead>
+            <tbody id="pp_itemsBody"></tbody>
+          </table>
+        </div>
+        <div style="padding:var(--space-3) 0">
+          <button type="button" class="b b-ghost" id="btnAgregarItemPedido">+ Agregar ítem</button>
+        </div>
+
+        <div class="ancho-total">
+          <button type="submit" class="b b-primary">Crear pedido (borrador)</button>
+          <button type="button" class="b b-ghost" id="btnCancelarPedido">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr>
+          <th>Número</th>
+          <th>Proveedor</th>
+          <th class="solo-escritorio">Fecha</th>
+          <th class="num solo-escritorio">Ítems</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="listaPedidos">
+        <tr><td colspan="6" class="muted">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div></div></div>
+
+  <!-- ================= Ver pedido ================= -->
+  <dialog id="verPedidoModal" class="panel" style="max-width:760px;width:100%">
+    <div class="panel-head"><h2 id="vpTitulo">Pedido</h2></div>
+    <div class="panel-body">
+      <div id="vpResumen" class="dialog-bloque"></div>
+      <div class="table-wrap dialog-bloque">
+        <table class="t">
+          <thead>
+            <tr><th>Código</th><th>Material</th><th class="num">Cantidad</th><th>Unidad</th><th>Observaciones</th></tr>
+          </thead>
+          <tbody id="vpItems"></tbody>
+        </table>
+      </div>
+      <div id="vpObservaciones" class="dialog-bloque muted"></div>
+      <div class="notice notice-err" id="vpError" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="verPedidoModal">Cerrar</button>
+        <button type="button" class="b b-ghost" id="btnBorrarPedido">Borrar</button>
+        <button type="button" class="b b-ghost" id="btnMarcarEnviado">Marcar como enviado</button>
+        <button type="button" class="b b-danger" id="btnAbrirAnularPedido">Anular…</button>
+        <button type="button" class="b b-primary" id="btnDescargarPdf">Descargar PDF</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ================= Anular pedido ================= -->
+  <dialog id="anularPedidoModal" class="panel">
+    <div class="panel-head"><h2>Anular pedido</h2></div>
+    <div class="panel-body">
+      <div class="field">
+        <label for="motivoAnularPedido">Motivo <span class="muted">(obligatorio, al menos 5 caracteres)</span></label>
+        <textarea class="input" id="motivoAnularPedido" rows="3" maxlength="500" placeholder="Ej.: se pidió por error, se duplicó el pedido…"></textarea>
+      </div>
+      <div class="notice notice-err" id="anularPedidoError" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="anularPedidoModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarAnularPedido">Anular pedido</button>
+      </div>
+    </div>
+  </dialog>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Pedidos a proveedores', sub: 'Materia prima a pedir' });
+
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+
+  const panelNuevo = document.getElementById('panelNuevoPedido');
+  document.getElementById('btnNuevoPedido').addEventListener('click', () => {
+    panelNuevo.hidden = !panelNuevo.hidden;
+    if (!panelNuevo.hidden) document.getElementById('pp_proveedor_id').focus();
+  });
+  document.getElementById('btnCancelarPedido').addEventListener('click', () => {
+    panelNuevo.hidden = true;
+  });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/pedidos-proveedor.js"></script>
+</body>
+</html>

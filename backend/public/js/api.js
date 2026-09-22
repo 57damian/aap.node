@@ -111,3 +111,28 @@ async function cargarImagenProtegida(img, ruta) {
     img.alt = 'No se pudo cargar la imagen';
   }
 }
+
+// =====================
+// DESCARGA DE ARCHIVOS PROTEGIDOS (PDFs, etc.)
+// =====================
+// Igual que cargarImagenProtegida: un <a href> no manda el token, así que
+// se pide con fetch, se arma un blob y se dispara la descarga con un link
+// temporal.
+async function descargarArchivoProtegido(ruta, nombreArchivo) {
+  const r = await fetch(API_URL + '/' + String(ruta).replace(/^\/+/, ''), {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  });
+  if (!r.ok) {
+    let msg = 'No se pudo descargar el archivo';
+    try { msg = (await r.json()).error || msg; } catch (_) { /* no era JSON */ }
+    throw new Error(msg);
+  }
+  const url = URL.createObjectURL(await r.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nombreArchivo || 'archivo';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}

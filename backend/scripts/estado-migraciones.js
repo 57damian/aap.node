@@ -191,6 +191,19 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-pedidos-proveedor.sql (22/09): tablas pedidos_proveedor y
+  // pedido_proveedor_items.
+  {
+    const falta = [];
+    if (!(await existeTabla('pedidos_proveedor'))) falta.push('falta la tabla pedidos_proveedor');
+    if (!(await existeTabla('pedido_proveedor_items'))) falta.push('falta la tabla pedido_proveedor_items');
+    resultados.push({
+      migracion: 'migracion-pedidos-proveedor.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;
