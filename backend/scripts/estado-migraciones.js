@@ -204,6 +204,34 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-ficha-pesos-gramos.sql (22/09): ensancha peso_primario_kg /
+  // peso_secundario_kg / peso_laminacion_kg (y ficha_devanados_extra.peso_kg
+  // si existe) a numeric(9,2) para que entren valores en gramos.
+  {
+    const r = await pool.query(
+      `SELECT numeric_scale FROM information_schema.columns
+       WHERE table_name = 'ficha_transformador' AND column_name = 'peso_primario_kg'`
+    );
+    const falta = [];
+    if (!r.rows.length || Number(r.rows[0].numeric_scale) !== 2) {
+      falta.push('ficha_transformador.peso_primario_kg todavía no es numeric(9,2)');
+    }
+    if (await existeTabla('ficha_devanados_extra')) {
+      const r2 = await pool.query(
+        `SELECT numeric_scale FROM information_schema.columns
+         WHERE table_name = 'ficha_devanados_extra' AND column_name = 'peso_kg'`
+      );
+      if (!r2.rows.length || Number(r2.rows[0].numeric_scale) !== 2) {
+        falta.push('ficha_devanados_extra.peso_kg todavía no es numeric(9,2)');
+      }
+    }
+    resultados.push({
+      migracion: 'migracion-ficha-pesos-gramos.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

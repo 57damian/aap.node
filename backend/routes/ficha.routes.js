@@ -88,7 +88,9 @@ function normalizarExtras(raw) {
       diametro_mm: numeroONull(d?.diametro_mm, 999.99, `El diámetro ${cual}`),
       espiras: textoCorto(d?.espiras, 40, `Las espiras ${cual}`),
       pines: textoCorto(d?.pines, 50, `Los pines ${cual}`),
-      peso_kg: numeroONull(d?.peso_kg, 999.999, `El peso ${cual}`)
+      // Peso en gramos (antes en kg): tope acorde a ficha_devanados_extra.peso_kg
+      // numeric(9,2) — ver migracion-ficha-pesos-gramos.sql.
+      peso_kg: numeroONull(d?.peso_kg, 9999999.99, `El peso ${cual}`)
     };
   });
 }
