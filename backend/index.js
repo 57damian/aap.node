@@ -28,6 +28,7 @@ const stockRoutes = require('./routes/stock.routes');                     // Mov
 const stockProduccionRoutes = require('./routes/stock-produccion.routes'); // Stock de productos terminados
 const facturasCompraRoutes = require('./routes/facturas-compra.routes');   // Facturas de compra
 const pagosProveedoresRoutes = require('./routes/pagos-proveedores.routes'); // Pagos a proveedores (reemplaza pagos.routes.js)
+const pedidosProveedorRoutes = require('./routes/pedidos-proveedor.routes'); // Pedidos de materia prima a proveedores (PDF)
 const cobrosRoutes = require('./routes/cobros.routes');                   // Cobros a clientes (reemplaza pagos-clientes.routes.js)
 // =====================================================================
 
@@ -172,8 +173,26 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // authorize(['admin']) en POST /api/usuarios/:id/reset-password, y para
 // recuperar acceso sin server está backend/scripts/reset-admin-password.js.
 
-// Servir archivos estáticos
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Las fotos subidas (modelos, OC de clientes) NO son públicas: solo se sirven
+// con sesión (el frontend las pide con el token y las muestra como blob).
+// Antes cualquiera con la URL las veía, y los nombres eran la hora en
+// milisegundos. Las cabeceras impiden que un archivo subido se ejecute como
+// página dentro del sitio. Las fotos de OC son solo para administradores.
+app.use(
+    '/uploads',
+    verificarToken,
+    exigirPasswordAlDia,
+    (req, res, next) => {
+        if (req.path.startsWith('/ordenes_compra/') && req.usuario.rol !== 'admin') {
+            return res.status(403).json({ error: 'No tiene permisos para esta acción' });
+        }
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'private, no-store');
+        next();
+    },
+    express.static(path.join(__dirname, 'uploads'), { index: false, dotfiles: 'deny' })
+);
 
 // En producción, servir el frontend desde la carpeta public/
 const rutaFrontend = path.join(__dirname, 'public');
@@ -249,6 +268,7 @@ app.use('/api/stock', stockRoutes);
 app.use('/api/stock-produccion', stockProduccionRoutes);
 app.use('/api/facturas-compra', facturasCompraRoutes);
 app.use('/api/pagos-proveedores', pagosProveedoresRoutes);
+app.use('/api/pedidos-proveedor', pedidosProveedorRoutes);
 app.use('/api/cobros', cobrosRoutes);
 // Alias del prefijo viejo: la pantalla anterior llamaba a /api/pagos/... y a
 // /api/pagos-clientes/..., que nunca estuvo montado del todo. Se deja el alias

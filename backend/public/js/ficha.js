@@ -128,19 +128,16 @@ async function cargarFichas() {
       // anunciados: la tabla quedaba desalineada.
       const tipoBadge = ficha.cliente_id ? Shell.pill('ESPECIFICO') : Shell.pill('GENERICO');
 
-      // Escapar comillas simples para el onclick
-      const modeloEscapado = (ficha.modelo || '').replace(/'/g, "\\'");
-
       tr.innerHTML = `
-        <td><strong>${ficha.modelo}</strong></td>
+        <td><strong>${escHtml(ficha.modelo)}</strong></td>
         <td data-label="Tipo">${tipoBadge}</td>
-        <td class="num muted solo-escritorio" data-label="Voltaje E/S">${ficha.voltaje_entrada || '—'}V / ${ficha.voltaje_salida || '—'}V</td>
-        <td class="num muted solo-escritorio" data-label="Amperaje E/S">${ficha.amperaje_entrada || '—'}A / ${ficha.amperaje_salida || '—'}A</td>
+        <td class="num muted solo-escritorio" data-label="Voltaje E/S">${escHtml(ficha.voltaje_entrada) || '—'}V / ${escHtml(ficha.voltaje_salida) || '—'}V</td>
+        <td class="num muted solo-escritorio" data-label="Amperaje E/S">${escHtml(ficha.amperaje_entrada) || '—'}A / ${escHtml(ficha.amperaje_salida) || '—'}A</td>
         <td class="num">
           <button class="b b-ghost b-sm" onclick="verDetalles(${ficha.id})">Ver</button>
           <button class="b b-ghost b-sm" onclick="editarFicha(${ficha.id})">Editar</button>
           ${rolPermiteEliminar() ?
-            `<button class="b b-ghost b-sm" onclick="confirmarEliminar(${ficha.id}, '${modeloEscapado}')">Eliminar</button>`
+            `<button class="b b-ghost b-sm" data-eliminar="${ficha.id}" data-modelo="${escHtml(ficha.modelo)}">Eliminar</button>`
             : ''
           }
         </td>
@@ -181,7 +178,7 @@ async function verDetalles(id) {
         : '<span class="badge" style="background: #c6f6d5; color: #22543d; margin-left: 1rem; padding: 0.3rem 1rem;">⚪ Modelo Genérico</span>';
 
     // Inyectar el badge al lado del título
-    title.innerHTML = `⚡ ${ficha.modelo} - Ficha Técnica Completa ${tipoBadge}`;
+    title.innerHTML = `⚡ ${escHtml(ficha.modelo)} - Ficha Técnica Completa ${tipoBadge}`;
 
     // Construir HTML de detalles con un sistema de grid moderno
     let html = `
@@ -270,7 +267,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Cliente Asociado</span>
-          <span class="detail-card-value">${ficha.cliente_nombre || 'Modelo Genérico'}</span>
+          <span class="detail-card-value">${escHtml(ficha.cliente_nombre) || 'Modelo Genérico'}</span>
         </div>
       </div>
     `;
@@ -280,7 +277,7 @@ async function verDetalles(id) {
       html += `
         <div class="detail-card" style="grid-column: span 2; display: flex; flex-direction: column; align-items: center;">
           <h4>📸 Imagen del Modelo</h4>
-          <img src="${ficha.foto_modelo}" style="max-width: 250px; border-radius: 0.75rem; border: 2px solid #cbd5e0;">
+          <img data-foto="${escHtml(ficha.foto_modelo)}" alt="Foto del modelo" style="max-width: 250px; border-radius: 0.75rem; border: 2px solid #cbd5e0;">
         </div>
       `;
     }
@@ -294,19 +291,19 @@ async function verDetalles(id) {
         <h4>⚡ Eléctricas</h4>
         <div class="detail-card-row">
           <span class="detail-card-label">Voltaje Entrada</span>
-          <span class="detail-card-value">${ficha.voltaje_entrada || '-'} V</span>
+          <span class="detail-card-value">${escHtml(ficha.voltaje_entrada) || '-'} V</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Voltaje Salida</span>
-          <span class="detail-card-value">${ficha.voltaje_salida || '-'} V</span>
+          <span class="detail-card-value">${escHtml(ficha.voltaje_salida) || '-'} V</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Amperaje Entrada</span>
-          <span class="detail-card-value">${ficha.amperaje_entrada || '-'} A</span>
+          <span class="detail-card-value">${escHtml(ficha.amperaje_entrada) || '-'} A</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Amperaje Salida</span>
-          <span class="detail-card-value">${ficha.amperaje_salida || '-'} A</span>
+          <span class="detail-card-value">${escHtml(ficha.amperaje_salida) || '-'} A</span>
         </div>
       </div>
     `;
@@ -317,15 +314,15 @@ async function verDetalles(id) {
         <h4>🔧 Físicas</h4>
         <div class="detail-card-row">
           <span class="detail-card-label">Tipo Carretel</span>
-          <span class="detail-card-value">${ficha.tipo_carretel || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.tipo_carretel) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Laminación</span>
-          <span class="detail-card-value">${ficha.laminacion || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.laminacion) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso Laminación</span>
-          <span class="detail-card-value">${ficha.peso_laminacion_kg || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(ficha.peso_laminacion_kg) || '-'} kg</span>
         </div>
       </div>
     `;
@@ -340,11 +337,11 @@ async function verDetalles(id) {
         <h4>🔄 Devanado Primario</h4>
         <div class="detail-card-row">
           <span class="detail-card-label">Alambre</span>
-          <span class="detail-card-value">${ficha.alambre_primario || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.alambre_primario) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Diámetro</span>
-          <span class="detail-card-value">${ficha.diametro_primario_mm || '-'} mm</span>
+          <span class="detail-card-value">${escHtml(ficha.diametro_primario_mm) || '-'} mm</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Espiras</span>
@@ -352,11 +349,11 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Pines</span>
-          <span class="detail-card-value">${ficha.pines_primario || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.pines_primario) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso</span>
-          <span class="detail-card-value">${ficha.peso_primario_kg || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(ficha.peso_primario_kg) || '-'} kg</span>
         </div>
       </div>
     `;
@@ -367,11 +364,11 @@ async function verDetalles(id) {
         <h4>🔄 Devanado Secundario</h4>
         <div class="detail-card-row">
           <span class="detail-card-label">Alambre</span>
-          <span class="detail-card-value">${ficha.alambre_secundario || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.alambre_secundario) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Diámetro</span>
-          <span class="detail-card-value">${ficha.diametro_secundario_mm || '-'} mm</span>
+          <span class="detail-card-value">${escHtml(ficha.diametro_secundario_mm) || '-'} mm</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Espiras</span>
@@ -379,11 +376,11 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Pines</span>
-          <span class="detail-card-value">${ficha.pines_secundario || '-'}</span>
+          <span class="detail-card-value">${escHtml(ficha.pines_secundario) || '-'}</span>
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso</span>
-          <span class="detail-card-value">${ficha.peso_secundario_kg || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(ficha.peso_secundario_kg) || '-'} kg</span>
         </div>
       </div>
     `;
@@ -424,11 +421,13 @@ async function verDetalles(id) {
         <h4 style="display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.5rem 0;">
           <span>📝</span> Observaciones
         </h4>
-        <p style="margin: 0; color: #334155;">${ficha.observaciones || 'Sin observaciones adicionales.'}</p>
+        <p style="margin: 0; color: #334155;">${escHtml(ficha.observaciones) || 'Sin observaciones adicionales.'}</p>
       </div>
     `;
 
     content.innerHTML = html;
+    // La foto está protegida: se pide con la sesión (ver cargarImagenProtegida en api.js).
+    content.querySelectorAll('img[data-foto]').forEach(img => cargarImagenProtegida(img, img.dataset.foto));
     document.getElementById('detailModal').showModal();
 
   } catch (err) {
@@ -629,6 +628,11 @@ document.addEventListener('click', (e) => {
     agregarDevanadoExtra();
     return;
   }
+  const eliminar = e.target.closest('[data-eliminar]');
+  if (eliminar) {
+    confirmarEliminar(Number(eliminar.dataset.eliminar), eliminar.dataset.modelo);
+    return;
+  }
   const quitar = e.target.closest('[data-quitar-devanado]');
   if (quitar) {
     quitar.closest('.devanado-extra')?.remove();
@@ -723,7 +727,7 @@ async function editarFicha(id) {
     // Mostrar foto actual si existe
     const preview = document.getElementById('fotoPreview');
     if (preview && ficha.foto_modelo) {
-      preview.src = ficha.foto_modelo;
+      cargarImagenProtegida(preview, ficha.foto_modelo);
       preview.classList.add('show');
     } else if (preview) {
       preview.src = '#';

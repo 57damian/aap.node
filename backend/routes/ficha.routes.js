@@ -22,8 +22,36 @@ function fallo(status, mensaje) {
   return e;
 }
 
+// Los operarios pueden crear y editar fichas, y esos textos después se
+// muestran a los administradores en muchas pantallas. Para que nadie pueda
+// colar HTML o un script, no se aceptan < ni > en ningún campo de texto; y en
+// los datos cortos (modelo, alambre, pines, carretel…) tampoco comillas
+// dobles, barras invertidas ni comilla invertida, que servirían para romper
+// atributos HTML.
+const SIN_HTML = /[<>]/;
+const SIN_ROTURA = /[<>"\\`]/;
+
+function validarCaracteres(valor, etiqueta, estricto) {
+  if (valor === undefined || valor === null) return;
+  if ((estricto ? SIN_ROTURA : SIN_HTML).test(String(valor))) {
+    throw fallo(400, `${etiqueta} tiene caracteres no permitidos${estricto ? ' (< > " \\ `)' : ' (< >)'}`);
+  }
+}
+
+// Campos de texto de la ficha que llegan en el cuerpo del pedido.
+function validarTextosFicha(body) {
+  const cortos = {
+    modelo: 'El modelo', tipo_carretel: 'El tipo de carretel', laminacion: 'La laminación',
+    alambre_primario: 'El alambre del primario', alambre_secundario: 'El alambre del secundario',
+    pines_primario: 'Los pines del primario', pines_secundario: 'Los pines del secundario'
+  };
+  for (const [campo, etiqueta] of Object.entries(cortos)) validarCaracteres(body[campo], etiqueta, true);
+  validarCaracteres(body.observaciones, 'Las observaciones', false);
+}
+
 // Texto libre acotado: recorta y devuelve null si quedó vacío.
 function textoCorto(valor, max, etiqueta) {
+  validarCaracteres(valor, etiqueta, true);
   const t = String(valor ?? '').trim();
   if (!t) return null;
   if (t.length > max) throw fallo(400, `${etiqueta} es demasiado largo (máximo ${max} caracteres)`);
@@ -113,6 +141,7 @@ router.post('/', adminYOperario, upload.single('foto'), async (req, res) => {
 
   const client = await pool.connect();
   try {
+    validarTextosFicha(req.body);
     const espirasPrimario = textoCorto(req.body.espiras_primario, 40, 'Las espiras del primario');
     const espirasSecundario = textoCorto(req.body.espiras_secundario, 40, 'Las espiras del secundario');
     const extras = normalizarExtras(req.body.devanados_extra);
@@ -249,6 +278,7 @@ router.put('/:id', adminYOperario, upload.single('foto'), async (req, res) => {
     const fotoActual = fichaActual.rows[0].foto_modelo;
     const nuevaFoto = req.file ? `uploads/modelos/${req.file.filename}` : fotoActual;
 
+    validarTextosFicha(req.body);
     const espirasPrimario = textoCorto(req.body.espiras_primario, 40, 'Las espiras del primario');
     const espirasSecundario = textoCorto(req.body.espiras_secundario, 40, 'Las espiras del secundario');
     const extras = normalizarExtras(req.body.devanados_extra);

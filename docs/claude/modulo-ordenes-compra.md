@@ -15,6 +15,10 @@ Ojo: lo que existe en el código con el nombre `ordenes_compra` es la **OC que m
 
 - Los ítems se pueden **corregir** (`PUT /api/ordenes-compra/:id/items/:itemId`, fija la cantidad) y **borrar** (`DELETE`). No se puede bajar la cantidad por debajo de lo ya entregado, ni borrar un ítem con entregas, ni tocar una OC cerrada. Para cambiar de modelo: borrar y volver a agregar.
 
+## Pedidos a proveedores (22/09/2026)
+
+Implementado, separado de `ordenes_compra` de arriba: es la "orden de compra" que quedó pendiente en la sección anterior, con el nombre "pedido a proveedor" para no confundirla con la del cliente. Ver detalle en el CLAUDE.md raíz ("Pedidos a proveedores") y en `claude/modulo-proveedores.md` (pregunta abierta #5, ahora resuelta).
+
 ## Pendiente
 
-Confirmar si existe algo de código/esquema para esto antes de auditar (podría ser un módulo a diseñar desde cero más que a "arreglar").
+Sin auditar todavía el resto de este módulo (más allá de lo de arriba).
