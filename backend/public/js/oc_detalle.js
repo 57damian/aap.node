@@ -322,6 +322,7 @@ async function cargarFacturas() {
           · ${Shell.fecha(factura.fecha_factura)}
           · Remitos: ${factura.remitos || '—'}
           · Total ${Shell.money(factura.total_factura)} (con IVA)
+          · <a href="#" onclick="descargarFacturaPdf(${factura.factura_id}); return false;">PDF</a>
           ${anulada ? '' : `· Cobrado ${Shell.money(factura.total_cobrado)}
           · <a href="correcciones.html?factura=${encodeURIComponent(factura.factura_id)}">Anular…</a>`}
         </td>
@@ -350,6 +351,22 @@ async function cargarFacturas() {
     });
   } catch (err) {
     console.error('Error cargando facturas:', err);
+  }
+}
+
+async function descargarFacturaPdf(facturaId) {
+  try {
+    await descargarArchivoProtegido(`api/facturas/${facturaId}/pdf`, `Factura-${facturaId}.pdf`);
+  } catch (err) {
+    mostrarNotificacion(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+  }
+}
+
+async function descargarRemitoPdf(ventaId) {
+  try {
+    await descargarArchivoProtegido(`api/ventas/${ventaId}/pdf`, `Remito-${ventaId}.pdf`);
+  } catch (err) {
+    mostrarNotificacion(err.error || err.message || 'No se pudo descargar el PDF', 'error');
   }
 }
 
@@ -584,7 +601,7 @@ async function cargarRemitos() {
 
     const ventasConRemito = (ventas || []).filter((v) => v.remito_numero);
     if (!ventasConRemito.length) {
-      tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+      tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
         'Todavía no hay remitos',
         'Se registran al entregar items en la pestaña "Registrar entrega".')}</td></tr>`;
       return;
@@ -612,6 +629,7 @@ async function cargarRemitos() {
           ? `<strong>${venta.numero_factura}</strong>`
           : Shell.pill('PENDIENTE')}</td>
         <td class="muted solo-escritorio" data-label="Observaciones">${venta.remito_observaciones || '—'}</td>
+        <td><button type="button" class="b b-ghost b-sm" onclick="descargarRemitoPdf(${venta.id})">PDF</button></td>
       `;
       tbody.appendChild(tr);
     });

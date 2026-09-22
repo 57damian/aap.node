@@ -4,6 +4,8 @@ const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { getIVA } = require('../services/parametros');
 const { vistaPreviaAnulacion, anularFactura } = require('../services/anulaciones');
+const { generarPdfFactura } = require('../services/pdf-factura');
+const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
 
@@ -300,6 +302,58 @@ router.get('/', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error listando facturas:', err);
     res.status(500).json({ error: 'No se pudo listar las facturas' });
+  }
+});
+
+/* =========================
+   DESCARGAR FACTURA EN PDF
+========================= */
+router.get('/:id/pdf', soloAdmin, async (req, res) => {
+  try {
+    const facturaRes = await pool.query(
+      `
+      SELECT
+        f.id, f.numero_factura, f.tipo_factura, f.fecha, f.dias_credito,
+        f.subtotal_sin_iva, f.iva_21, f.total,
+        COALESCE(upper(f.estado), 'EMITIDA') AS estado,
+        f.motivo_anulacion,
+        c.nombre AS cliente_nombre, c.cuit AS cliente_cuit, c.direccion AS cliente_direccion,
+        (SELECT string_agg(DISTINCT v.remito_numero, ', ')
+           FROM factura_venta_items fvi
+           JOIN venta_items vi ON vi.id = fvi.venta_item_id
+           JOIN ventas v ON v.id = vi.venta_id
+          WHERE fvi.factura_id = f.id) AS remitos
+      FROM facturas f
+      JOIN clientes c ON c.id = f.cliente_id
+      WHERE f.id = $1
+      `,
+      [req.params.id]
+    );
+
+    if (!facturaRes.rows.length) return res.status(404).json({ error: 'Factura no encontrada' });
+
+    const itemsRes = await pool.query(
+      `
+      SELECT ft.modelo, fvi.precio_unitario, SUM(fvi.cantidad) AS cantidad, SUM(fvi.subtotal) AS subtotal
+      FROM factura_venta_items fvi
+      JOIN ficha_transformador ft ON ft.id = fvi.ficha_id
+      WHERE fvi.factura_id = $1
+      GROUP BY ft.modelo, fvi.precio_unitario
+      ORDER BY ft.modelo
+      `,
+      [req.params.id]
+    );
+
+    const factura = facturaRes.rows[0];
+    factura.items = itemsRes.rows;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="Factura-${nombreArchivo(factura.numero_factura, factura.id)}.pdf"`);
+    generarPdfFactura(factura, res);
+  } catch (err) {
+    console.error('Error generando PDF de factura:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 

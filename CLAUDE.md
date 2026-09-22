@@ -50,9 +50,11 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 12. `migracion-pedidos-proveedor.sql` (22/09) — tablas `pedidos_proveedor` y `pedido_proveedor_items` (el pedido de materia prima que se le manda por PDF a un proveedor; ver "Pedidos a proveedores" abajo). Sin esto no existe la pantalla `pedidos-proveedor.html`. **Aplicada en local y en Neon el 22/09/2026.**
 
-13. `migracion-ficha-pesos-gramos.sql` (22/09) — ensancha `ficha_transformador.peso_primario_kg/peso_secundario_kg/peso_laminacion_kg` y `ficha_devanados_extra.peso_kg` (si existe) de `numeric(6,3)` a `numeric(9,2)`. Necesaria para "Pesos de ficha técnica y materia prima en gramos" (abajo): sin ensanchar, cargar un peso en gramos (~1000 veces más grande que en kg) tira overflow de Postgres. Si en esa base todavía no corrió `migracion-ficha-devanados.sql` (11), la parte de `ficha_devanados_extra` se salta sola — hay que volver a correr esta 13 después de aplicar la 11. **Aplicada en local el 22/09/2026; falta correrla en Neon** (en Neon sí existe `ficha_devanados_extra` desde el 21/09, así que ahí se aplican las dos partes).
+13. `migracion-ficha-pesos-gramos.sql` (22/09) — ensancha `ficha_transformador.peso_primario_kg/peso_secundario_kg/peso_laminacion_kg` y `ficha_devanados_extra.peso_kg` (si existe) de `numeric(6,3)` a `numeric(9,2)`. Necesaria para "Pesos de ficha técnica y materia prima en gramos" (abajo): sin ensanchar, cargar un peso en gramos (~1000 veces más grande que en kg) tira overflow de Postgres. Si en esa base todavía no corrió `migracion-ficha-devanados.sql` (11), la parte de `ficha_devanados_extra` se salta sola — hay que volver a correr esta 13 después de aplicar la 11. **Aplicada en local el 22/09/2026 (re-corrida el mismo día después de aplicar la 9, 10 y 11, que también faltaban en local); falta correrla en Neon** (en Neon sí existe `ficha_devanados_extra` desde el 21/09, así que ahí se aplican las dos partes).
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 13, no la 5 ni la 6).
+14. `migracion-ficha-etiqueta.sql` (22/09) — agrega `ficha_transformador.etiqueta_pdf` (ruta del PDF de la etiqueta del transformador; ver "Etiqueta del transformador" abajo). Sin esto no funciona subir ni descargar la etiqueta. **Aplicada en local el 22/09/2026; falta correrla en Neon.**
+
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 14, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -90,6 +92,14 @@ Decisión (21/09/2026): **anular, no borrar**. No hay rol superadmin ni borrado 
 - Orden para anular todo un circuito: primero la factura, después los remitos, al final la OC.
 - Pendiente: anular recibo y nota de crédito, y reemplazar los `prompt()`/`confirm()` de cobros y pagos a proveedores por diálogos.
 
+## Descarga de PDF (remitos, facturas de venta, cobros, fichas técnicas)
+
+Mismo patrón que "Pedidos a proveedores" (abajo): PDF membretado generado en el servidor con `pdfkit`, sin dependencias nativas ni navegador headless. `services/pdf-base.js` centraliza el membrete y una tabla paginada genérica; cada documento tiene su propio generador (`services/pdf-remito.js`, `pdf-factura.js`, `pdf-cobro.js`, `pdf-ficha.js`).
+
+- `GET /api/ventas/:id/pdf` (remito, sin precios — es prueba de entrega, no un documento fiscal), `GET /api/facturas/:id/pdf` (factura de venta, con subtotal/IVA/total), `GET /api/cobros/:id/pdf` (recibo del cobro, con las formas de pago y las facturas imputadas), `GET /api/ficha-transformador/:id/pdf` (ficha técnica completa, reemplaza al viejo `exportarPDF()` con jsPDF del navegador que solo sacaba 3 campos).
+- Un documento anulado se puede seguir descargando como registro (banner "ANULADO/A" con el motivo).
+- Frontend: botón/link "PDF" o "Descargar PDF" con `descargarArchivoProtegido` en `venta_detalle.html`, `oc_detalle.js` (junto a cada factura y cada remito), `cobros.js` (historial) y `ficha.html`/`ficha.js`.
+
 ## Pedidos a proveedores (PDF de materia prima)
 
 - No es `ordenes_compra` (esa es la orden que manda el **cliente**). Es un documento propio para pedirle materia prima a un **proveedor**: se arma en `pedidos-proveedor.html`, queda guardado como borrador y se descarga como PDF con membrete para mandarlo por correo a mano (el sistema no manda el correo, solo genera el PDF).
@@ -107,6 +117,15 @@ El alambre de cobre se pide y se registra en gramos (ver "Pedidos a proveedores"
 - Ojo: como `factura_items.precio_unitario` es `numeric(15,2)`, un precio en gramos con más de 2 decimales pierde precisión al redondear (ej.: $999/kg → $0.999/gr se guarda como $1.00/gr). Insignificante en la práctica, pero no es una conversión matemáticamente exacta.
 - **Pesos de ficha técnica también pasan a gramos**: `peso_primario_kg`, `peso_secundario_kg`, `peso_laminacion_kg` (ficha) y `ficha_devanados_extra.peso_kg` (devanados terciario, cuarto…) — mismo script, mismo día. Son campos informativos (no alimentan ningún cálculo de stock ni de costo), así que acá la conversión es directa: valor × 1000. Los nombres de columna se dejan igual (`_kg`, `peso_kg`): es legacy, ya no refleja la unidad real. Requiere `migracion-ficha-pesos-gramos.sql` (ensancha esas columnas a `numeric(9,2)`; si no, Postgres tira overflow al guardar un valor 1000 veces más grande).
 - El script **no es idempotente para los pesos de ficha** (multiplica × 1000 cada vez que corre): es de una sola vez, no correrlo dos veces. Para materias primas sí es idempotente (solo toca lo que todavía está en `'KG'`).
+
+## Etiqueta del transformador (PDF)
+
+Cada transformador lleva pegada una etiqueta física; en vez de rehacerla cada vez, se sube una sola vez a la ficha técnica y de ahí se puede volver a descargar cuando haga falta reimprimir.
+
+- Columna `ficha_transformador.etiqueta_pdf` (ruta relativa dentro de `uploads/etiquetas/`, mismo criterio que `foto_modelo`). Requiere `migracion-ficha-etiqueta.sql` (13, arriba).
+- `POST /api/ficha-transformador/:id/etiqueta` (campo `etiqueta`, multipart) sube o reemplaza el PDF y borra el archivo anterior si había uno; `DELETE /api/ficha-transformador/:id/etiqueta` lo quita. Ambas `adminYOperario`, igual que el resto de `ficha.routes.js`.
+- `middlewares/uploadEtiqueta.js`: mismo criterio de seguridad que `uploadImagen.js` (nombre aleatorio, se comprueba la firma real del archivo — todo PDF empieza con `%PDF-` —, máximo 5 MB), pero en un archivo aparte porque acá se valida un PDF, no una imagen. Se sirve por el mismo mount protegido `/uploads` de `index.js` (sesión + cabeceras que impiden ejecutarlo).
+- UI en el modal de detalle de `ficha.html` (`ficha.js`): botones para subir/reemplazar, descargar (`descargarArchivoProtegido`) y quitar la etiqueta. No está en el formulario de alta porque la ficha necesita existir (tener `id`) antes de poder subirle un archivo.
 
 ## Fichas técnicas: devanados
 

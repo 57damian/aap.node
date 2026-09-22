@@ -253,9 +253,23 @@
       </div>
     </div>
     <div class="panel-body" id="detailContent"></div>
+
+    <div class="panel-body" style="padding-top:0">
+      <h4 style="margin:0 0 8px">Etiqueta del transformador</h4>
+      <p class="muted" id="etiquetaEstado" style="margin:0 0 8px">Cargando…</p>
+      <div class="page-head-actions">
+        <button class="b b-ghost" id="btnDescargarEtiqueta" onclick="descargarEtiqueta()" hidden>Descargar etiqueta</button>
+        <button class="b b-ghost" onclick="document.getElementById('etiquetaInput').click()">
+          <span id="btnSubirEtiquetaTxt">Subir etiqueta (PDF)</span>
+        </button>
+        <button class="b b-danger" id="btnBorrarEtiqueta" onclick="borrarEtiqueta()" hidden>Quitar etiqueta</button>
+        <input type="file" id="etiquetaInput" accept="application/pdf" hidden onchange="subirEtiqueta()">
+      </div>
+    </div>
+
     <div class="panel-body" style="padding-top:0">
       <div class="page-head-actions">
-        <button class="b b-primary" onclick="exportarPDF()">Exportar a PDF</button>
+        <button class="b b-primary" onclick="exportarPDF()">Descargar PDF</button>
       </div>
     </div>
   </dialog>
@@ -264,7 +278,6 @@
 
 <script src="js/ayuda.js"></script>
 <script src="js/shell.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="js/api.js"></script>
 <script>
   Shell.montar({ titulo: 'Fichas técnicas', sub: 'Modelos de transformador' });

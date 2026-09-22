@@ -4,6 +4,8 @@ const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { asyncHandler } = require('../middlewares/asyncHandler');
 const { vistaPreviaAnulacionRemito, anularRemito } = require('../services/anulaciones');
+const { generarPdfRemito } = require('../services/pdf-remito');
+const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
 
@@ -416,6 +418,52 @@ router.get('/:id/factura', soloAdmin, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   DESCARGAR REMITO EN PDF
+========================= */
+router.get('/:id/pdf', soloAdmin, async (req, res) => {
+  try {
+    const ventaRes = await pool.query(
+      `
+      SELECT
+        v.id, v.fecha, v.remito_numero, v.remito_fecha, v.remito_observaciones,
+        v.anulada_en, v.motivo_anulacion,
+        c.nombre AS cliente_nombre, c.cuit AS cliente_cuit, c.direccion AS cliente_direccion,
+        oc.numero_oc
+      FROM ventas v
+      JOIN clientes c ON c.id = v.cliente_id
+      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
+      WHERE v.id = $1
+      `,
+      [req.params.id]
+    );
+
+    if (!ventaRes.rows.length) return res.status(404).json({ error: 'Venta no encontrada' });
+
+    const itemsRes = await pool.query(
+      `
+      SELECT vi.cantidad, f.modelo
+      FROM venta_items vi
+      JOIN ficha_transformador f ON f.id = vi.ficha_id
+      WHERE vi.venta_id = $1
+      ORDER BY f.modelo
+      `,
+      [req.params.id]
+    );
+
+    const venta = ventaRes.rows[0];
+    venta.items = itemsRes.rows;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="Remito-${nombreArchivo(venta.remito_numero, venta.id)}.pdf"`);
+    generarPdfRemito(venta, res);
+  } catch (err) {
+    console.error('Error generando PDF de remito:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 

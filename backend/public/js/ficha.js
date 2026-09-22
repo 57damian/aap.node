@@ -428,6 +428,7 @@ async function verDetalles(id) {
     content.innerHTML = html;
     // La foto está protegida: se pide con la sesión (ver cargarImagenProtegida en api.js).
     content.querySelectorAll('img[data-foto]').forEach(img => cargarImagenProtegida(img, img.dataset.foto));
+    actualizarEtiquetaUI(ficha);
     document.getElementById('detailModal').showModal();
 
   } catch (err) {
@@ -444,7 +445,7 @@ function closeDetailModal() {
 }
 
 /* =====================
-   EXPORTAR PDF
+   DESCARGAR PDF
 ===================== */
 async function exportarPDF() {
   if (!currentFicha) {
@@ -453,37 +454,89 @@ async function exportarPDF() {
   }
 
   try {
-    // Verificar que jsPDF está disponible
-    if (typeof jspdf === 'undefined') {
-      throw new Error('Biblioteca jsPDF no cargada');
-    }
-
-    const { jsPDF } = jspdf;
-    const doc = new jsPDF();
-    
-    // Título
-    doc.setFontSize(20);
-    doc.setTextColor(102, 126, 234);
-    doc.text(`Ficha Técnica: ${currentFicha.modelo}`, 20, 20);
-    
-    // Información general
-    doc.setFontSize(14);
-    doc.setTextColor(0, 0, 0);
-    doc.text('Información General', 20, 35);
-    
-    doc.setFontSize(10);
-    doc.text(`ID: ${currentFicha.id}`, 20, 45);
-    doc.text(`Modelo: ${currentFicha.modelo}`, 20, 52);
-    doc.text(`Voltaje: ${currentFicha.voltaje_entrada || '-'}V / ${currentFicha.voltaje_salida || '-'}V`, 20, 59);
-    
-    // Guardar PDF
-    doc.save(`ficha_${currentFicha.modelo}.pdf`);
-    
-    showAlert('✅ PDF generado correctamente', 'success');
-    
+    await descargarArchivoProtegido(
+      `api/ficha-transformador/${currentFicha.id}/pdf`,
+      `Ficha-${currentFicha.modelo}.pdf`
+    );
   } catch (err) {
-    console.error('Error generando PDF:', err);
-    showAlert('Error generando PDF: ' + err.message, 'error');
+    console.error('Error descargando PDF:', err);
+    showAlert('Error descargando PDF: ' + err.message, 'error');
+  }
+}
+
+/* =====================
+   ETIQUETA (PDF que lleva pegado el transformador)
+===================== */
+function actualizarEtiquetaUI(ficha) {
+  const estado = document.getElementById('etiquetaEstado');
+  const btnDescargar = document.getElementById('btnDescargarEtiqueta');
+  const btnBorrar = document.getElementById('btnBorrarEtiqueta');
+  const btnSubirTxt = document.getElementById('btnSubirEtiquetaTxt');
+  if (ficha.etiqueta_pdf) {
+    estado.textContent = 'Etiqueta cargada.';
+    btnDescargar.hidden = false;
+    btnBorrar.hidden = false;
+    btnSubirTxt.textContent = 'Reemplazar etiqueta (PDF)';
+  } else {
+    estado.textContent = 'Todavía no se cargó la etiqueta de este modelo.';
+    btnDescargar.hidden = true;
+    btnBorrar.hidden = true;
+    btnSubirTxt.textContent = 'Subir etiqueta (PDF)';
+  }
+}
+
+async function subirEtiqueta() {
+  const input = document.getElementById('etiquetaInput');
+  const archivo = input.files[0];
+  if (!archivo || !currentFicha) return;
+
+  if (archivo.type !== 'application/pdf') {
+    showAlert('La etiqueta tiene que ser un PDF', 'error');
+    input.value = '';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('etiqueta', archivo);
+
+  try {
+    const r = await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiqueta`, {
+      method: 'POST',
+      body: formData
+    });
+    currentFicha.etiqueta_pdf = r.etiqueta_pdf;
+    actualizarEtiquetaUI(currentFicha);
+    showAlert('✅ Etiqueta guardada', 'success');
+  } catch (err) {
+    console.error('Error subiendo etiqueta:', err);
+    showAlert('No se pudo subir la etiqueta: ' + (err.error || err.message), 'error');
+  } finally {
+    input.value = '';
+  }
+}
+
+async function descargarEtiqueta() {
+  if (!currentFicha || !currentFicha.etiqueta_pdf) return;
+  try {
+    await descargarArchivoProtegido(currentFicha.etiqueta_pdf, `Etiqueta-${currentFicha.modelo}.pdf`);
+  } catch (err) {
+    console.error('Error descargando etiqueta:', err);
+    showAlert('No se pudo descargar la etiqueta: ' + err.message, 'error');
+  }
+}
+
+async function borrarEtiqueta() {
+  if (!currentFicha) return;
+  if (!confirm('¿Quitar la etiqueta cargada de este modelo?')) return;
+
+  try {
+    await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiqueta`, { method: 'DELETE' });
+    currentFicha.etiqueta_pdf = null;
+    actualizarEtiquetaUI(currentFicha);
+    showAlert('Etiqueta eliminada', 'success');
+  } catch (err) {
+    console.error('Error borrando etiqueta:', err);
+    showAlert('No se pudo eliminar la etiqueta: ' + (err.error || err.message), 'error');
   }
 }
 

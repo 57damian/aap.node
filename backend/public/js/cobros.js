@@ -767,6 +767,7 @@ async function cargarHistorial() {
         <td data-label="Estado">${Shell.pill(p.estado)}
             ${p.tiene_rechazo ? Shell.pill('RECHAZADO') : ''}</td>
         <td data-label="Acciones">
+          <button class="b b-ghost b-sm" onclick="descargarCobroPdf(${p.id})">PDF</button>
           ${num(p.disponible) > 0 && !p.anulado ? `<button class="b b-ghost b-sm" onclick="imputarPendiente(${p.id})">Imputar</button>` : ''}
           ${!p.anulado && !p.recibo_id ? `<button class="b b-danger b-sm" onclick="anularCobro(${p.id})">Anular</button>` : ''}
         </td>
@@ -774,6 +775,14 @@ async function cargarHistorial() {
   } catch (err) {
     Shell.error(err, 'No se pudo cargar el historial de cobros');
     tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+  }
+}
+
+async function descargarCobroPdf(pagoId) {
+  try {
+    await descargarArchivoProtegido(`api/cobros/${pagoId}/pdf`, `Cobro-${pagoId}.pdf`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo descargar el PDF');
   }
 }
 

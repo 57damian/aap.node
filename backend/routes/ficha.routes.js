@@ -1,9 +1,14 @@
 const upload = require('../middlewares/uploadModelo');
+const uploadEtiqueta = require('../middlewares/uploadEtiqueta');
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const pool = require('../db');
 const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
 const { segunRol } = require('../services/vista-operario');
+const { generarPdfFicha } = require('../services/pdf-ficha');
+const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
 
@@ -257,6 +262,96 @@ router.get('/:id', adminYOperario, async (req, res) => {
     res.json(ficha);
   } catch (err) {
     console.error('Error obteniendo ficha:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   DESCARGAR PDF - Ficha técnica completa, membretada
+========================= */
+router.get('/:id/pdf', adminYOperario, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT ft.*, c.nombre AS cliente_nombre
+       FROM ficha_transformador ft
+       LEFT JOIN clientes c ON c.id = ft.cliente_id
+       WHERE ft.id = $1`,
+      [req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Ficha no encontrada' });
+    }
+
+    const ficha = result.rows[0];
+    ficha.devanados_extra = await leerExtras(pool, ficha.id);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="Ficha-${nombreArchivo(ficha.modelo, ficha.id)}.pdf"`);
+    generarPdfFicha(ficha, res);
+  } catch (err) {
+    console.error('Error generando PDF de ficha:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   ETIQUETA (PDF) - subir o reemplazar
+   El transformador lleva pegada una etiqueta física; se sube una vez acá
+   para poder reimprimirla más adelante sin rehacerla.
+========================= */
+router.post('/:id/etiqueta', adminYOperario, uploadEtiqueta.single('etiqueta'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Falta el archivo de la etiqueta' });
+  }
+  try {
+    const actual = await pool.query(
+      'SELECT etiqueta_pdf FROM ficha_transformador WHERE id = $1',
+      [req.params.id]
+    );
+    if (!actual.rows.length) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ error: 'Ficha no encontrada' });
+    }
+
+    const rutaNueva = `uploads/etiquetas/${req.file.filename}`;
+    await pool.query(
+      'UPDATE ficha_transformador SET etiqueta_pdf = $1 WHERE id = $2',
+      [rutaNueva, req.params.id]
+    );
+
+    const rutaAnterior = actual.rows[0].etiqueta_pdf;
+    if (rutaAnterior) fs.unlink(path.join(__dirname, '..', rutaAnterior), () => {});
+
+    res.json({ etiqueta_pdf: rutaNueva });
+  } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    console.error('Error subiendo etiqueta:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   ETIQUETA (PDF) - quitar
+========================= */
+router.delete('/:id/etiqueta', adminYOperario, async (req, res) => {
+  try {
+    const actual = await pool.query(
+      'SELECT etiqueta_pdf FROM ficha_transformador WHERE id = $1',
+      [req.params.id]
+    );
+    if (!actual.rows.length) return res.status(404).json({ error: 'Ficha no encontrada' });
+    if (!actual.rows[0].etiqueta_pdf) {
+      return res.status(400).json({ error: 'Esta ficha no tiene etiqueta cargada' });
+    }
+
+    await pool.query('UPDATE ficha_transformador SET etiqueta_pdf = NULL WHERE id = $1', [req.params.id]);
+    fs.unlink(path.join(__dirname, '..', actual.rows[0].etiqueta_pdf), () => {});
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error borrando etiqueta:', err);
     res.status(500).json({ error: err.message });
   }
 });

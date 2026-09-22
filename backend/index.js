@@ -318,6 +318,9 @@ app.use((err, req, res, next) => {
     if (err.message === 'Solo imágenes') {
         return res.status(400).json({ error: 'Solo se permiten archivos de imagen' });
     }
+    if (err.message === 'Solo PDF') {
+        return res.status(400).json({ error: 'Solo se permiten archivos PDF' });
+    }
     res.status(500).json({ 
         error: 'Error interno del servidor',
         message: process.env.NODE_ENV === 'development' ? err.message : undefined

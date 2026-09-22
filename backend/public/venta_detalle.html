@@ -69,6 +69,7 @@
     <div class="panel-head">
       <h2>Remito</h2>
       <div class="page-head-actions">
+        <button class="b b-ghost" onclick="descargarRemitoPdf()">Descargar PDF</button>
         <button class="b b-primary" id="btnGuardarRemito" onclick="guardarRemito()">Guardar remito</button>
       </div>
     </div>
@@ -92,7 +93,12 @@
 
   <!-- Factura asociada (se muestra si ya está facturada) -->
   <div id="facturaAsociada" class="panel" style="display:none">
-    <div class="panel-head"><h2>Factura asociada</h2></div>
+    <div class="panel-head">
+      <h2>Factura asociada</h2>
+      <div class="page-head-actions">
+        <button class="b b-ghost" onclick="descargarFacturaPdf()">Descargar PDF</button>
+      </div>
+    </div>
     <div class="panel-body" id="detalleFactura"></div>
   </div>
 

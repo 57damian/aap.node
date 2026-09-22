@@ -24,6 +24,8 @@ const {
   resumenCliente, cuentaCorriente
 } = require('../services/cuenta-cliente');
 const { anularCobro } = require('../services/anulaciones');
+const { generarPdfCobro } = require('../services/pdf-cobro');
+const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
 
@@ -989,6 +991,44 @@ router.get('/:id', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error obteniendo cobro:', err);
     fallar(res, 500, err.message);
+  }
+});
+
+/* Descargar el recibo del cobro en PDF. */
+router.get('/:id/pdf', soloAdmin, async (req, res) => {
+  try {
+    const pago = await pool.query(`
+      SELECT p.*, c.nombre AS cliente_nombre, c.cuit, r.numero_recibo
+      FROM pagos p
+      LEFT JOIN clientes c ON c.id = p.cliente_id
+      LEFT JOIN recibos  r ON r.id = p.recibo_id
+      WHERE p.id = $1
+    `, [req.params.id]);
+    if (!pago.rows.length) return fallar(res, 404, 'Cobro no encontrado');
+
+    const items = await pool.query(
+      `SELECT * FROM pago_items WHERE pago_id = $1 ORDER BY id`, [req.params.id]
+    );
+
+    const imputaciones = await pool.query(`
+      SELECT ap.monto_aplicado, f.numero_factura, f.tipo_factura, f.fecha
+      FROM aplicacion_pagos ap
+      JOIN facturas f ON f.id = ap.factura_id
+      WHERE ap.pago_id = $1
+      ORDER BY f.fecha, ap.id
+    `, [req.params.id]);
+
+    const cobro = pago.rows[0];
+    cobro.items = items.rows;
+    cobro.imputaciones = imputaciones.rows;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="Cobro-${nombreArchivo(cobro.numero_recibo, cobro.id)}.pdf"`);
+    generarPdfCobro(cobro, res);
+  } catch (err) {
+    console.error('Error generando PDF de cobro:', err);
+    if (!res.headersSent) fallar(res, 500, err.message);
   }
 });
 

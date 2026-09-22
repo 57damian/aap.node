@@ -307,6 +307,33 @@ async function confirmarFacturacion() {
 }
 
 /* =====================
+   DESCARGAR PDF (REMITO Y FACTURA)
+===================== */
+async function descargarRemitoPdf() {
+  if (!ventaId) return;
+  try {
+    await descargarArchivoProtegido(
+      `api/ventas/${ventaId}/pdf`,
+      `Remito-${(ventaData && ventaData.remito_numero) || ventaId}.pdf`
+    );
+  } catch (err) {
+    mostrarAlerta(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+  }
+}
+
+async function descargarFacturaPdf() {
+  if (!facturaData) return;
+  try {
+    await descargarArchivoProtegido(
+      `api/facturas/${facturaData.id}/pdf`,
+      `Factura-${facturaData.numero_factura || facturaData.id}.pdf`
+    );
+  } catch (err) {
+    mostrarAlerta(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+  }
+}
+
+/* =====================
    GUARDAR REMITO
 ===================== */
 async function guardarRemito() {

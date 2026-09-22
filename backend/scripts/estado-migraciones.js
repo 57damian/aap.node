@@ -232,6 +232,17 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-ficha-etiqueta.sql (22/09): ficha_transformador.etiqueta_pdf
+  // (PDF de la etiqueta del transformador, para reimprimirla).
+  {
+    const tieneColumna = await existeColumna('ficha_transformador', 'etiqueta_pdf');
+    resultados.push({
+      migracion: 'migracion-ficha-etiqueta.sql',
+      aplicada: tieneColumna,
+      falta: tieneColumna ? '' : 'falta la columna ficha_transformador.etiqueta_pdf'
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;
