@@ -322,7 +322,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso Laminación</span>
-          <span class="detail-card-value">${escHtml(ficha.peso_laminacion_kg) || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(ficha.peso_laminacion_kg) || '-'} gr</span>
         </div>
       </div>
     `;
@@ -353,7 +353,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso</span>
-          <span class="detail-card-value">${escHtml(ficha.peso_primario_kg) || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(ficha.peso_primario_kg) || '-'} gr</span>
         </div>
       </div>
     `;
@@ -380,7 +380,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso</span>
-          <span class="detail-card-value">${escHtml(ficha.peso_secundario_kg) || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(ficha.peso_secundario_kg) || '-'} gr</span>
         </div>
       </div>
     `;
@@ -408,7 +408,7 @@ async function verDetalles(id) {
         </div>
         <div class="detail-card-row">
           <span class="detail-card-label">Peso</span>
-          <span class="detail-card-value">${escHtml(d.peso_kg) || '-'} kg</span>
+          <span class="detail-card-value">${escHtml(d.peso_kg) || '-'} gr</span>
         </div>
       </div>`;
     });
@@ -577,8 +577,8 @@ function agregarDevanadoExtra(datos) {
         <div class="field">
           <label for="${id}_peso">Peso</label>
           <div class="field-unit">
-            <input class="input" type="number" id="${id}_peso" data-campo="peso_kg" step="0.001" min="0"
-                   value="${escHtml(d.peso_kg)}"><span>kg</span>
+            <input class="input" type="number" id="${id}_peso" data-campo="peso_kg" step="0.1" min="0"
+                   value="${escHtml(d.peso_kg)}"><span>gr</span>
           </div>
         </div>
       </div>
