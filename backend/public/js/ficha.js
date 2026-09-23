@@ -490,8 +490,13 @@ async function subirEtiqueta() {
   const archivo = input.files[0];
   if (!archivo || !currentFicha) return;
 
-  if (archivo.type !== 'application/pdf') {
-    showAlert('La etiqueta tiene que ser un PDF', 'error');
+  // Se valida por extensión, no por archivo.type: el navegador no siempre
+  // reporta "application/pdf" para un PDF real (adjuntos de mail, escaneos,
+  // "imprimir a PDF" de ciertos programas), y esa comparación estaba
+  // rechazando etiquetas válidas. La comprobación de verdad (la firma real
+  // del archivo) la hace el servidor.
+  if (!/\.pdf$/i.test(archivo.name)) {
+    showAlert('La etiqueta tiene que ser un archivo .pdf', 'error');
     input.value = '';
     return;
   }

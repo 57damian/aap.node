@@ -26,15 +26,19 @@ function firmaCoincide(ruta) {
   return b.toString('latin1') === '%PDF-';
 }
 
+// No se filtra por `file.mimetype` acá: es el Content-Type que declara el
+// navegador para esa parte del multipart, y para PDF viene inconsistente
+// o vacío bastante seguido (adjuntos de mail, escaneos, "imprimir a PDF"
+// de ciertos programas) — filtrar por eso rechazaba PDF de verdad antes de
+// llegar a mirar el archivo. La extensión ya sale fija de acá (nunca del
+// nombre que manda el cliente) y la firma real se comprueba después de
+// guardarlo, así que el filtro temprano no aportaba seguridad, solo
+// falsos rechazos.
 const multerInstancia = multer({
   storage: multer.diskStorage({
     destination: destino,
     filename: (_req, _file, cb) => cb(null, crypto.randomBytes(16).toString('hex') + '.pdf')
   }),
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype !== 'application/pdf') return cb(new Error('Solo PDF'));
-    cb(null, true);
-  },
   limits: { fileSize: MAX_BYTES, files: 1 }
 });
 
