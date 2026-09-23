@@ -232,14 +232,19 @@ async function existeIndice(nombre) {
     });
   }
 
-  // migracion-ficha-etiqueta.sql (22/09): ficha_transformador.etiqueta_pdf
-  // (PDF de la etiqueta del transformador, para reimprimirla).
+  // migracion-ficha-etiqueta.sql (22/09, ampliada 23/09): tabla
+  // ficha_etiquetas (una ficha puede tener varias etiquetas en PDF) y ya
+  // no la columna vieja ficha_transformador.etiqueta_pdf.
   {
-    const tieneColumna = await existeColumna('ficha_transformador', 'etiqueta_pdf');
+    const tieneTabla = await existeTabla('ficha_etiquetas');
+    const tieneColumnaVieja = await existeColumna('ficha_transformador', 'etiqueta_pdf');
+    const falta = [];
+    if (!tieneTabla) falta.push('falta la tabla ficha_etiquetas');
+    if (tieneColumnaVieja) falta.push('todavía existe la columna vieja ficha_transformador.etiqueta_pdf');
     resultados.push({
       migracion: 'migracion-ficha-etiqueta.sql',
-      aplicada: tieneColumna,
-      falta: tieneColumna ? '' : 'falta la columna ficha_transformador.etiqueta_pdf'
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
     });
   }
 

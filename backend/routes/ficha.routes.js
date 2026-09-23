@@ -21,6 +21,18 @@ router.use(verificarToken);
 const MAX_DEVANADOS_EXTRA = 8; // orden 3 a 10
 const NOMBRE_DEVANADO = ['terciario', 'cuarto', 'quinto', 'sexto', 'séptimo', 'octavo', 'noveno', 'décimo'];
 
+// Algunos modelos llevan más de una etiqueta física (ej.: primario y
+// secundario por separado). Tope para no dejar subir sin límite.
+const MAX_ETIQUETAS = 6;
+
+// Solo para mostrar en pantalla junto al PDF: se limpia de caracteres de
+// ruptura y se recorta, no se rechaza el archivo por esto.
+function sanitizarNombreOriginal(nombre) {
+  if (!nombre) return null;
+  const limpio = String(nombre).replace(/[<>"\\`]/g, '').trim().slice(0, 150);
+  return limpio || null;
+}
+
 function fallo(status, mensaje) {
   const e = new Error(mensaje);
   e.status = status;
@@ -116,6 +128,15 @@ async function leerExtras(cliente, fichaId) {
   const r = await cliente.query(
     `SELECT orden, alambre, diametro_mm, espiras, pines, peso_kg
      FROM ficha_devanados_extra WHERE ficha_id = $1 ORDER BY orden`,
+    [fichaId]
+  );
+  return r.rows;
+}
+
+async function leerEtiquetas(cliente, fichaId) {
+  const r = await cliente.query(
+    `SELECT id, archivo, nombre_original, creado_en
+     FROM ficha_etiquetas WHERE ficha_id = $1 ORDER BY id`,
     [fichaId]
   );
   return r.rows;
@@ -259,6 +280,7 @@ router.get('/:id', adminYOperario, async (req, res) => {
 
     const ficha = result.rows[0];
     ficha.devanados_extra = await leerExtras(pool, ficha.id);
+    ficha.etiquetas = await leerEtiquetas(pool, ficha.id);
     res.json(ficha);
   } catch (err) {
     console.error('Error obteniendo ficha:', err);
@@ -297,34 +319,40 @@ router.get('/:id/pdf', adminYOperario, async (req, res) => {
 });
 
 /* =========================
-   ETIQUETA (PDF) - subir o reemplazar
-   El transformador lleva pegada una etiqueta física; se sube una vez acá
-   para poder reimprimirla más adelante sin rehacerla.
+   ETIQUETAS (PDF) - agregar
+   El transformador lleva pegada una etiqueta física, y algunos modelos
+   llevan más de una (ej.: primario y secundario por separado); se suben
+   acá para poder reimprimirlas más adelante sin rehacerlas.
 ========================= */
-router.post('/:id/etiqueta', adminYOperario, uploadEtiqueta.single('etiqueta'), async (req, res) => {
+router.post('/:id/etiquetas', adminYOperario, uploadEtiqueta.single('etiqueta'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Falta el archivo de la etiqueta' });
   }
   try {
-    const actual = await pool.query(
-      'SELECT etiqueta_pdf FROM ficha_transformador WHERE id = $1',
-      [req.params.id]
-    );
-    if (!actual.rows.length) {
+    const ficha = await pool.query('SELECT id FROM ficha_transformador WHERE id = $1', [req.params.id]);
+    if (!ficha.rows.length) {
       fs.unlink(req.file.path, () => {});
       return res.status(404).json({ error: 'Ficha no encontrada' });
     }
 
+    const cantidad = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM ficha_etiquetas WHERE ficha_id = $1',
+      [req.params.id]
+    );
+    if (cantidad.rows[0].n >= MAX_ETIQUETAS) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: `Esta ficha ya tiene el máximo de ${MAX_ETIQUETAS} etiquetas` });
+    }
+
     const rutaNueva = `uploads/etiquetas/${req.file.filename}`;
-    await pool.query(
-      'UPDATE ficha_transformador SET etiqueta_pdf = $1 WHERE id = $2',
-      [rutaNueva, req.params.id]
+    const r = await pool.query(
+      `INSERT INTO ficha_etiquetas (ficha_id, archivo, nombre_original, creado_por)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, archivo, nombre_original, creado_en`,
+      [req.params.id, rutaNueva, sanitizarNombreOriginal(req.file.originalname), req.usuario.id]
     );
 
-    const rutaAnterior = actual.rows[0].etiqueta_pdf;
-    if (rutaAnterior) fs.unlink(path.join(__dirname, '..', rutaAnterior), () => {});
-
-    res.json({ etiqueta_pdf: rutaNueva });
+    res.status(201).json(r.rows[0]);
   } catch (err) {
     fs.unlink(req.file.path, () => {});
     console.error('Error subiendo etiqueta:', err);
@@ -333,22 +361,17 @@ router.post('/:id/etiqueta', adminYOperario, uploadEtiqueta.single('etiqueta'), 
 });
 
 /* =========================
-   ETIQUETA (PDF) - quitar
+   ETIQUETAS (PDF) - quitar una
 ========================= */
-router.delete('/:id/etiqueta', adminYOperario, async (req, res) => {
+router.delete('/:id/etiquetas/:etiquetaId', adminYOperario, async (req, res) => {
   try {
-    const actual = await pool.query(
-      'SELECT etiqueta_pdf FROM ficha_transformador WHERE id = $1',
-      [req.params.id]
+    const r = await pool.query(
+      'DELETE FROM ficha_etiquetas WHERE id = $1 AND ficha_id = $2 RETURNING archivo',
+      [req.params.etiquetaId, req.params.id]
     );
-    if (!actual.rows.length) return res.status(404).json({ error: 'Ficha no encontrada' });
-    if (!actual.rows[0].etiqueta_pdf) {
-      return res.status(400).json({ error: 'Esta ficha no tiene etiqueta cargada' });
-    }
+    if (!r.rows.length) return res.status(404).json({ error: 'Etiqueta no encontrada' });
 
-    await pool.query('UPDATE ficha_transformador SET etiqueta_pdf = NULL WHERE id = $1', [req.params.id]);
-    fs.unlink(path.join(__dirname, '..', actual.rows[0].etiqueta_pdf), () => {});
-
+    fs.unlink(path.join(__dirname, '..', r.rows[0].archivo), () => {});
     res.json({ ok: true });
   } catch (err) {
     console.error('Error borrando etiqueta:', err);

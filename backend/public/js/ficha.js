@@ -428,7 +428,7 @@ async function verDetalles(id) {
     content.innerHTML = html;
     // La foto está protegida: se pide con la sesión (ver cargarImagenProtegida en api.js).
     content.querySelectorAll('img[data-foto]').forEach(img => cargarImagenProtegida(img, img.dataset.foto));
-    actualizarEtiquetaUI(ficha);
+    actualizarEtiquetasUI(ficha);
     document.getElementById('detailModal').showModal();
 
   } catch (err) {
@@ -465,24 +465,27 @@ async function exportarPDF() {
 }
 
 /* =====================
-   ETIQUETA (PDF que lleva pegado el transformador)
+   ETIQUETAS (PDF que lleva pegado el transformador; algunos modelos
+   llevan más de una — ej. primario y secundario por separado)
 ===================== */
-function actualizarEtiquetaUI(ficha) {
+function actualizarEtiquetasUI(ficha) {
   const estado = document.getElementById('etiquetaEstado');
-  const btnDescargar = document.getElementById('btnDescargarEtiqueta');
-  const btnBorrar = document.getElementById('btnBorrarEtiqueta');
-  const btnSubirTxt = document.getElementById('btnSubirEtiquetaTxt');
-  if (ficha.etiqueta_pdf) {
-    estado.textContent = 'Etiqueta cargada.';
-    btnDescargar.hidden = false;
-    btnBorrar.hidden = false;
-    btnSubirTxt.textContent = 'Reemplazar etiqueta (PDF)';
-  } else {
-    estado.textContent = 'Todavía no se cargó la etiqueta de este modelo.';
-    btnDescargar.hidden = true;
-    btnBorrar.hidden = true;
-    btnSubirTxt.textContent = 'Subir etiqueta (PDF)';
-  }
+  const lista = document.getElementById('etiquetasLista');
+  const etiquetas = ficha.etiquetas || [];
+
+  estado.textContent = etiquetas.length
+    ? `${etiquetas.length} etiqueta${etiquetas.length === 1 ? '' : 's'} cargada${etiquetas.length === 1 ? '' : 's'}.`
+    : 'Todavía no se cargó ninguna etiqueta de este modelo.';
+
+  lista.innerHTML = etiquetas.map((e, i) => `
+    <li style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed #e2e8f0">
+      <span>${escHtml(e.nombre_original) || ('Etiqueta ' + (i + 1))}</span>
+      <span>
+        <button type="button" class="b b-ghost b-sm" onclick="descargarEtiqueta(${e.id})">Descargar</button>
+        <button type="button" class="b b-danger b-sm" onclick="borrarEtiqueta(${e.id})">Quitar</button>
+      </span>
+    </li>
+  `).join('');
 }
 
 async function subirEtiqueta() {
@@ -505,13 +508,13 @@ async function subirEtiqueta() {
   formData.append('etiqueta', archivo);
 
   try {
-    const r = await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiqueta`, {
+    const nueva = await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiquetas`, {
       method: 'POST',
       body: formData
     });
-    currentFicha.etiqueta_pdf = r.etiqueta_pdf;
-    actualizarEtiquetaUI(currentFicha);
-    showAlert('✅ Etiqueta guardada', 'success');
+    currentFicha.etiquetas = [...(currentFicha.etiquetas || []), nueva];
+    actualizarEtiquetasUI(currentFicha);
+    showAlert('✅ Etiqueta agregada', 'success');
   } catch (err) {
     console.error('Error subiendo etiqueta:', err);
     showAlert('No se pudo subir la etiqueta: ' + (err.error || err.message), 'error');
@@ -520,24 +523,27 @@ async function subirEtiqueta() {
   }
 }
 
-async function descargarEtiqueta() {
-  if (!currentFicha || !currentFicha.etiqueta_pdf) return;
+async function descargarEtiqueta(id) {
+  if (!currentFicha) return;
+  const etiqueta = (currentFicha.etiquetas || []).find(e => e.id === id);
+  if (!etiqueta) return;
+
   try {
-    await descargarArchivoProtegido(currentFicha.etiqueta_pdf, `Etiqueta-${currentFicha.modelo}.pdf`);
+    await descargarArchivoProtegido(etiqueta.archivo, etiqueta.nombre_original || `Etiqueta-${currentFicha.modelo}-${id}.pdf`);
   } catch (err) {
     console.error('Error descargando etiqueta:', err);
     showAlert('No se pudo descargar la etiqueta: ' + err.message, 'error');
   }
 }
 
-async function borrarEtiqueta() {
+async function borrarEtiqueta(id) {
   if (!currentFicha) return;
-  if (!confirm('¿Quitar la etiqueta cargada de este modelo?')) return;
+  if (!confirm('¿Quitar esta etiqueta del modelo?')) return;
 
   try {
-    await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiqueta`, { method: 'DELETE' });
-    currentFicha.etiqueta_pdf = null;
-    actualizarEtiquetaUI(currentFicha);
+    await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiquetas/${id}`, { method: 'DELETE' });
+    currentFicha.etiquetas = (currentFicha.etiquetas || []).filter(e => e.id !== id);
+    actualizarEtiquetasUI(currentFicha);
     showAlert('Etiqueta eliminada', 'success');
   } catch (err) {
     console.error('Error borrando etiqueta:', err);

@@ -255,14 +255,11 @@
     <div class="panel-body" id="detailContent"></div>
 
     <div class="panel-body" style="padding-top:0">
-      <h4 style="margin:0 0 8px">Etiqueta del transformador</h4>
+      <h4 style="margin:0 0 8px">Etiquetas del transformador</h4>
       <p class="muted" id="etiquetaEstado" style="margin:0 0 8px">Cargando…</p>
+      <ul id="etiquetasLista" style="list-style:none;padding:0;margin:0 0 8px"></ul>
       <div class="page-head-actions">
-        <button class="b b-ghost" id="btnDescargarEtiqueta" onclick="descargarEtiqueta()" hidden>Descargar etiqueta</button>
-        <button class="b b-ghost" onclick="document.getElementById('etiquetaInput').click()">
-          <span id="btnSubirEtiquetaTxt">Subir etiqueta (PDF)</span>
-        </button>
-        <button class="b b-danger" id="btnBorrarEtiqueta" onclick="borrarEtiqueta()" hidden>Quitar etiqueta</button>
+        <button class="b b-ghost" id="btnAgregarEtiqueta" onclick="document.getElementById('etiquetaInput').click()">＋ Agregar etiqueta (PDF)</button>
         <input type="file" id="etiquetaInput" accept="application/pdf,.pdf" hidden onchange="subirEtiqueta()">
       </div>
     </div>
