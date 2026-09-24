@@ -248,6 +248,17 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-impuestos-provinciales-compra.sql (24/09): columna
+  // facturas_compra.impuestos_provinciales.
+  {
+    const tieneColumna = await existeColumna('facturas_compra', 'impuestos_provinciales');
+    resultados.push({
+      migracion: 'migracion-impuestos-provinciales-compra.sql',
+      aplicada: tieneColumna,
+      falta: tieneColumna ? '' : 'falta la columna facturas_compra.impuestos_provinciales'
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

@@ -41,7 +41,7 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 6. `migracion-seguridad.sql` (17/09) — columnas nuevas de `usuarios` que usa el login actual: sin esta migración el login falla.
 7. `migracion-factura-multi-remito.sql` (19/09) — `facturas.orden_compra_id`, `facturas.tipo_cambio`, `factura_venta_items.precio_unitario_usd` y el DEFAULT de `facturas.estado` en `'EMITIDA'` (sin eso no se puede crear ninguna factura de venta).
 
-8. `migracion-fix-retenciones.sql` (19/09) — elimina el CHECK viejo `pago_items_tipo_check`, que no admitía `RETENCION`: sin esto **no se puede registrar ninguna retención** desde Cobros. Aplicada en Neon; **en la base local falta correrla** (`psql -U postgres -h localhost -d transformadores -f backend/scripts/migracion-fix-retenciones.sql`).
+8. `migracion-fix-retenciones.sql` (19/09) — elimina el CHECK viejo `pago_items_tipo_check`, que no admitía `RETENCION`: sin esto **no se puede registrar ninguna retención** desde Cobros. **Aplicada en Neon y en local** (confirmado en local el 24/09/2026 con `estado-migraciones.js`).
 
 9. `migracion-anulacion-facturas.sql` (21/09) — tabla `auditoria_anulaciones`, columnas `facturas.anulada_en/anulada_por/motivo_anulacion` y reemplazo del UNIQUE `unique_numero_factura` por el índice único parcial `uq_facturas_numero_vigente` (el número de una factura ANULADA se puede reusar). Sin esto no funciona "Anular factura" ni se puede dar de alta una factura (el código nuevo espera el índice). **Aplicada en Neon el 21/09/2026; falta correrla en la base local** (ver "Anular facturas, remitos y OC" abajo).
 10. `migracion-anulacion-remitos-oc.sql` (21/09) — columnas `anulada_en/anulada_por/motivo_anulacion` en `ventas` (remitos) y `ordenes_compra`. **Requiere la 9** (usa `auditoria_anulaciones`). Sin esto fallan el listado de remitos y las anulaciones de remitos y OC. **Aplicada en Neon el 21/09/2026 (junto con la 9, con backup en `docs/_backup/neon-datos-antes-de-migraciones-9-10-2026-09-21.json`); falta correrla en la base local.**
@@ -54,7 +54,9 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 14. `migracion-ficha-etiqueta.sql` (22/09, ampliada 23/09) — tabla `ficha_etiquetas`, una fila por PDF de etiqueta subido (una ficha puede tener varias; ver "Etiquetas del transformador" abajo). Sin esto no funciona subir ni descargar etiquetas — de hecho **rompía `GET /api/ficha-transformador/:id` para toda ficha** (500) en Railway/Neon el 23/09/2026 porque el código nuevo se deployó antes de migrar Neon. **Aplicada en local el 23/09/2026; aplicada en Neon el 23/09/2026** (backup en `docs/_backup/neon-ficha-antes-de-migracion-etiquetas-2026-09-23.json`).
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 14, no la 5 ni la 6).
+15. `migracion-impuestos-provinciales-compra.sql` (24/09) — agrega `facturas_compra.impuestos_provinciales` (mismo patrón que `percepciones`: monto en pesos cargado a mano por factura, varía según el proveedor, se suma al total). Sin esto el campo nuevo de "Impuestos provinciales" en `facturas-compra.html` no tiene dónde guardarse. **Aplicada en local el 24/09/2026; falta correrla en Neon.**
+
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 15, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -111,6 +113,11 @@ Mismo patrón que "Pedidos a proveedores" (abajo): PDF membretado generado en el
 - `aproximado` por ítem: para materiales donde la cantidad real no va a coincidir exacto con la pedida (ejemplo típico: se piden 500gr de alambre de cobre y el rollo real pesa 540gr). El PDF le agrega "(aprox.)" al lado de la cantidad y una nota al pie aclarando que es de referencia.
 - El PDF lo arma `services/pdf-pedido-proveedor.js` con `pdfkit` (sin dependencias nativas ni navegador headless), membretado con `config/empresa.js` (nombre "Campbell Electrónica" + logo, ya cargado en `backend/public/img/logo-empresa.png`; si el archivo no existe el PDF sale igual, solo que sin la imagen). `GET /api/pedidos-proveedor/:id/pdf` devuelve el PDF; el frontend lo pide con el token vía `descargarArchivoProtegido` (`js/api.js`, mismo patrón que `cargarImagenProtegida` para `/uploads`) porque un link directo no manda el header `Authorization`.
 - Pendiente: no tiene edición desde la pantalla (para corregir un borrador hoy hay que borrarlo y cargarlo de nuevo); la ruta `PUT /api/pedidos-proveedor/:id` ya existe en el backend por si se agrega esa UI más adelante.
+
+## Impuestos provinciales (compras) y retenciones (cobros) — 24/09/2026
+
+- **Facturas de compra**: algunos proveedores agregan impuestos provinciales que varían según el proveedor (no es un porcentaje fijo del sistema), así que se cargan a mano por factura. Columna `facturas_compra.impuestos_provinciales` (`migracion-impuestos-provinciales-compra.sql`, 15 arriba), mismo patrón que las columnas `percepciones` (se suma al total) y `retenciones` (se resta) que ya existían: campo en `facturas-compra.html`, se suma en `calculateTotals()` de `facturas-compra.js` y viaja en el payload de alta/edición (`routes/facturas-compra.routes.js`). El saldo con el proveedor (`services/cuenta-proveedor.js`, `pagos-proveedores.routes.js`) se calcula en vivo a partir de `facturas_compra.total`, así que no hace falta tocar nada ahí: en cuanto el impuesto está sumado en el total, se propaga solo a deuda y pagos.
+- **Retenciones en Cobros**: ya estaba implementado de punta a punta (backend, `cobros.html`/`cobros.js` con "+ Agregar forma de cobro" → "Retención" + impuesto IIBB/Ganancias/IVA/SUSS + N° de certificado opcional, y el PDF del recibo). Lo único que faltaba era la migración 8 (`migracion-fix-retenciones.sql`) en la base local — confirmada aplicada el 24/09/2026.
 
 ## Materia prima en gramos, no en kg (22/09/2026)
 

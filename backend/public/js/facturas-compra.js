@@ -293,12 +293,16 @@ class FacturasCompra {
             });
         }
         
-        // Percepciones y retenciones
+        // Percepciones, retenciones e impuestos provinciales
         document.getElementById('percepciones').addEventListener('input', () => {
             this.calculateTotals();
         });
-        
+
         document.getElementById('retenciones').addEventListener('input', () => {
+            this.calculateTotals();
+        });
+
+        document.getElementById('impuestos_provinciales').addEventListener('input', () => {
             this.calculateTotals();
         });
         
@@ -629,25 +633,32 @@ class FacturasCompra {
         let total = 0;
         
         this.items.forEach(item => {
-            subtotal += item.subtotal;
-            iva += item.iva;
-            total += item.total;
+            // Los ítems que vienen de loadFactura() traen estos valores como
+            // string (numeric de Postgres serializado en JSON): sin el
+            // Number(), el += los concatenaba como texto y total.toFixed()
+            // explotaba (bug preexistente, no solo con ítems calculados acá).
+            subtotal += Number(item.subtotal) || 0;
+            iva += Number(item.iva) || 0;
+            total += Number(item.total) || 0;
         });
         
-        // Agregar percepciones y restar retenciones
+        // Agregar percepciones e impuestos provinciales, restar retenciones
         const percepciones = parseFloat(document.getElementById('percepciones').value) || 0;
         const retenciones = parseFloat(document.getElementById('retenciones').value) || 0;
-        total = total + percepciones - retenciones;
-        
+        const impuestosProvinciales = parseFloat(document.getElementById('impuestos_provinciales').value) || 0;
+        total = total + percepciones + impuestosProvinciales - retenciones;
+
         // Actualizar campos ocultos
         document.getElementById('subtotal').value = subtotal.toFixed(2);
         document.getElementById('iva').value = iva.toFixed(2);
         document.getElementById('total').value = total.toFixed(2);
-        
+
         // Actualizar display
         document.getElementById('display-subtotal').textContent = Shell.money(subtotal);
         document.getElementById('display-iva').textContent = Shell.money(iva);
         document.getElementById('display-percepciones').textContent = Shell.money(percepciones);
+        document.getElementById('display-impuestos-provinciales').textContent = Shell.money(impuestosProvinciales);
+        document.getElementById('display-retenciones').textContent = Shell.money(retenciones);
         document.getElementById('display-total').textContent = Shell.money(total);
     }
     
@@ -677,6 +688,7 @@ class FacturasCompra {
             iva: parseFloat(document.getElementById('iva').value) || 0,
             percepciones: parseFloat(document.getElementById('percepciones').value) || 0,
             retenciones: parseFloat(document.getElementById('retenciones').value) || 0,
+            impuestos_provinciales: parseFloat(document.getElementById('impuestos_provinciales').value) || 0,
             total: parseFloat(document.getElementById('total').value) || 0,
             condicion_pago: document.getElementById('condicion_pago').value,
             observaciones: document.getElementById('observaciones').value || null,
@@ -795,6 +807,7 @@ class FacturasCompra {
         document.getElementById('condicion_pago').value = 'CONTADO';
         document.getElementById('percepciones').value = '0';
         document.getElementById('retenciones').value = '0';
+        document.getElementById('impuestos_provinciales').value = '0';
         document.getElementById('observaciones').value = '';
         document.getElementById('estado').value = 'PENDIENTE';
 
@@ -1157,6 +1170,7 @@ class FacturasCompra {
             document.getElementById('condicion_pago').value = factura.condicion_pago || 'CONTADO';
             document.getElementById('percepciones').value = factura.percepciones || 0;
             document.getElementById('retenciones').value = factura.retenciones || 0;
+            document.getElementById('impuestos_provinciales').value = factura.impuestos_provinciales || 0;
             document.getElementById('observaciones').value = factura.observaciones || '';
             document.getElementById('estado').value = factura.estado || 'PENDIENTE';
             document.getElementById('dolar').value = factura.dolar || '';

@@ -197,6 +197,7 @@ router.post('/', soloAdmin, async (req, res) => {
       iva,
       percepciones,
       retenciones,
+      impuestos_provinciales,
       total,
       condicion_pago,
       observaciones,
@@ -284,10 +285,10 @@ router.post('/', soloAdmin, async (req, res) => {
         proveedor_id, fecha_emision, fecha_recepcion,
         tipo_factura, punto_venta, numero_factura,
         numero_comprobante, cae, subtotal, iva,
-        percepciones, retenciones, total,
+        percepciones, retenciones, impuestos_provinciales, total,
         condicion_pago, observaciones, estado,
         created_by, dolar_historial_id, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *`,
       [
         proveedor_id,
@@ -302,6 +303,7 @@ router.post('/', soloAdmin, async (req, res) => {
         ivaFinal,
         percepciones || 0,
         retenciones || 0,
+        impuestos_provinciales || 0,
         totalFinal,
         condicion_pago || 'CONTADO',
         observaciones || null,
@@ -606,6 +608,7 @@ router.put('/:id', soloAdmin, async (req, res) => {
       iva,
       percepciones,
       retenciones,
+      impuestos_provinciales,
       total,
       condicion_pago,
       observaciones,
@@ -702,7 +705,13 @@ router.put('/:id', soloAdmin, async (req, res) => {
       updateValues.push(parseFloat(retenciones));
       paramIndex++;
     }
-    
+
+    if (impuestos_provinciales !== undefined) {
+      updateFields.push(`impuestos_provinciales = $${paramIndex}`);
+      updateValues.push(parseFloat(impuestos_provinciales));
+      paramIndex++;
+    }
+
     if (total !== undefined) {
       updateFields.push(`total = $${paramIndex}`);
       updateValues.push(parseFloat(total));

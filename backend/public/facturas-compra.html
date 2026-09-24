@@ -111,6 +111,11 @@
             <label for="retenciones">Retenciones ($)</label>
             <input class="input" type="number" id="retenciones" value="0" step="0.01" min="0">
           </div>
+          <div class="field">
+            <label for="impuestos_provinciales">Impuestos provinciales ($)</label>
+            <input class="input" type="number" id="impuestos_provinciales" value="0" step="0.01" min="0">
+            <small class="muted">Varían según el proveedor: se cargan a mano para que el total coincida con la factura real.</small>
+          </div>
           <div class="field ancho-total">
             <label for="observaciones">Observaciones</label>
             <input class="input" type="text" id="observaciones" placeholder="Observaciones opcionales">
@@ -184,6 +189,8 @@
         <div><span>Subtotal</span><strong id="display-subtotal">$ 0,00</strong></div>
         <div><span>IVA</span><strong id="display-iva">$ 0,00</strong></div>
         <div><span>Percepciones</span><strong id="display-percepciones">$ 0,00</strong></div>
+        <div><span>Impuestos provinciales</span><strong id="display-impuestos-provinciales">$ 0,00</strong></div>
+        <div><span>Retenciones</span><strong id="display-retenciones">$ 0,00</strong></div>
         <div><span>Total final</span><strong id="display-total" style="font-size:22px; color:var(--success-500);">$ 0,00</strong></div>
       </div>
     </div>
