@@ -54,7 +54,7 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 14. `migracion-ficha-etiqueta.sql` (22/09, ampliada 23/09) — tabla `ficha_etiquetas`, una fila por PDF de etiqueta subido (una ficha puede tener varias; ver "Etiquetas del transformador" abajo). Sin esto no funciona subir ni descargar etiquetas — de hecho **rompía `GET /api/ficha-transformador/:id` para toda ficha** (500) en Railway/Neon el 23/09/2026 porque el código nuevo se deployó antes de migrar Neon. **Aplicada en local el 23/09/2026; aplicada en Neon el 23/09/2026** (backup en `docs/_backup/neon-ficha-antes-de-migracion-etiquetas-2026-09-23.json`).
 
-15. `migracion-impuestos-provinciales-compra.sql` (24/09) — agrega `facturas_compra.impuestos_provinciales` (mismo patrón que `percepciones`: monto en pesos cargado a mano por factura, varía según el proveedor, se suma al total). Sin esto el campo nuevo de "Impuestos provinciales" en `facturas-compra.html` no tiene dónde guardarse. **Aplicada en local el 24/09/2026; falta correrla en Neon.**
+15. `migracion-impuestos-provinciales-compra.sql` (24/09) — agrega `facturas_compra.impuestos_provinciales` (mismo patrón que `percepciones`: monto en pesos cargado a mano por factura, varía según el proveedor, se suma al total). Sin esto el campo nuevo de "Impuestos provinciales" en `facturas-compra.html` no tiene dónde guardarse. **Aplicada en local y en Neon el 24/09/2026.**
 
 - Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 15, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
