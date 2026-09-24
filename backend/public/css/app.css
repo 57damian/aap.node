@@ -643,6 +643,39 @@ dialog.panel .page-head-actions {
 }
 
 /* =====================================================================
+ * WIZARD DE PASOS DENTRO DE UN <dialog> (oc_detalle.html, facturar
+ * remitos): reemplaza un formulario largo de un solo scroll por pasos
+ * con su propia validación. Indicador simple, sin librería.
+ * ===================================================================== */
+.wizard-head {
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 1 1 auto; min-width: 0;
+}
+.wizard-steps {
+  display: flex; flex-wrap: wrap; gap: var(--space-4);
+  list-style: none; padding: 0; margin: 0;
+  font-size: 12px; color: var(--text-muted);
+}
+.wizard-head #facturarPasoTitulo { margin: 0; }
+.wizard-step { display: flex; align-items: center; gap: 6px; }
+.wizard-step-n {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gray-100); color: var(--gray-700); font-weight: 600;
+}
+.wizard-step.completado { color: var(--gray-700); cursor: pointer; }
+.wizard-step.completado .wizard-step-n { background: var(--success-500); color: #fff; }
+.wizard-step.activo { color: var(--gray-900); font-weight: 700; }
+.wizard-step.activo .wizard-step-n { background: var(--primary-500); color: #fff; }
+.wizard-panel > *:first-child { margin-top: 0; }
+.wizard-revision-datos {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3) var(--space-4); margin: var(--space-4) 0;
+}
+.wizard-revision-datos dt { font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+.wizard-revision-datos dd { margin: 2px 0 0; font-size: 14px; }
+
+/* =====================================================================
  * FORMULARIO CON VISTA PREVIA (ficha.html)
  * ---------------------------------------------------------------------
  * Dos columnas en escritorio (formulario + vista previa/foto), una sola

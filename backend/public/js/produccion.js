@@ -121,6 +121,16 @@ async function cargarModelos() {
         option.textContent = `${modelo.modelo} (${modelo.voltaje_entrada || '-'}V)`;
         select.appendChild(option);
       });
+
+      // Si se llega acá desde un link "Ir a Producción" de otra pantalla
+      // (ej. "Registrar entrega" en oc_detalle.html, cuando un modelo no
+      // tiene stock), precargar directamente ese modelo. Se valida que sea
+      // un id numérico de un modelo real antes de tocar el <select>.
+      const fichaIdUrl = Number.parseInt(new URLSearchParams(window.location.search).get('ficha_id'), 10);
+      if (modelos.some(m => m.id === fichaIdUrl)) {
+        select.value = String(fichaIdUrl);
+        document.getElementById('cantidad')?.focus();
+      }
     }
 
     // Select para filtro de historial

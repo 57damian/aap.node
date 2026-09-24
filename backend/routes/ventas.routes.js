@@ -36,7 +36,16 @@ router.get('/', soloAdmin, async (req, res) => {
           WHERE vi.venta_id = v.id
           LIMIT 1
         ) AS numero_factura,
-        (SELECT COALESCE(SUM(vi.cantidad), 0)::int FROM venta_items vi WHERE vi.venta_id = v.id) AS unidades
+        (SELECT COALESCE(SUM(vi.cantidad), 0)::int FROM venta_items vi WHERE vi.venta_id = v.id) AS unidades,
+        (
+          -- Antes la pestaña "Remitos" de oc_detalle.html pedía este detalle
+          -- con un fetch por remito (N+1); único consumidor de este listado,
+          -- así que sale más simple traerlo agregado acá.
+          SELECT COALESCE(json_agg(json_build_object('modelo', ft.modelo, 'cantidad', vi.cantidad) ORDER BY ft.modelo), '[]'::json)
+          FROM venta_items vi
+          JOIN ficha_transformador ft ON ft.id = vi.ficha_id
+          WHERE vi.venta_id = v.id
+        ) AS items
       FROM ventas v
       JOIN clientes c ON c.id = v.cliente_id
       LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id

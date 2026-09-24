@@ -21,27 +21,50 @@
   </div>
 
   <!-- El alta arranca cerrada: lo que se mira todos los días es la lista.
-       Antes este formulario de 3 campos ocupaba todo el ancho de la pantalla,
-       arriba de todo, y la lista quedaba abajo. -->
+       Antes este formulario solo pedía cliente/número/fecha; los items del
+       pedido se cargaban después, en una pantalla aparte (oc_detalle.html),
+       lo que obligaba a crear la OC, volver a esta lista y clickear "Ver"
+       para recién ahí poder cargarlos. Ahora se cargan acá mismo, igual que
+       en "Pedidos a proveedores" (pedidos-proveedor.html): cabecera + items
+       van en un solo alta, y al crear se navega directo al detalle para
+       seguir con entregas/remitos/facturación. -->
   <div class="panel" id="panelNuevaOC" hidden>
     <div class="panel-head"><h2>Nueva orden de compra</h2></div>
     <div class="panel-body">
-      <form id="ocForm" class="form-grid">
-        <div class="field ancho-total">
-          <label for="cliente_id">Cliente</label>
-          <select class="input" id="cliente_id" required>
-            <option value="">Elegí un cliente…</option>
-          </select>
+      <form id="ocForm">
+        <div class="form-grid">
+          <div class="field ancho-total">
+            <label for="cliente_id">Cliente</label>
+            <select class="input" id="cliente_id" required>
+              <option value="">Elegí un cliente…</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="numero_oc">N° de orden</label>
+            <input class="input" type="text" id="numero_oc" required placeholder="Ej: OC-2026-001">
+          </div>
+
+          <div class="field">
+            <label for="fecha_oc">Fecha</label>
+            <input class="input" type="date" id="fecha_oc" required>
+          </div>
         </div>
 
-        <div class="field">
-          <label for="numero_oc">N° de orden</label>
-          <input class="input" type="text" id="numero_oc" required placeholder="Ej: OC-2026-001">
+        <div class="table-wrap" style="margin-top:var(--space-3)">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Modelo</th>
+                <th style="width:16%">Cantidad</th>
+                <th style="width:4%"></th>
+              </tr>
+            </thead>
+            <tbody id="oc_itemsBody"></tbody>
+          </table>
         </div>
-
-        <div class="field">
-          <label for="fecha_oc">Fecha</label>
-          <input class="input" type="date" id="fecha_oc" required>
+        <div style="padding:var(--space-3) 0">
+          <button type="button" class="b b-ghost" id="btnAgregarItemOC">+ Agregar ítem</button>
         </div>
 
         <div class="ancho-total">
@@ -52,7 +75,19 @@
     </div>
   </div>
 
-  <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+  <!-- Búsqueda client-side: mismo patrón que las pestañas de Remitos/Órdenes
+       de correcciones.html (un solo input, filtra en cada tecla sobre la
+       lista ya cargada — no hace falta ir al servidor por esto). Busca por
+       número de OC, cliente y también por número de remito, para poder
+       encontrar una OC a partir del remito que la entregó. -->
+  <div class="filters">
+    <div class="field grow">
+      <label for="filtroOC">Buscar</label>
+      <input class="input" type="text" id="filtroOC" placeholder="Número de OC, cliente o remito">
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:var(--space-4)"><div class="panel-body flush"><div class="table-wrap">
     <table class="t">
       <thead>
         <tr>
@@ -60,11 +95,12 @@
           <th>Cliente</th>
           <th class="solo-escritorio">Fecha</th>
           <th>Estado</th>
+          <th>Remitos</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="listaOC">
-        <tr><td colspan="5" class="muted">Cargando…</td></tr>
+        <tr><td colspan="6" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>
@@ -85,6 +121,7 @@
   });
   document.getElementById('btnCancelarOC').addEventListener('click', () => {
     panelNueva.hidden = true;
+    resetFormOC();
   });
 </script>
 <script src="js/auth.js"></script>

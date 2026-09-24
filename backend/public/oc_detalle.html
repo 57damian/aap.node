@@ -89,6 +89,11 @@
               <label for="remito_fecha">Fecha</label>
               <input class="input" type="date" id="remito_fecha" required>
             </div>
+            <div class="field">
+              <label for="entrega_cotizacion">Cotización del dólar (ARS por USD)</label>
+              <input class="input" type="number" id="entrega_cotizacion" step="0.01" min="0.01" required>
+              <small class="muted" id="entregaDolarActual"></small>
+            </div>
             <div class="field ancho-total">
               <label for="remito_observaciones">Observaciones <span class="muted">(opcional)</span></label>
               <input class="input" type="text" id="remito_observaciones" placeholder="Observaciones del remito…">
@@ -180,26 +185,6 @@
     </div></div></div>
   </div>
 
-  <!-- ================= Ventana: cotización del dólar =================
-       Antes eran un confirm() y un prompt() del navegador encadenados: en
-       algunos navegadores/contextos esos diálogos nativos quedan bloqueados
-       o no soportados, y la operación se cancelaba en silencio sin que
-       quedara claro por qué. -->
-  <dialog id="cotizacionModal" class="panel">
-    <div class="panel-head"><h2>Cotización del dólar</h2></div>
-    <div class="panel-body">
-      <p class="muted" id="cotizacionActualTexto">Cotización actual: —</p>
-      <div class="field">
-        <label for="cotizacion_valor">Tipo de cambio USD/ARS a usar</label>
-        <input class="input" type="number" id="cotizacion_valor" step="0.01" min="0.01" required>
-      </div>
-      <div class="page-head-actions">
-        <button type="button" class="b b-ghost" data-cerrar="cotizacionModal">Cancelar</button>
-        <button type="button" class="b b-primary" id="btnConfirmarCotizacion">Confirmar y registrar</button>
-      </div>
-    </div>
-  </dialog>
-
   <!-- ================= Ventana: corregir cantidad de un ítem ================= -->
   <dialog id="editarItemModal" class="panel">
     <div class="panel-head"><h2>Corregir ítem</h2></div>
@@ -232,79 +217,126 @@
        Una factura por todo lo entregado (uno o varios remitos). El precio
        puede haber cambiado desde la entrega: se edita la cotización del
        dólar y el precio USD de cada modelo; el precio en pesos se calcula
-       solo pero también se puede escribir a mano. -->
+       solo pero también se puede escribir a mano.
+
+       Wizard de 4 pasos (antes era un único formulario largo con scroll):
+       1. Remitos a incluir → 2. Precios → 3. Datos de la factura →
+       4. Revisar y confirmar. Cada paso valida antes de dejar avanzar; el
+       paso 4 es de solo lectura y ahí vive el botón que efectivamente
+       genera la factura (operación fiscal, no hay forma de deshacerla
+       desde acá — se anula desde Correcciones). -->
   <dialog id="facturarModal" class="panel" style="width:min(920px, calc(100% - 32px))">
-    <div class="panel-head"><h2>Facturar remitos</h2></div>
+    <div class="panel-head">
+      <div class="wizard-head">
+        <h2>Facturar remitos</h2>
+        <ol class="wizard-steps" id="facturarPasos" aria-label="Pasos para facturar">
+          <li class="wizard-step" data-paso="1"><span class="wizard-step-n">1</span>Remitos</li>
+          <li class="wizard-step" data-paso="2"><span class="wizard-step-n">2</span>Precios</li>
+          <li class="wizard-step" data-paso="3"><span class="wizard-step-n">3</span>Datos</li>
+          <li class="wizard-step" data-paso="4"><span class="wizard-step-n">4</span>Revisar</li>
+        </ol>
+        <p class="muted" id="facturarPasoTitulo">Paso 1 de 4 — Remitos</p>
+      </div>
+    </div>
     <div class="panel-body">
-      <h3 style="margin:0 0 8px">1. Remitos a incluir</h3>
-      <div class="table-wrap">
-        <table class="t">
-          <thead>
-            <tr><th>Incluir</th><th>Remito</th><th>Fecha</th><th>Items</th></tr>
-          </thead>
-          <tbody id="facturarRemitos"></tbody>
-        </table>
+
+      <!-- Paso 1: remitos a incluir -->
+      <div class="wizard-panel" data-paso="1">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr><th>Incluir</th><th>Remito</th><th>Fecha</th><th>Items</th></tr>
+            </thead>
+            <tbody id="facturarRemitos"></tbody>
+          </table>
+        </div>
+        <div class="notice notice-err" id="facturarPaso1Error" hidden>Marcá al menos un remito para continuar.</div>
       </div>
 
-      <h3 style="margin:20px 0 8px">2. Precios</h3>
-      <div class="form-grid">
-        <div class="field">
-          <label for="facturar_cotizacion">Cotización del dólar (ARS por USD)</label>
-          <input class="input" type="number" id="facturar_cotizacion" step="0.01" min="0.01">
-          <small class="muted" id="facturarDolarActual"></small>
+      <!-- Paso 2: precios -->
+      <div class="wizard-panel" data-paso="2" hidden>
+        <p class="muted" id="facturarRemitosResumen"></p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="facturar_cotizacion">Cotización del dólar (ARS por USD)</label>
+            <input class="input" type="number" id="facturar_cotizacion" step="0.01" min="0.01">
+            <small class="muted" id="facturarDolarActual"></small>
+          </div>
         </div>
-      </div>
-      <div class="table-wrap" style="margin-top:8px">
-        <table class="t">
-          <thead>
-            <tr>
-              <th>Modelo</th>
-              <th class="num">Cantidad</th>
-              <th class="num solo-escritorio">Precio entrega</th>
-              <th class="num">Precio USD</th>
-              <th class="num">Precio ARS s/IVA</th>
-              <th class="num">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody id="facturarRenglones"></tbody>
-        </table>
-      </div>
-      <small class="muted">El precio en pesos se calcula como USD × cotización. Si lo escribís a mano, ese renglón deja de recalcularse.</small>
-
-      <h3 style="margin:20px 0 8px">3. Datos de la factura</h3>
-      <div class="form-grid">
-        <div class="field">
-          <label for="facturar_numero">Número de factura</label>
-          <input class="input" type="text" id="facturar_numero" placeholder="Ej: 0001-00001234" required>
+        <div class="notice notice-err" id="facturarPaso2Error" hidden>Ingresá la cotización del dólar para calcular los precios.</div>
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Modelo</th>
+                <th class="num">Cantidad</th>
+                <th class="num">Precio USD</th>
+                <th class="num">Precio ARS s/IVA</th>
+                <th class="num">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody id="facturarRenglones"></tbody>
+          </table>
         </div>
-        <div class="field">
-          <label for="facturar_tipo">Tipo</label>
-          <select class="input" id="facturar_tipo" required>
-            <option value="">Elegí…</option>
-            <option value="A">Factura A</option>
-            <option value="B">Factura B</option>
-            <option value="C">Factura C</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="facturar_fecha">Fecha</label>
-          <input class="input" type="date" id="facturar_fecha" required>
-        </div>
-        <div class="field">
-          <label for="facturar_dias_credito">Días de crédito</label>
-          <input class="input" type="number" id="facturar_dias_credito" value="0" min="0">
+        <small class="muted">El precio en pesos se calcula como USD × cotización. Si lo escribís a mano, ese renglón deja de recalcularse.</small>
+        <div class="totales-inline" style="margin-top:16px">
+          <div><span>Subtotal sin IVA</span><strong id="facturarSubtotal">$0.00</strong></div>
+          <div><span id="facturarIvaLabel">IVA</span><strong id="facturarIva">$0.00</strong></div>
+          <div><span>Total</span><strong id="facturarTotal">$0.00</strong></div>
         </div>
       </div>
 
-      <div class="totales-inline" style="margin-top:16px">
-        <div><span>Subtotal sin IVA</span><strong id="facturarSubtotal">$0.00</strong></div>
-        <div><span id="facturarIvaLabel">IVA</span><strong id="facturarIva">$0.00</strong></div>
-        <div><span>Total</span><strong id="facturarTotal">$0.00</strong></div>
+      <!-- Paso 3: datos de la factura -->
+      <div class="wizard-panel" data-paso="3" hidden>
+        <div class="form-grid">
+          <div class="field">
+            <label for="facturar_numero">Número de factura</label>
+            <input class="input" type="text" id="facturar_numero" placeholder="Ej: 0001-00001234" required>
+          </div>
+          <div class="field">
+            <label for="facturar_tipo">Tipo</label>
+            <select class="input" id="facturar_tipo" required>
+              <option value="">Elegí…</option>
+              <option value="A">Factura A</option>
+              <option value="B">Factura B</option>
+              <option value="C">Factura C</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="facturar_fecha">Fecha</label>
+            <input class="input" type="date" id="facturar_fecha" required>
+          </div>
+          <div class="field">
+            <label for="facturar_dias_credito">Días de crédito</label>
+            <input class="input" type="number" id="facturar_dias_credito" value="0" min="0">
+          </div>
+        </div>
+      </div>
+
+      <!-- Paso 4: revisar y confirmar (solo lectura) -->
+      <div class="wizard-panel" data-paso="4" hidden>
+        <p class="muted" id="facturarRevisionRemitos"></p>
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr><th>Modelo</th><th class="num">Cantidad</th><th class="num">Precio USD</th><th class="num">Precio ARS s/IVA</th><th class="num">Subtotal</th></tr>
+            </thead>
+            <tbody id="facturarRevisionRenglones"></tbody>
+          </table>
+        </div>
+        <dl class="wizard-revision-datos" id="facturarRevisionDatos"></dl>
+        <div class="totales-inline" style="margin-top:8px">
+          <div><span>Subtotal sin IVA</span><strong id="facturarRevisionSubtotal">$0.00</strong></div>
+          <div><span id="facturarRevisionIvaLabel">IVA</span><strong id="facturarRevisionIva">$0.00</strong></div>
+          <div><span>Total</span><strong id="facturarRevisionTotal">$0.00</strong></div>
+        </div>
+        <div class="notice notice-info" style="margin-top:12px">Revisá los datos antes de confirmar. Una vez generada, la factura se puede anular desde Correcciones si hace falta.</div>
       </div>
 
       <div class="page-head-actions">
         <button type="button" class="b b-ghost" data-cerrar="facturarModal">Cancelar</button>
-        <button type="button" class="b b-primary" id="btnConfirmarFactura">Generar factura</button>
+        <button type="button" class="b b-ghost" id="btnFacturarAtras" hidden>Atrás</button>
+        <button type="button" class="b b-primary" id="btnFacturarSiguiente">Siguiente</button>
       </div>
     </div>
   </dialog>

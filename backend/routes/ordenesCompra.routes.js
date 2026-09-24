@@ -16,10 +16,21 @@ router.get(
   async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, c.nombre AS cliente
+        `SELECT oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, c.nombre AS cliente,
+          (
+            -- El número/fecha de la OC los pone cada cliente al hacer el
+            -- pedido (no es un correlativo del sistema), así que no sirven
+            -- para saber qué se cargó más reciente: se ordena por oc.id
+            -- (serial, ya refleja el orden real de alta) más abajo, y acá
+            -- se trae de una vez qué remitos tiene, para no tener que
+            -- entrar al detalle solo para saber si ya se entregó.
+            SELECT COALESCE(json_agg(v.remito_numero ORDER BY v.remito_numero), '[]'::json)
+            FROM ventas v
+            WHERE v.orden_compra_id = oc.id AND v.anulada_en IS NULL AND v.remito_numero IS NOT NULL
+          ) AS remitos
          FROM ordenes_compra oc
          JOIN clientes c ON c.id = oc.cliente_id
-         ORDER BY oc.fecha_oc DESC`
+         ORDER BY oc.id DESC`
       );
 
       res.json(result.rows);
@@ -29,6 +40,31 @@ router.get(
   }
 );
 
+
+// El alta antes solo creaba la cabecera: los items del pedido se cargaban
+// aparte, en oc_detalle.html, obligando a crear la OC, volver a la lista y
+// clickear "Ver" para recién ahí poder cargarlos. Ahora oc.html manda los
+// items ya armados (mismo patrón que pedidos-proveedor.routes.js) y acá se
+// insertan junto con la cabecera, en una sola transacción. `items` es
+// opcional (una OC sin items todavía es válida, se pueden seguir agregando
+// después desde el detalle).
+function normalizarItemsOC(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  if (!Array.isArray(raw)) {
+    throw Object.assign(new Error('Los items tienen que ser una lista'), { status: 400 });
+  }
+  return raw.map((it, i) => {
+    const fichaId = Number.parseInt(it.ficha_id, 10);
+    const cantidad = Number.parseInt(it.cantidad_pedida, 10);
+    if (!Number.isInteger(fichaId) || fichaId <= 0) {
+      throw Object.assign(new Error(`Ítem ${i + 1}: falta el modelo`), { status: 400 });
+    }
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      throw Object.assign(new Error(`Ítem ${i + 1}: la cantidad tiene que ser un entero positivo`), { status: 400 });
+    }
+    return { ficha_id: fichaId, cantidad_pedida: cantidad };
+  });
+}
 
 router.post(
   '/',
@@ -41,22 +77,47 @@ router.post(
       return res.status(400).json({ error: 'Faltan datos obligatorios' });
     }
 
+    let items;
+    try {
+      items = normalizarItemsOC(req.body.items);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+
     const foto = req.file
       ? `uploads/ordenes_compra/${req.file.filename}`
       : null;
 
+    const client = await pool.connect();
     try {
-      const result = await pool.query(
+      await client.query('BEGIN');
+
+      const result = await client.query(
         `INSERT INTO ordenes_compra
          (cliente_id, numero_oc, fecha_oc, foto_oc, observaciones)
          VALUES ($1,$2,$3,$4,$5)
          RETURNING *`,
         [cliente_id, numero_oc, fecha_oc, foto, observaciones]
       );
+      const oc = result.rows[0];
 
-      res.json(result.rows[0]);
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO orden_compra_items (orden_compra_id, ficha_id, cantidad_pedida)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (orden_compra_id, ficha_id)
+           DO UPDATE SET cantidad_pedida = orden_compra_items.cantidad_pedida + EXCLUDED.cantidad_pedida`,
+          [oc.id, item.ficha_id, item.cantidad_pedida]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.json(oc);
     } catch (err) {
+      await client.query('ROLLBACK');
       res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
     }
   }
 );
