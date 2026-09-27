@@ -56,7 +56,7 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 15. `migracion-impuestos-provinciales-compra.sql` (24/09) — agrega `facturas_compra.impuestos_provinciales` (mismo patrón que `percepciones`: monto en pesos cargado a mano por factura, varía según el proveedor, se suma al total). Sin esto el campo nuevo de "Impuestos provinciales" en `facturas-compra.html` no tiene dónde guardarse. **Aplicada en local y en Neon el 24/09/2026.**
 
-16. `migracion-pantalla-inicio.sql` (27/09) — agrega `usuarios.pantalla_inicio` (ver "Montos ocultos y pantalla de inicio" abajo). El login lee la columna por `to_jsonb(usuarios) ->> 'pantalla_inicio'`, así que **sin la migración el login no se rompe** (entra a la pantalla del rol); lo único que falla es guardar la pantalla desde Usuarios. **Aplicada en local el 27/09/2026; falta correrla en Neon.**
+16. `migracion-pantalla-inicio.sql` (27/09) — agrega `usuarios.pantalla_inicio` (ver "Montos ocultos y pantalla de inicio" abajo). El login lee la columna por `to_jsonb(usuarios) ->> 'pantalla_inicio'`, así que **sin la migración el login no se rompe** (entra a la pantalla del rol); lo único que falla es guardar la pantalla desde Usuarios. **Aplicada en local y en Neon el 27/09/2026** (backup de `usuarios` en `docs/_backup/neon-usuarios-antes-de-migracion-16-2026-09-27.json`).
 
 - Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 16, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
