@@ -109,8 +109,15 @@ async function cargarClientesSelect() {
 // =====================
 // CREAR OC
 // =====================
+// Sin esta guarda, un doble click en "Crear orden" (o una conexión lenta que
+// hace tentador clickear de nuevo) mandaba dos POST idénticos y quedaban dos
+// OC iguales: no hay UNIQUE en ordenes_compra.numero_oc que lo evite (hallazgo
+// 27/09/2026). Mismo patrón que btnRegistrarEntrega en oc_detalle.js.
+let ocEnviando = false;
+
 async function handleSubmitOC(e) {
   e.preventDefault();
+  if (ocEnviando) return;
 
   const clienteId = Number.parseInt(document.getElementById('cliente_id')?.value, 10);
   const numeroOc = (document.getElementById('numero_oc')?.value || '').trim();
@@ -133,6 +140,11 @@ async function handleSubmitOC(e) {
     return;
   }
 
+  ocEnviando = true;
+  const btn = form.querySelector('button[type="submit"]');
+  const textoBoton = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Creando…'; }
+
   try {
     const oc = await apiFetch('/api/ordenes-compra', {
       method: 'POST',
@@ -148,6 +160,8 @@ async function handleSubmitOC(e) {
   } catch (err) {
     console.error('Error creando OC:', err);
     mostrarNotificacion(err.error || err.message || 'Error al crear OC', 'error');
+    ocEnviando = false;
+    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
 }
 

@@ -57,8 +57,9 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 15. `migracion-impuestos-provinciales-compra.sql` (24/09) — agrega `facturas_compra.impuestos_provinciales` (mismo patrón que `percepciones`: monto en pesos cargado a mano por factura, varía según el proveedor, se suma al total). Sin esto el campo nuevo de "Impuestos provinciales" en `facturas-compra.html` no tiene dónde guardarse. **Aplicada en local y en Neon el 24/09/2026.**
 
 16. `migracion-pantalla-inicio.sql` (27/09) — agrega `usuarios.pantalla_inicio` (ver "Montos ocultos y pantalla de inicio" abajo). El login lee la columna por `to_jsonb(usuarios) ->> 'pantalla_inicio'`, así que **sin la migración el login no se rompe** (entra a la pantalla del rol); lo único que falla es guardar la pantalla desde Usuarios. **Aplicada en local y en Neon el 27/09/2026** (backup de `usuarios` en `docs/_backup/neon-usuarios-antes-de-migracion-16-2026-09-27.json`).
+17. `migracion-unique-oc-cliente.sql` (27/09) — índice único parcial `uq_oc_cliente_numero_vigente` en `ordenes_compra(cliente_id, numero_oc)` (`WHERE anulada_en IS NULL`). Ver "Doble submit → duplicados" abajo. **Aplicada en local el 27/09/2026; falta correrla en Neon.**
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 16, no la 5 ni la 6).
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 17, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -83,6 +84,14 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 - **Registrar entrega (24/09/2026)**: la cotización del dólar es un campo más del formulario de "Registrar entrega" (precargado con el valor de Precios al abrir la pestaña), ya no un `<dialog>` aparte (`cotizacionModal`, sacado) que interrumpía al final del flujo con un paso extra. Si un ítem no tiene stock disponible, "Sin stock producido todavía" linkea a `produccion.html?ficha_id=X`, que precarga ese modelo en el formulario de alta de producción.
 - **Los remitos se facturan juntos, no uno por uno**: `oc_detalle.html` → "Facturas y pagos" → "Facturar remitos", un wizard de 4 pasos (Remitos → Precios → Datos de la factura → Revisar y confirmar; 24/09/2026, antes era un único formulario largo con scroll). Una factura = uno o varios remitos de la misma OC, de cualquier fecha; un renglón por modelo; cotización del dólar y precio USD editables, precio ARS calculado o cargado a mano (marcado con un badge "Manual" si se edita a mano); si el mismo modelo se entregó a distinto precio USD en remitos distintos, se avisa en vez de pisarlo en silencio. `POST /api/facturas` con `venta_ids` y `precios`.
 - `factura_venta_items` tiene una fila por `venta_item` (índice único → cada ítem se factura una sola vez). `venta_items.precio_unitario_*` es el precio histórico de la entrega y **no** se modifica al facturar.
+
+## Doble submit → duplicados (hallazgo y fix 27/09/2026)
+
+Damian reportó que cargar una OC nueva o un precio de dólar nuevo quedaba duplicado. Dos causas distintas, mismo síntoma:
+
+- **Dólar**: `PUT /api/precios/parametros/dolar` (`routes/precios.routes.js`) insertaba a mano en `historial_dolar` "por si el trigger falla" — pero el trigger `trigger_historial_dolar` (AFTER UPDATE en `parametros`, función `guardar_historial_dolar()`) ya lo hace solo, así que cada carga dejaba 2 filas. Se sacó el insert manual.
+- **OC**: `oc.html`/`oc.js` no bloqueaba el botón "Crear orden" mientras el `POST /api/ordenes-compra` estaba en curso: un doble click (o clickear de nuevo por una conexión lenta) mandaba dos OC idénticas, con sus items. Se agregó la misma guarda que ya usaban `oc_detalle.js` (`btnRegistrarEntrega`, el wizard de facturar) y el modal de cambio de contraseña (`shell.js`): flag + botón deshabilitado durante el `await`. Como red de seguridad en la base, `migracion-unique-oc-cliente.sql` (17 arriba) agrega el índice único parcial `uq_oc_cliente_numero_vigente` en `(cliente_id, numero_oc)` — **por cliente, no global**: dos clientes distintos pueden coincidir en el mismo número de OC sin que sea un error, cada uno lo pone a su criterio. `POST /api/ordenes-compra` devuelve 400 con un mensaje claro si salta (en vez de un 500 crudo).
+- La misma falta de guarda (sin protección de la base detrás, salvo donde ya había un `UNIQUE`) estaba en `clientes.js`, `ficha.js`, `pedidos-proveedor.js` y `produccion.js` (esta última sin ningún `UNIQUE`, así que un doble click sumaba stock de más) y `proveedores-nuevo.js`. Se les agregó la misma guarda. Al agregar un formulario nuevo con `apiFetch`, copiar el patrón (flag booleano + `btn.disabled` en el `try`/`finally`), no el que había antes.
 
 ## Anular facturas, remitos y OC (pantalla Correcciones)
 

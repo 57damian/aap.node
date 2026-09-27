@@ -182,8 +182,14 @@ async function eliminarCliente(id) {
 
 /* ---------------------- alta / edición ---------------------- */
 
+// Sin esta guarda, un doble click en "Guardar cliente" mandaba dos POST
+// idénticos: no hay UNIQUE en clientes que lo evite, así que quedaban dos
+// clientes iguales (hallazgo 27/09/2026, mismo patrón que oc.js).
+let clienteEnviando = false;
+
 async function handleSubmit(e) {
   e.preventDefault();
+  if (clienteEnviando) return;
 
   const data = {
     nombre: document.getElementById('nombre').value,
@@ -195,6 +201,11 @@ async function handleSubmit(e) {
     dias_max_pago: parseInt(document.getElementById('dias_max_pago').value) || null,
     observaciones: document.getElementById('observaciones').value
   };
+
+  clienteEnviando = true;
+  const btn = e.target.querySelector('button[type="submit"]');
+  const textoBoton = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
   try {
     if (editMode) {
@@ -210,6 +221,9 @@ async function handleSubmit(e) {
     showTab('listar');
   } catch (err) {
     Shell.error(err, 'No se pudo guardar el cliente');
+  } finally {
+    clienteEnviando = false;
+    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
 }
 

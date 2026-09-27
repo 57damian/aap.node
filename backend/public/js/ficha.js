@@ -707,8 +707,15 @@ document.addEventListener('click', (e) => {
 /* =====================
    SUBMIT FORMULARIO
 ===================== */
+// Sin esta guarda, un doble click en "Guardar ficha técnica" mandaba dos
+// POST idénticos (hallazgo 27/09/2026, mismo patrón que oc.js/clientes.js).
+// Al crear, el UNIQUE de ficha_transformador.modelo frena el segundo con un
+// error feo; al editar (PUT), nada lo frena.
+let fichaEnviando = false;
+
 async function handleSubmit(e) {
   e.preventDefault();
+  if (fichaEnviando) return;
   console.log('Enviando formulario...');
 
   const formData = new FormData();
@@ -743,6 +750,11 @@ async function handleSubmit(e) {
     formData.append('foto', fotoInput.files[0]);
   }
 
+  fichaEnviando = true;
+  const btn = e.target.querySelector('button[type="submit"]');
+  const textoBoton = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
   try {
     if (editMode) {
       console.log('Actualizando ficha ID:', currentId);
@@ -767,6 +779,9 @@ async function handleSubmit(e) {
   } catch (err) {
     console.error('Error guardando ficha:', err);
     showAlert(err.error || err.message || 'Error guardando ficha', 'error');
+  } finally {
+    fichaEnviando = false;
+    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
 }
 

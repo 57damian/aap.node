@@ -209,13 +209,21 @@ function abrirDrawerForm(id = null) {
       </div>
     </form>`;
 
-  document.getElementById('proveedorForm').addEventListener('submit', (e) => { e.preventDefault(); guardarProveedor(id); });
+  document.getElementById('proveedorForm').addEventListener('submit', (e) => { e.preventDefault(); guardarProveedor(id, e.target); });
   document.getElementById('btnCancelarForm').addEventListener('click', cerrarDrawer);
 
   abrirDrawer();
 }
 
-async function guardarProveedor(id) {
+// Sin esta guarda, un doble click en "Guardar" mandaba dos POST idénticos
+// (hallazgo 27/09/2026, mismo patrón que oc.js/clientes.js). Al crear, el
+// UNIQUE de proveedores.cuit frena el segundo con un error feo; al editar
+// (PUT), nada lo frena.
+let proveedorEnviando = false;
+
+async function guardarProveedor(id, formEl) {
+  if (proveedorEnviando) return;
+
   const data = {
     nombre: document.getElementById('nombre').value,
     cuit: document.getElementById('cuit').value,
@@ -233,6 +241,12 @@ async function guardarProveedor(id) {
 
   const url = id ? `/api/proveedores/${id}` : '/api/proveedores';
   const method = id ? 'PUT' : 'POST';
+
+  proveedorEnviando = true;
+  const btn = formEl?.querySelector('button[type="submit"]');
+  const textoBoton = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
   try {
     await apiFetch(url, { method, body: JSON.stringify(data) });
     Shell.toast('ok', id ? 'Proveedor actualizado correctamente.' : 'Proveedor creado correctamente.');
@@ -240,6 +254,9 @@ async function guardarProveedor(id) {
     cargarProveedores();
   } catch (err) {
     Shell.error(err, 'No se pudo guardar el proveedor');
+  } finally {
+    proveedorEnviando = false;
+    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
 }
 

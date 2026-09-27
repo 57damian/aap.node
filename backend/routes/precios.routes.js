@@ -314,12 +314,9 @@ router.put('/parametros/dolar', soloAdmin, async (req, res) => {
       [dolar, usuario_id]
     );
 
-    // Insertar en historial manualmente (por si el trigger falla)
-    await client.query(
-      `INSERT INTO historial_dolar (dolar, usuario_id, created_at)
-       VALUES ($1, $2, NOW())`,
-      [dolar, usuario_id]
-    );
+    // El trigger `trigger_historial_dolar` (AFTER UPDATE ON parametros)
+    // ya inserta la fila en historial_dolar cuando cambia el valor: insertarla
+    // también acá duplicaba cada carga (hallazgo 27/09/2026).
 
     await client.query('COMMIT');
 

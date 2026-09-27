@@ -168,8 +168,14 @@ async function cargarModelos() {
 // ============================================
 // REGISTRAR PRODUCCIÓN
 // ============================================
+// Sin esta guarda, un doble click en "Registrar producción" mandaba dos POST
+// idénticos: no hay UNIQUE en produccion que lo evite, así que se sumaba el
+// stock dos veces (hallazgo 27/09/2026, mismo patrón que oc.js).
+let produccionEnviando = false;
+
 async function registrarProduccion(e) {
   e.preventDefault();
+  if (produccionEnviando) return;
 
   const ficha_id = document.getElementById('ficha_id').value;
   const cantidad = document.getElementById('cantidad').value;
@@ -187,6 +193,11 @@ async function registrarProduccion(e) {
   }
 
   const modelo = modelos.find(m => m.id == ficha_id);
+
+  produccionEnviando = true;
+  const btn = e.target.querySelector('button[type="submit"]');
+  const textoBoton = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
 
   try {
     const response = await apiFetch('/api/produccion', {
@@ -214,6 +225,9 @@ async function registrarProduccion(e) {
   } catch (err) {
     console.error('Error registrando producción:', err);
     mostrarAlerta(err.error || 'Error registrando producción', 'error');
+  } finally {
+    produccionEnviando = false;
+    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
 }
 

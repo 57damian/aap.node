@@ -115,6 +115,18 @@ router.post(
       res.json(oc);
     } catch (err) {
       await client.query('ROLLBACK');
+      // Dos clientes distintos pueden coincidir en el mismo número de OC
+      // (cada uno lo pone a su criterio), por eso el índice único es sobre
+      // el par (cliente_id, numero_oc) y no sobre numero_oc solo (hallazgo
+      // 27/09/2026, protege contra el doble submit que ya se arregló en el
+      // front). Las OC anuladas no cuentan, así que el número se puede
+      // reusar después de anular.
+      if (err.code === '23505' && err.constraint === 'uq_oc_cliente_numero_vigente') {
+        return res.status(400).json({
+          error: `Ya existe una orden de compra vigente con el número ${numero_oc} para ese cliente. ` +
+                 'Si estaba mal cargada, anulala primero desde Correcciones.'
+        });
+      }
       res.status(500).json({ error: err.message });
     } finally {
       client.release();

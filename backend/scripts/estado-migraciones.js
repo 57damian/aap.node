@@ -269,6 +269,17 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-unique-oc-cliente.sql (27/09): índice único parcial
+  // (cliente_id, numero_oc) WHERE anulada_en IS NULL.
+  {
+    const tieneIndice = await existeIndice('uq_oc_cliente_numero_vigente');
+    resultados.push({
+      migracion: 'migracion-unique-oc-cliente.sql',
+      aplicada: tieneIndice,
+      falta: tieneIndice ? '' : 'falta el índice uq_oc_cliente_numero_vigente'
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

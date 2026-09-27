@@ -96,8 +96,15 @@
     agregarFilaItem();
   }
 
+  // Sin esta guarda, un doble click en "Crear pedido" mandaba dos POST
+  // idénticos: el número de pedido es autogenerado (PP-000001…), así que no
+  // hay UNIQUE que choque y quedaban dos borradores iguales (hallazgo
+  // 27/09/2026, mismo patrón que oc.js).
+  var pedidoEnviando = false;
+
   async function handleSubmitPedido(e) {
     e.preventDefault();
+    if (pedidoEnviando) return;
     var items = recolectarItems();
     if (!items.length) {
       Shell.toast('warn', 'Agregá al menos un ítem con material seleccionado');
@@ -113,6 +120,11 @@
       Shell.toast('warn', 'Elegí un proveedor');
       return;
     }
+    pedidoEnviando = true;
+    var btn = e.target.querySelector('button[type="submit"]');
+    var textoBoton = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando…'; }
+
     try {
       await apiFetch('/api/pedidos-proveedor', { method: 'POST', body: JSON.stringify(body) });
       Shell.toast('ok', 'Pedido creado como borrador');
@@ -121,6 +133,9 @@
       cargarPedidos();
     } catch (err) {
       Shell.error(err, 'creando el pedido');
+    } finally {
+      pedidoEnviando = false;
+      if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
     }
   }
 
