@@ -56,7 +56,9 @@ No hay un sistema de migraciones automático: son archivos SQL idempotentes en `
 
 15. `migracion-impuestos-provinciales-compra.sql` (24/09) — agrega `facturas_compra.impuestos_provinciales` (mismo patrón que `percepciones`: monto en pesos cargado a mano por factura, varía según el proveedor, se suma al total). Sin esto el campo nuevo de "Impuestos provinciales" en `facturas-compra.html` no tiene dónde guardarse. **Aplicada en local y en Neon el 24/09/2026.**
 
-- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 15, no la 5 ni la 6).
+16. `migracion-pantalla-inicio.sql` (27/09) — agrega `usuarios.pantalla_inicio` (ver "Montos ocultos y pantalla de inicio" abajo). El login lee la columna por `to_jsonb(usuarios) ->> 'pantalla_inicio'`, así que **sin la migración el login no se rompe** (entra a la pantalla del rol); lo único que falla es guardar la pantalla desde Usuarios. **Aplicada en local el 27/09/2026; falta correrla en Neon.**
+
+- Ver qué falta: `cd backend && node scripts/estado-migraciones.js` (solo lectura; hoy chequea las 1-4 y de la 7 a la 16, no la 5 ni la 6).
 - Contra Neon (PowerShell): `$env:DATABASE_URL="<url de Neon>"; node scripts/estado-migraciones.js`
 - Aplicar: `psql "<url>" -f backend/scripts/<archivo>.sql` (las 5 y 6 usan `\set ON_ERROR_STOP`, requieren `psql`).
 - **Antes de migrar Neon:** crear un branch/backup desde la consola de Neon (Branches → Create branch) y, si se puede, probar la migración primero en ese branch.
@@ -118,6 +120,13 @@ Mismo patrón que "Pedidos a proveedores" (abajo): PDF membretado generado en el
 
 - **Facturas de compra**: algunos proveedores agregan impuestos provinciales que varían según el proveedor (no es un porcentaje fijo del sistema), así que se cargan a mano por factura. Columna `facturas_compra.impuestos_provinciales` (`migracion-impuestos-provinciales-compra.sql`, 15 arriba), mismo patrón que las columnas `percepciones` (se suma al total) y `retenciones` (se resta) que ya existían: campo en `facturas-compra.html`, se suma en `calculateTotals()` de `facturas-compra.js` y viaja en el payload de alta/edición (`routes/facturas-compra.routes.js`). El saldo con el proveedor (`services/cuenta-proveedor.js`, `pagos-proveedores.routes.js`) se calcula en vivo a partir de `facturas_compra.total`, así que no hace falta tocar nada ahí: en cuanto el impuesto está sumado en el total, se propaga solo a deuda y pagos.
 - **Retenciones en Cobros**: ya estaba implementado de punta a punta (backend, `cobros.html`/`cobros.js` con "+ Agregar forma de cobro" → "Retención" + impuesto IIBB/Ganancias/IVA/SUSS + N° de certificado opcional, y el PDF del recibo). Lo único que faltaba era la migración 8 (`migracion-fix-retenciones.sql`) en la base local — confirmada aplicada el 24/09/2026.
+
+## Montos ocultos y pantalla de inicio (27/09/2026)
+
+Pedido: alguien con rol `admin` usa la app en el taller y en el teléfono delante de los empleados; se quiere evitar que **por descuido** se vean datos de plata, sin quitarle accesos. **No es seguridad**: el servidor manda los datos igual; si hiciera falta que alguien de verdad no vea plata, eso es un rol nuevo limitado en el backend.
+
+- **"El ojo"** (`shell.js`): para todos los usuarios, los montos salen como `$ •••••` hasta tocar el ojo de la barra superior. `Shell.money` devuelve la máscara mientras `Shell.privado()` sea `true`; mostrar/ocultar guarda `montosVisiblesHasta` en `localStorage` y **recarga la página** (así se re-dibuja todo sin tocar cada pantalla). Se vuelve a ocultar sola a los 10 minutos o si la app pasó más de 30 segundos en segundo plano (`visibilitychange`: bloquear el teléfono, cambiar de app). Los formateadores propios de `facturas-lista-simple.js`, `stock.js`, `stock-mp.js` y `precios.js` también consultan `Shell.privado()`. Los campos editables (`<input>`) y los precios unitarios en USD de los detalles/wizard no se enmascaran. Al mostrar plata en una pantalla nueva: usar `Shell.money`.
+- **Pantalla de inicio por usuario**: columna `usuarios.pantalla_inicio` (migración 16; NULL = la del rol). Se elige en Usuarios → Editar → "Pantalla de inicio", de una lista blanca por rol (`PANTALLAS_INICIO` en `config/roles.js`, servida en `GET /api/usuarios/pantallas-inicio`; `PUT /api/usuarios/:id` rechaza con 400 lo que no esté en la lista, porque termina en un redirect). El login devuelve `usuario.pantalla_inicio` ya resuelta (`pantallaInicioDe`); la usan `login.html`, `index.html`, `roleGuard.js` y el logo del menú. El Dashboard sigue accesible desde el menú.
 
 ## Materia prima en gramos, no en kg (22/09/2026)
 

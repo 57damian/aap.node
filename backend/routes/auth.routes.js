@@ -17,6 +17,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const pool = require('../db');
 const { verificarToken } = require('../middlewares/auth');
+const { pantallaInicioDe } = require('../config/roles');
 const { JWT_SECRET, JWT_EXPIRES_IN, JWT_ALGORITHM } = require('../config/jwt');
 
 // Política de bloqueo por cuenta. El límite por IP (index.js) no alcanza:
@@ -77,7 +78,11 @@ router.post('/login', [
         const result = await pool.query(
             `SELECT id, nombre_usuario, password_hash, rol, activo,
                     debe_cambiar_password, intentos_fallidos, bloqueado_hasta,
-                    password_actualizado_en
+                    password_actualizado_en,
+                    -- Por jsonb y no por nombre de columna: si la base todavía
+                    -- no tiene migracion-pantalla-inicio.sql da NULL en vez de
+                    -- tirar el login entero (como pasó en Neon el 19/09).
+                    to_jsonb(usuarios) ->> 'pantalla_inicio' AS pantalla_inicio
                FROM usuarios
               WHERE lower(nombre_usuario) = lower($1)`,
             [usuario]
@@ -158,7 +163,9 @@ router.post('/login', [
             usuario: {
                 id: user.id,
                 usuario: user.nombre_usuario,
-                rol: user.rol
+                rol: user.rol,
+                // Ya resuelta: la elegida para este usuario o la de su rol.
+                pantalla_inicio: pantallaInicioDe(user)
             }
         });
 

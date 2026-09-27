@@ -11,6 +11,12 @@ let usuarioIdParaReset = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   cargarUsuarios();
+  cargarPantallasInicio();
+
+  // Si en la edición se cambia el rol, las pantallas elegibles cambian.
+  document.getElementById('rol')?.addEventListener('change', function () {
+    llenarPantallasInicio(this.value, document.getElementById('pantalla_inicio').value);
+  });
 
   document.getElementById('searchInput')?.addEventListener('input', debounce(cargarUsuarios, 300));
   document.getElementById('filtroRol')?.addEventListener('change', cargarUsuarios);
@@ -124,6 +130,27 @@ function getRolLabel(rol) {
 /* =====================
    ALTA / EDICIÓN
 ===================== */
+/* Pantalla de inicio por usuario (27/09/2026). Las opciones vienen del
+   server (config/roles.js), que es quien las valida. */
+let pantallasInicio = null;
+
+async function cargarPantallasInicio() {
+  try {
+    pantallasInicio = await apiFetch('/api/usuarios/pantallas-inicio');
+  } catch (e) {
+    pantallasInicio = {};
+  }
+}
+
+function llenarPantallasInicio(rol, elegida) {
+  const select = document.getElementById('pantalla_inicio');
+  const opciones = (pantallasInicio && pantallasInicio[rol]) || [];
+  select.innerHTML = '<option value="">Según el rol</option>' +
+    opciones.map(p => `<option value="${p.url}">${p.nombre}</option>`).join('');
+  select.value = opciones.some(p => p.url === elegida) ? elegida : '';
+  select.disabled = opciones.length === 0;
+}
+
 function abrirModalUsuario(usuarioId = null) {
   const form = document.getElementById('usuarioForm');
   form.reset();
@@ -147,6 +174,8 @@ function abrirModalUsuario(usuarioId = null) {
     document.getElementById('nombre_completo').value = usuario.nombre_completo || '';
     document.getElementById('telefono').value = usuario.telefono || '';
     document.getElementById('observaciones').value = usuario.observaciones || '';
+    llenarPantallasInicio(usuario.rol, usuario.pantalla_inicio);
+    document.getElementById('pantallaInicioGroup').hidden = false;
 
     document.getElementById('modalTitle').textContent = 'Editar usuario';
     document.getElementById('passwordGroup').hidden = true;
@@ -162,6 +191,8 @@ function abrirModalUsuario(usuarioId = null) {
     passwordField.required = true;
     confirmField.required = true;
     document.getElementById('activo').value = 'true';
+    // En el alta arranca con la de su rol; se cambia después, editándolo.
+    document.getElementById('pantallaInicioGroup').hidden = true;
   }
 
   document.getElementById('usuarioModal').showModal();
@@ -241,6 +272,7 @@ async function guardarUsuario() {
     };
 
     if (!usuarioId) formData.password = document.getElementById('password').value;
+    else formData.pantalla_inicio = document.getElementById('pantalla_inicio').value || null;
 
     await apiFetch(usuarioId ? `/api/usuarios/${usuarioId}` : '/api/usuarios', {
       method: usuarioId ? 'PUT' : 'POST',

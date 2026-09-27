@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { soloAdmin } = require('../middlewares/auth');
 const { JWT_SECRET, JWT_EXPIRES_IN, JWT_ALGORITHM } = require('../config/jwt');
-const { ROLES_VALIDOS } = require('../config/roles');
+const { ROLES_VALIDOS, PANTALLAS_INICIO, pantallaValida } = require('../config/roles');
 
 // Largo mínimo de contraseña. Diez caracteres sin exigir símbolos ni mayúsculas:
 // una frase larga y memorable resiste mucho más que un 'Abc123!' que termina
@@ -46,7 +46,8 @@ router.get('/', soloAdmin, async (req, res) => {
     
     let query = `
       SELECT id, nombre_usuario, email, rol, activo, nombre_completo, 
-             telefono, observaciones, created_at, updated_at
+             telefono, observaciones, created_at, updated_at,
+             to_jsonb(usuarios) ->> 'pantalla_inicio' AS pantalla_inicio
       FROM usuarios
       WHERE 1=1
     `;
@@ -243,6 +244,15 @@ router.param('id', (req, res, next, valor) => {
 });
 
 // =============================
+// PANTALLAS DE INICIO ELEGIBLES
+// GET /api/usuarios/pantallas-inicio
+// Antes de /:id para que Express no la tome como un id.
+// =============================
+router.get('/pantallas-inicio', soloAdmin, (req, res) => {
+  res.json(PANTALLAS_INICIO);
+});
+
+// =============================
 // OBTENER USUARIO POR ID
 // GET /api/usuarios/:id
 // =============================
@@ -250,7 +260,8 @@ router.get('/:id', soloAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, nombre_usuario, email, rol, activo, nombre_completo, 
-              telefono, observaciones, created_at, updated_at
+              telefono, observaciones, created_at, updated_at,
+              to_jsonb(usuarios) ->> 'pantalla_inicio' AS pantalla_inicio
        FROM usuarios WHERE id = $1`,
       [req.params.id]
     );
@@ -433,7 +444,8 @@ router.put('/:id', soloAdmin, async (req, res) => {
       activo,
       nombre_completo,
       telefono,
-      observaciones
+      observaciones,
+      pantalla_inicio
     } = req.body;
 
     // Verificar que el usuario existe
@@ -520,6 +532,18 @@ router.put('/:id', soloAdmin, async (req, res) => {
       params.push(observaciones);
       paramIndex++;
     }
+
+    // Pantalla de inicio (27/09/2026): vacío = la de su rol. Se valida contra
+    // el rol con el que queda el usuario, porque termina en un redirect.
+    if (pantalla_inicio !== undefined) {
+      const pantalla = pantalla_inicio || null;
+      if (pantalla && !pantallaValida(rol !== undefined ? rol : objetivo.rol, pantalla)) {
+        return res.status(400).json({ error: 'Esa pantalla de inicio no está permitida para este rol' });
+      }
+      query += `pantalla_inicio = $${paramIndex}, `;
+      params.push(pantalla);
+      paramIndex++;
+    }
     
     query += `updated_at = NOW() WHERE id = $${paramIndex}`;
     params.push(req.params.id);
@@ -552,7 +576,8 @@ router.put('/:id', soloAdmin, async (req, res) => {
     
     // Obtener usuario actualizado
     const result = await pool.query(
-      `SELECT id, nombre_usuario, email, rol, activo, nombre_completo, telefono, observaciones, updated_at
+      `SELECT id, nombre_usuario, email, rol, activo, nombre_completo, telefono, observaciones, updated_at,
+              to_jsonb(usuarios) ->> 'pantalla_inicio' AS pantalla_inicio
        FROM usuarios WHERE id = $1`,
       [req.params.id]
     );

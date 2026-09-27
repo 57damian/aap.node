@@ -45,6 +45,8 @@
     buscar:   'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16M21 21l-4.3-4.3',
     menu:     'M3 12h18M3 6h18M3 18h18',
     panelIzq: 'M3 3h18v18H3zM9 3v18',
+    ojo:      'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6',
+    ojoOff:   'M17.9 17.9A10 10 0 0 1 12 20c-7 0-11-8-11-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M1 1l22 22',
     vacio:    'M22 12h-6l-2 3h-4l-2-3H2M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z'
   };
 
@@ -94,6 +96,43 @@
   }
   function puedeVer(item, rol) { return !item.roles || item.roles.indexOf(rol) !== -1; }
 
+  /* --- Montos ocultos (27/09/2026) ---
+     Como el "ojo" de las apps de banco: la plata se muestra como "$ •••••"
+     hasta que se toca el ojo de la barra superior. Es para que no se vea por
+     descuido (el celular abierto en el taller, mostrarle algo a un
+     empleado), NO es seguridad: el servidor manda los datos igual.
+     Se vuelve a ocultar sola a los 10 minutos, o si la app pasó más de 30
+     segundos en segundo plano (bloquear el teléfono, cambiar de app). */
+  var CLAVE_VISIBLES = 'montosVisiblesHasta';
+  var MONTOS_VISIBLES_MS = 10 * 60 * 1000;
+  var SEGUNDO_PLANO_MS = 30 * 1000;
+  var MASCARA = '$ •••••';
+
+  function montosVisiblesHasta() {
+    try { return parseInt(localStorage.getItem(CLAVE_VISIBLES), 10) || 0; } catch (e) { return 0; }
+  }
+  function privado() { return montosVisiblesHasta() <= Date.now(); }
+
+  function ocultarMontos() {
+    try { localStorage.removeItem(CLAVE_VISIBLES); } catch (e) { /* nada */ }
+  }
+
+  function vigilarMontosVisibles() {
+    if (privado()) { ocultarMontos(); return; }
+    // Vencimiento de los 10 minutos con la pantalla abierta.
+    setTimeout(function () { ocultarMontos(); location.reload(); },
+      Math.max(0, montosVisiblesHasta() - Date.now()));
+
+    var escondidaDesde = 0;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { escondidaDesde = Date.now(); return; }
+      if (escondidaDesde && (Date.now() - escondidaDesde > SEGUNDO_PLANO_MS || privado())) {
+        ocultarMontos();
+        location.reload();
+      }
+    });
+  }
+
   function paginaActual() {
     var f = location.pathname.split('/').pop() || 'dashboard.html';
     return f.toLowerCase();
@@ -124,7 +163,9 @@
       // El logo lleva a la primera pantalla que ese rol puede ver: para un
       // operario, dashboard.html sería un rebote al login.
       var inicio = 'produccion.html';
-      NAV.some(function (g) {
+      var elegida = usuarioActual().pantalla_inicio;
+      if (elegida && /^[a-z_-]+\.html$/.test(elegida)) inicio = elegida;
+      else NAV.some(function (g) {
         var primero = g.items.filter(function (i) { return puedeVer(i, rol); })[0];
         if (primero) { inicio = primero.url; return true; }
         return false;
@@ -157,6 +198,11 @@
       html += '<div><div class="topbar-title">' + (opts.titulo || document.title) + '</div>';
       if (opts.sub) html += '<div class="topbar-sub">' + opts.sub + '</div>';
       html += '</div><div class="topbar-spacer"></div>';
+      var oculto = privado();
+      html += '<button class="icon-btn" data-montos aria-pressed="' + !oculto + '" ' +
+              'aria-label="' + (oculto ? 'Mostrar montos' : 'Ocultar montos') + '" ' +
+              'title="' + (oculto ? 'Mostrar montos' : 'Ocultar montos') + '">' +
+              svg(oculto ? 'ojoOff' : 'ojo') + '</button>';
       html += '<button class="search-trigger" data-cmdk>' + svg('buscar') + '<span>Buscar pantalla…</span><kbd>Ctrl K</kbd></button>';
       html += '</header>';
       html += '<main class="content">' + contenido + '</main>';
@@ -191,6 +237,18 @@
       });
 
       document.querySelector('[data-cmdk]').addEventListener('click', Shell.abrirBuscador);
+
+      // Mostrar/ocultar recarga la página: así todas las tablas y totales se
+      // vuelven a dibujar con Shell.money, sin tocar cada pantalla.
+      document.querySelector('[data-montos]').addEventListener('click', function () {
+        if (privado()) {
+          try { localStorage.setItem(CLAVE_VISIBLES, String(Date.now() + MONTOS_VISIBLES_MS)); } catch (e) { return; }
+        } else {
+          ocultarMontos();
+        }
+        location.reload();
+      });
+      vigilarMontosVisibles();
 
       document.addEventListener('keydown', function (e) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); Shell.abrirBuscador(); }
@@ -288,9 +346,15 @@
     },
 
     /* ---------------- Helpers de formato ---------------- */
+    /** true mientras los montos estén ocultos (ver "Montos ocultos" arriba).
+     *  Los formateadores propios de cada pantalla lo consultan también. */
+    privado: privado,
+    MASCARA: MASCARA,
+
     money: function (v) {
       var n = parseFloat(v);
       if (!isFinite(n)) return '—';
+      if (privado()) return MASCARA;
       return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
     },
     fecha: function (v) {

@@ -11,8 +11,15 @@
 // se migraron y ya no existen.
 
 /** Pantalla inicial de cada rol. Es también a donde se lo manda si entra
- *  a una que no le corresponde. */
+ *  a una que no le corresponde. Si al usuario se le eligió una en Usuarios
+ *  (pantalla_inicio, 27/09/2026) y es de su mismo rol, va a esa. */
 function pantallaInicial(rol) {
+  try {
+    var u = JSON.parse(localStorage.getItem('usuario') || '{}');
+    if (u.rol === rol && u.pantalla_inicio && /^[a-z_-]+\.html$/.test(u.pantalla_inicio)) {
+      return u.pantalla_inicio;
+    }
+  } catch (e) { /* sin usuario guardado: la del rol */ }
   return rol === 'operario' ? 'produccion.html' : 'dashboard.html';
 }
 

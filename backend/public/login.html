@@ -196,11 +196,10 @@
                     buttonText.textContent = '¡Acceso concedido!';
                     button.style.background = 'var(--gradient-success)';
 
-                    // El operario solo trabaja en Producción; el admin
-                    // arranca en el dashboard.
-                    const destino = response.usuario.rol === 'operario'
-                        ? 'produccion.html'
-                        : 'dashboard.html';
+                    // La pantalla de inicio la resuelve el server (la que
+                    // se le eligió en Usuarios, o la de su rol).
+                    const destino = response.usuario.pantalla_inicio
+                        || (response.usuario.rol === 'operario' ? 'produccion.html' : 'dashboard.html');
 
                     setTimeout(() => {
                         window.location.href = destino;
@@ -291,9 +290,8 @@
                 passwordTemporalUsada = '';
 
                 botonTexto.textContent = '¡Listo!';
-                window.location.href = usuario.rol === 'operario'
-                    ? 'produccion.html'
-                    : 'dashboard.html';
+                window.location.href = usuario.pantalla_inicio
+                    || (usuario.rol === 'operario' ? 'produccion.html' : 'dashboard.html');
 
             } catch (err) {
                 fallar((err && (err.error || err.message)) || 'No se pudo cambiar la contraseña.');

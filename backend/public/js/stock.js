@@ -6,6 +6,8 @@ let dolarActual = 0;
 
 // Formatear moneda
 function formatearMoneda(valor) {
+    // Montos ocultos (ver "Montos ocultos" en shell.js).
+    if (window.Shell && Shell.privado()) return Shell.MASCARA;
     return new Intl.NumberFormat('es-AR', {
         style: 'currency',
         currency: 'ARS'
@@ -14,6 +16,8 @@ function formatearMoneda(valor) {
 
 // Formatear dólares
 function formatearDolares(valor) {
+    // Montos ocultos (ver "Montos ocultos" en shell.js).
+    if (window.Shell && Shell.privado()) return Shell.MASCARA;
     return new Intl.NumberFormat('es-AR', {
         style: 'currency',
         currency: 'USD'

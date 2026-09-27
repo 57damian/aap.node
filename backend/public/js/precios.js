@@ -56,6 +56,8 @@ function formatDate(dateString) {
 }
 
 function formatCurrency(value) {
+  // Montos ocultos (ver "Montos ocultos" en shell.js).
+  if (window.Shell && Shell.privado()) return '•••••';
   return new Intl.NumberFormat('es-AR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2

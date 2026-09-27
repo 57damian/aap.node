@@ -3,6 +3,8 @@ let materiasPrimasCache = [];
 
 // Formatear moneda
 function formatearMoneda(valor) {
+    // Montos ocultos (ver "Montos ocultos" en shell.js).
+    if (window.Shell && Shell.privado()) return Shell.MASCARA;
     return new Intl.NumberFormat('es-AR', {
         style: 'currency',
         currency: 'ARS'
@@ -199,6 +201,8 @@ async function eliminarMateriaPrima(id) {
 // cargado), no se muestra nada.
 function renderPrecioUsd(valorUsd) {
     if (valorUsd === null || valorUsd === undefined) return '';
+    // Montos ocultos (ver "Montos ocultos" en shell.js).
+    if (window.Shell && Shell.privado()) return '<br><small class="text-muted">USD •••••</small>';
     return `<br><small class="text-muted">USD ${parseFloat(valorUsd).toFixed(2)}</small>`;
 }
 

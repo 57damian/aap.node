@@ -15,9 +15,15 @@
     // El server manda acá cualquier ruta que no reconoce, así que si ya hay
     // sesión conviene volver al sistema en vez de al login.
     (function () {
-      var hayToken = false;
-      try { hayToken = !!localStorage.getItem('token'); } catch (e) { hayToken = false; }
-      window.location.replace(hayToken ? 'dashboard.html' : 'login.html');
+      var hayToken = false, inicio = 'dashboard.html';
+      try {
+        hayToken = !!localStorage.getItem('token');
+        var u = JSON.parse(localStorage.getItem('usuario') || '{}');
+        // Solo un nombre de pantalla (algo.html), nunca otra URL.
+        if (u.pantalla_inicio && /^[a-z_-]+\.html$/.test(u.pantalla_inicio)) inicio = u.pantalla_inicio;
+        else if (u.rol === 'operario') inicio = 'produccion.html';
+      } catch (e) { hayToken = false; }
+      window.location.replace(hayToken ? inicio : 'login.html');
     })();
   </script>
 </head>

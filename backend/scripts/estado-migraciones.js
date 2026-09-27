@@ -259,6 +259,16 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-pantalla-inicio.sql (27/09): columna usuarios.pantalla_inicio.
+  {
+    const tieneColumna = await existeColumna('usuarios', 'pantalla_inicio');
+    resultados.push({
+      migracion: 'migracion-pantalla-inicio.sql',
+      aplicada: tieneColumna,
+      falta: tieneColumna ? '' : 'falta la columna usuarios.pantalla_inicio'
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

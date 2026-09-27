@@ -6,6 +6,8 @@ let facturasCache = [];
 
 // Funciones de utilidad
 function formatearMoneda(valor) {
+    // Montos ocultos (ver "Montos ocultos" en shell.js).
+    if (window.Shell && Shell.privado()) return Shell.MASCARA;
     if (valor === null || valor === undefined) {
         return '$0,00';
     }
