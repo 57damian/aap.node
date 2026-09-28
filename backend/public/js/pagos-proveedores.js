@@ -591,6 +591,126 @@ function resetFormularioPago() {
 }
 
 /* ---------------------------------------------------------------------
+ * Ventanas de confirmación (28/09/2026)
+ * ---------------------------------------------------------------------
+ * Reemplazan a prompt()/confirm(): quedaban bloqueados en algunos
+ * navegadores (mismo motivo por el que el resto de la app usa
+ * <dialog class="panel">, ver CLAUDE.md). Cada una devuelve una Promise
+ * que resuelve con `null`/`false` si se cancela.
+ * ------------------------------------------------------------------- */
+function confirmar(titulo, mensajeHtml) {
+  return new Promise((resolve) => {
+    $('confirmarTitulo').textContent = titulo;
+    $('confirmarMsg').innerHTML = mensajeHtml;
+    const modal = $('confirmarModal');
+    const btn = $('btnConfirmarConfirmar');
+
+    function limpiar() {
+      btn.removeEventListener('click', onConfirmar);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onConfirmar() { limpiar(); modal.close(); resolve(true); }
+    function onCerrar() { limpiar(); resolve(false); }
+
+    btn.addEventListener('click', onConfirmar);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+  });
+}
+
+/** Debitar/rechazar un cheque: piden un dato (fecha o motivo). Anular no
+ *  necesita ninguno, así que usa `confirmar()` directamente. */
+function abrirChequeAccion(accion) {
+  return new Promise((resolve) => {
+    const modal = $('chequeAccionModal');
+    const btn = $('btnConfirmarChequeAccion');
+    const fechaCampo = $('chequeAccionFechaCampo');
+    const motivoCampo = $('chequeAccionMotivoCampo');
+    const fechaInput = $('chequeAccionFecha');
+    const motivoInput = $('chequeAccionMotivo');
+    const err = $('chequeAccionError');
+
+    err.hidden = true;
+    err.textContent = '';
+    fechaCampo.hidden = accion !== 'debitar';
+    motivoCampo.hidden = accion !== 'rechazar';
+
+    if (accion === 'debitar') {
+      $('chequeAccionTitulo').textContent = 'Debitar cheque';
+      $('chequeAccionMsg').textContent = 'El cheque salió de la cuenta.';
+      fechaInput.value = new Date().toISOString().slice(0, 10);
+      btn.textContent = 'Debitar';
+      btn.className = 'b b-primary';
+    } else {
+      $('chequeAccionTitulo').textContent = 'Rechazar cheque';
+      $('chequeAccionMsg').textContent = 'El proveedor devolvió el cheque. La deuda que cancelaba vuelve a quedar abierta.';
+      motivoInput.value = 'Sin fondos';
+      btn.textContent = 'Rechazar';
+      btn.className = 'b b-danger';
+    }
+
+    function limpiar() {
+      btn.removeEventListener('click', onConfirmar);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onConfirmar() {
+      const body = {};
+      if (accion === 'debitar') {
+        if (!fechaInput.value) {
+          err.textContent = 'Falta la fecha del débito.';
+          err.hidden = false;
+          return;
+        }
+        body.fecha = fechaInput.value;
+      } else {
+        body.motivo = motivoInput.value.trim() || 'Sin fondos';
+      }
+      limpiar();
+      modal.close();
+      resolve(body);
+    }
+    function onCerrar() { limpiar(); resolve(null); }
+
+    btn.addEventListener('click', onConfirmar);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+  });
+}
+
+function abrirPagoAnularMotivo() {
+  return new Promise((resolve) => {
+    const modal = $('pagoAnularModal');
+    const btn = $('btnConfirmarPagoAnular');
+    const motivoInput = $('pagoAnularMotivo');
+    const err = $('pagoAnularError');
+    motivoInput.value = '';
+    err.hidden = true;
+    err.textContent = '';
+
+    function limpiar() {
+      btn.removeEventListener('click', onConfirmar);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onConfirmar() {
+      const motivo = motivoInput.value.trim();
+      if (motivo.length < 5) {
+        err.textContent = 'El motivo tiene que tener al menos 5 caracteres.';
+        err.hidden = false;
+        return;
+      }
+      limpiar();
+      modal.close();
+      resolve(motivo);
+    }
+    function onCerrar() { limpiar(); resolve(null); }
+
+    btn.addEventListener('click', onConfirmar);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+  });
+}
+
+/* ---------------------------------------------------------------------
  * Cheques entregados
  * ------------------------------------------------------------------- */
 async function cargarCheques() {
@@ -638,19 +758,15 @@ async function cargarCheques() {
 }
 
 async function accionCheque(id, accion) {
-  const body = {};
-  if (accion === 'rechazar') {
-    const motivo = prompt('Motivo del rechazo:', 'Sin fondos');
-    if (motivo === null) return;
-    body.motivo = motivo;
-  }
-  if (accion === 'anular') {
-    if (!confirm('¿Anular este cheque? La deuda que cancelaba vuelve a quedar abierta.')) return;
-  }
-  if (accion === 'debitar') {
-    const f = prompt('Fecha del débito (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
-    if (f === null) return;
-    body.fecha = f;
+  let body = {};
+  if (accion === 'rechazar' || accion === 'debitar') {
+    const resultado = await abrirChequeAccion(accion);
+    if (resultado === null) return;
+    body = resultado;
+  } else if (accion === 'anular') {
+    const ok = await confirmar('Anular cheque',
+      '¿Anular este cheque? La deuda que cancelaba vuelve a quedar abierta.');
+    if (!ok) return;
   }
 
   try {
@@ -760,7 +876,9 @@ async function verPago(id) {
 }
 
 async function deshacerImputacion(imputacionId, pagoId) {
-  if (!confirm('¿Deshacer esta imputación? La factura vuelve a quedar con saldo.')) return;
+  const ok = await confirmar('Deshacer imputación',
+    '¿Deshacer esta imputación? La factura vuelve a quedar con saldo.');
+  if (!ok) return;
   try {
     await apiFetch(`${API}/imputaciones/${imputacionId}`, { method: 'DELETE' });
     Shell.toast('ok', 'Imputación deshecha.');
@@ -771,7 +889,7 @@ async function deshacerImputacion(imputacionId, pagoId) {
 }
 
 async function anularPago(id) {
-  const motivo = prompt('Motivo de la anulación:');
+  const motivo = await abrirPagoAnularMotivo();
   if (motivo === null) return;
   try {
     const r = await apiFetch(`${API}/${id}/anular`, { method: 'POST', body: JSON.stringify({ motivo }) });

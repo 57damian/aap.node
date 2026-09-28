@@ -106,7 +106,8 @@ Decisión (21/09/2026): **anular, no borrar**. No hay rol superadmin ni borrado 
 - **OC** (`routes/ordenesCompra.routes.js`): `GET|POST /api/ordenes-compra/:id/anulacion-preview|anular`. Solo si **no tiene remitos con entregas ni facturas vigentes**. Pasa a `estado = 'anulada'` (minúscula, como `abierta`/`cerrada`), conserva sus ítems y ya no admite ítems nuevos, edición de ítems, cierre ni entregas.
 - `GET /api/facturas/anulaciones` devuelve el historial de las tres entidades (`entidad` = `FACTURA_VENTA` | `REMITO` | `ORDEN_COMPRA`). El número de un remito o de una OC anulados se puede reusar (no hay restricción de unicidad).
 - Orden para anular todo un circuito: primero la factura, después los remitos, al final la OC.
-- Pendiente: anular recibo y nota de crédito, y reemplazar los `prompt()`/`confirm()` de cobros y pagos a proveedores por diálogos.
+- **`prompt()`/`confirm()` en Pagos a proveedores (28/09/2026)**: `pagos-proveedores.js` usaba `prompt()`/`confirm()` nativos para debitar/rechazar/anular un cheque y para anular un pago o deshacer una imputación — confirmado que quedan bloqueados en el navegador integrado de Claude (`Error: prompt() is not supported`), no solo en teoría. Reemplazados por `<dialog class="panel">` (`chequeAccionModal`, `pagoAnularModal`, `confirmarModal` en `pagos-proveedores.html`), mismo patrón que el resto de la app.
+- Pendiente: anular recibo y nota de crédito, y reemplazar los `prompt()`/`confirm()` de **cobros** por diálogos (ya resuelto en pagos a proveedores).
 
 ## Descarga de PDF (remitos, facturas de venta, cobros, fichas técnicas)
 

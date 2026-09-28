@@ -283,12 +283,73 @@
     <div id="drawerCuerpo"></div>
   </div>
 
+  <!-- ================= Ventanas =================
+       Van adentro de [data-content]: Shell.montar() reemplaza el body y solo
+       conserva lo de adentro. Reemplazan a los prompt()/confirm() nativos que
+       quedaban bloqueados en algunos navegadores (hallazgo 28/09/2026). -->
+
+  <dialog id="chequeAccionModal" class="panel">
+    <div class="panel-head"><h2 id="chequeAccionTitulo">Cheque</h2></div>
+    <div class="panel-body">
+      <div class="dialog-bloque muted" id="chequeAccionMsg"></div>
+      <div class="field dialog-bloque" id="chequeAccionFechaCampo" hidden>
+        <label for="chequeAccionFecha">Fecha del débito</label>
+        <input class="input" type="date" id="chequeAccionFecha">
+      </div>
+      <div class="field dialog-bloque" id="chequeAccionMotivoCampo" hidden>
+        <label for="chequeAccionMotivo">Motivo</label>
+        <textarea class="input" id="chequeAccionMotivo" rows="3" maxlength="500"></textarea>
+      </div>
+      <div class="notice notice-err dialog-bloque" id="chequeAccionError" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="chequeAccionModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarChequeAccion">Confirmar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="pagoAnularModal" class="panel">
+    <div class="panel-head"><h2>Anular pago</h2></div>
+    <div class="panel-body">
+      <div class="notice notice-warn dialog-bloque">
+        La deuda de las facturas que este pago imputó vuelve a quedar abierta. Si había un
+        cheque de cliente endosado, vuelve a cartera.
+      </div>
+      <div class="field dialog-bloque">
+        <label for="pagoAnularMotivo">Motivo <span class="muted">(obligatorio, al menos 5 caracteres)</span></label>
+        <textarea class="input" id="pagoAnularMotivo" rows="3" maxlength="500" placeholder="Ej.: se cargó por el proveedor equivocado"></textarea>
+      </div>
+      <div class="notice notice-err dialog-bloque" id="pagoAnularError" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="pagoAnularModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarPagoAnular">Anular pago</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirmarModal" class="panel">
+    <div class="panel-head"><h2 id="confirmarTitulo">Confirmar</h2></div>
+    <div class="panel-body">
+      <div class="dialog-bloque" id="confirmarMsg"></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="confirmarModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarConfirmar">Confirmar</button>
+      </div>
+    </div>
+  </dialog>
+
 </div>
 
 <script src="js/ayuda.js"></script>
 <script src="js/shell.js"></script>
 <script src="js/api.js"></script>
-<script>Shell.montar({ titulo: 'Pagos a proveedores', sub: 'Deuda con proveedores' });</script>
+<script>
+  Shell.montar({ titulo: 'Pagos a proveedores', sub: 'Deuda con proveedores' });
+
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+</script>
 <script src="js/roleGuard.js"></script>
 <script src="js/pagos-proveedores.js"></script>
 <script>verificarRolPagina(['admin']);</script>
