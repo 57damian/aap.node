@@ -136,3 +136,41 @@ async function descargarArchivoProtegido(ruta, nombreArchivo) {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+// =====================
+// PREVISUALIZACIÓN DE ARCHIVOS PROTEGIDOS (PDFs, etc.)
+// =====================
+// Mismo problema de token que descargarArchivoProtegido, pero en vez de
+// forzar la descarga abre el blob en una pestaña nueva: el navegador lo
+// renderiza con su visor de PDF nativo porque la URL blob: no lleva el
+// Content-Disposition: attachment original (ese header es del fetch, no
+// del blob). window.open() después de un await lo bloquean como popup, así
+// que la pestaña se abre ANTES del fetch, todavía dentro del gesto del
+// usuario, y recién después se navega al blob.
+async function verArchivoProtegido(ruta) {
+  const ventana = window.open('', '_blank');
+  try {
+    const r = await fetch(API_URL + '/' + String(ruta).replace(/^\/+/, ''), {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    });
+    if (!r.ok) {
+      let msg = 'No se pudo abrir el archivo';
+      try { msg = (await r.json()).error || msg; } catch (_) { /* no era JSON */ }
+      throw new Error(msg);
+    }
+    // No se revoca la URL: la pestaña nueva la sigue usando para mostrar
+    // el PDF. Queda viva hasta que esa pestaña se cierra.
+    const url = URL.createObjectURL(await r.blob());
+    if (ventana && !ventana.closed) {
+      ventana.location.href = url;
+    } else if (!window.open(url, '_blank')) {
+      // Los dos intentos de abrir ventana fallaron: el navegador está
+      // bloqueando los popups de este sitio. Sin este aviso quedaba en
+      // silencio total (ni pestaña ni error).
+      throw new Error('El navegador bloqueó la ventana para mostrar el PDF. Habilitá las ventanas emergentes para este sitio y probá de nuevo.');
+    }
+  } catch (e) {
+    if (ventana && !ventana.closed) ventana.close();
+    throw e;
+  }
+}
