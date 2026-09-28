@@ -125,11 +125,13 @@ class FacturasCompra {
                 throw new Error('Formato de datos inválido para materias primas');
             }
             
-            // Filtrar solo materias primas activas o con stock
-            this.materiasPrimas = this.materiasPrimas.filter(mp => 
-                mp.estado === 'ACTIVO' || mp.estado === 'activo' || mp.stock_actual > 0
-            );
-            
+            // La API ya devuelve solo materias primas activas (activo=true por
+            // default). Antes se volvía a filtrar acá por mp.estado, un campo
+            // que la API nunca envía (envía mp.activo booleano) — el filtro
+            // quedaba en la práctica "solo con stock > 0" y por eso una
+            // materia prima recién creada, con stock 0, no aparecía nunca en
+            // el select de esta pantalla (hallazgo 28/09/2026).
+
             // Ordenar por nombre
             this.materiasPrimas.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
