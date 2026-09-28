@@ -176,6 +176,320 @@ router.get('/:id', soloAdmin, async (req, res) => {
 });
 
 /* =========================
+   ÍTEMS DE FACTURA — helpers compartidos por alta y edición
+   -------------------------------------------------------------------
+   Antes solo el alta (POST) tocaba factura_items: editar una factura
+   (PUT) únicamente actualizaba la cabecera, así que no había forma de
+   agregar o corregir un ítem después de guardar — si faltaba cargar
+   uno, la única salida era crear una factura nueva, que chocaba con
+   el UNIQUE (proveedor_id, tipo_factura, punto_venta, numero_factura)
+   si el número ya existía (hallazgo 28/09/2026).
+========================= */
+
+/** Valida los ítems tal como vienen del frontend y calcula sus totales.
+    No toca la base; lanza Error con el mismo mensaje que antes tiraba
+    el alta si algo es inválido. */
+function validarYCalcularItems(items) {
+  let subtotalCalculado = 0;
+  let ivaCalculado = 0;
+  let totalCalculado = 0;
+  const itemsValidados = [];
+
+  for (const item of items) {
+    if (!item.cantidad || !item.precio_unitario) {
+      throw new Error('Cantidad y precio unitario son obligatorios para cada ítem');
+    }
+
+    const cantidad = parseFloat(item.cantidad);
+    const precioUnitario = parseFloat(item.precio_unitario);
+    const ivaPorcentaje = item.iva_porcentaje ? parseFloat(item.iva_porcentaje) : 21.00;
+
+    if (cantidad <= 0 || precioUnitario <= 0) {
+      throw new Error('Cantidad y precio unitario deben ser mayores a 0');
+    }
+
+    const subtotalItem = cantidad * precioUnitario;
+    const ivaItem = subtotalItem * (ivaPorcentaje / 100);
+    const totalItem = subtotalItem + ivaItem;
+
+    subtotalCalculado += subtotalItem;
+    ivaCalculado += ivaItem;
+    totalCalculado += totalItem;
+
+    itemsValidados.push({
+      ...item,
+      cantidad,
+      precio_unitario: precioUnitario,
+      iva_porcentaje: ivaPorcentaje,
+      subtotal: subtotalItem,
+      iva: ivaItem,
+      total: totalItem
+    });
+  }
+
+  return { itemsValidados, subtotalCalculado, ivaCalculado, totalCalculado };
+}
+
+/** Revierte el efecto en stock de los ítems que tenía la factura ANTES de
+    editarla (solo se tocó si esa factura estaba PENDIENTE o PAGADA), y los
+    borra. Mismo criterio que el DELETE de más abajo. Se llama antes de
+    insertar los ítems nuevos en un PUT que trae `items`. */
+async function revertirItemsFactura(client, facturaId, estadoAnterior) {
+  const itemsAnteriores = (await client.query(
+    'SELECT * FROM factura_items WHERE factura_id = $1', [facturaId]
+  )).rows;
+
+  if (estadoAnterior === 'PENDIENTE' || estadoAnterior === 'PAGADA') {
+    for (const item of itemsAnteriores) {
+      if (!item.materia_prima_id) continue;
+      await client.query(
+        `UPDATE materias_primas
+         SET stock_actual = stock_actual - $1, actualizado_en = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [item.cantidad, item.materia_prima_id]
+      );
+      await client.query(
+        'DELETE FROM stock_movimientos WHERE factura_id = $1 AND materia_prima_id = $2',
+        [facturaId, item.materia_prima_id]
+      );
+    }
+  }
+
+  await client.query('DELETE FROM factura_items WHERE factura_id = $1', [facturaId]);
+}
+
+/** Inserta los ítems (ya validados por validarYCalcularItems) de una
+    factura: crea materia prima nueva si corresponde, registra historial de
+    precios, el propio factura_items y el movimiento de stock si la factura
+    está activa. Es exactamente la lógica que antes vivía inline en el POST;
+    ahora la reutiliza también el PUT. */
+async function insertarItemsFactura(client, {
+  facturaId, proveedorId, numeroFactura, usuarioId, dolar, dolarValido, itemsValidados, estadoFinal
+}) {
+  for (const item of itemsValidados) {
+    let materia_prima_id = item.materia_prima_id;
+    let es_item_manual = false;
+    let creado_como_materia_prima = false;
+
+    // Si es ítem manual y se quiere guardar como nueva materia prima
+    if (item.es_item_manual && item.guardar_como_materia_prima) {
+      // Crear nueva materia prima
+      const mpResult = await client.query(
+        `INSERT INTO materias_primas (
+          codigo, nombre, unidad_medida,
+          precio_referencia, stock_actual,
+          fecha_ultima_compra, created_by,
+          creado_en, actualizado_en
+        ) VALUES ($1, $2, $3, $4, 0, CURRENT_DATE, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id`,
+        [
+          item.codigo,
+          item.nombre,
+          item.unidad_medida || 'UNI',
+          item.precio_unitario,
+          usuarioId
+        ]
+      );
+
+      materia_prima_id = mpResult.rows[0].id;
+      es_item_manual = true;
+      creado_como_materia_prima = true;
+
+      // Registrar en historial de precios (primer precio de este material,
+      // no hay anterior con qué comparar, variación 0)
+      await client.query(
+        `INSERT INTO historial_precios_materias (
+          materia_prima_id, proveedor_id,
+          precio_anterior, precio_nuevo,
+          precio_nuevo_usd,
+          variacion_porcentaje, factura_id,
+          fecha_cambio, created_by, created_at
+        ) VALUES ($1, $2, NULL, $3, $4, 0, $5, CURRENT_DATE, $6, CURRENT_TIMESTAMP)`,
+        [
+          materia_prima_id,
+          proveedorId,
+          item.precio_unitario,
+          dolarValido ? item.precio_unitario / parseFloat(dolar) : null,
+          facturaId,
+          usuarioId
+        ]
+      );
+    } else if (item.es_item_manual) {
+      // Ítem manual que no se guarda como materia prima
+      es_item_manual = true;
+    } else if (materia_prima_id) {
+      // Ítem existente. El "último precio" global (mp.precio_referencia, lo que
+      // se muestra en el listado de Stock) siempre se actualiza a lo pagado en
+      // ESTA compra, sea cual sea el proveedor — es solo una referencia rápida.
+      //
+      // La "variación" que dispara la alerta, en cambio, es específica del
+      // proveedor: se compara contra la última compra de este material A ESTE
+      // MISMO proveedor (vía stock_movimientos.proveedor_id), no contra el
+      // último precio global. Así, con varios proveedores para un mismo
+      // material, cada uno tiene su propia comparación y no se mezclan entre sí.
+      // (Diseño acordado 12/09/2026, ver doc del proyecto.)
+      // Se trae también el dólar de la factura de esa compra anterior (si
+      // la tenía cargada) para poder comparar precios en USD más abajo.
+      const precioAnteriorProveedorResult = await client.query(
+        `SELECT sm.precio_unitario, hd_anterior.dolar as dolar_anterior
+         FROM stock_movimientos sm
+         LEFT JOIN facturas_compra fc_anterior ON sm.factura_id = fc_anterior.id
+         LEFT JOIN historial_dolar hd_anterior ON fc_anterior.dolar_historial_id = hd_anterior.id
+         WHERE sm.materia_prima_id = $1 AND sm.proveedor_id = $2 AND sm.tipo_movimiento = 'ENTRADA'
+         ORDER BY sm.fecha_movimiento DESC, sm.id DESC LIMIT 1`,
+        [materia_prima_id, proveedorId]
+      );
+
+      const precio_anterior_proveedor = precioAnteriorProveedorResult.rows.length > 0
+        ? parseFloat(precioAnteriorProveedorResult.rows[0].precio_unitario)
+        : null;
+      const dolar_anterior = precioAnteriorProveedorResult.rows.length > 0 && precioAnteriorProveedorResult.rows[0].dolar_anterior !== null
+        ? parseFloat(precioAnteriorProveedorResult.rows[0].dolar_anterior)
+        : null;
+      const precio_nuevo = item.precio_unitario;
+
+      // Actualizar precio de referencia global (siempre, independiente del proveedor)
+      await client.query(
+        `UPDATE materias_primas
+         SET precio_referencia = $1, fecha_ultima_compra = CURRENT_DATE, actualizado_en = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [precio_nuevo, materia_prima_id]
+      );
+
+      if (precio_anterior_proveedor === null) {
+        console.log(`ℹ️  Primera compra registrada de materia prima ${materia_prima_id} a este proveedor (${proveedorId}); no hay precio previo de ese proveedor para comparar`);
+      } else {
+        // Solo registrar variación si el precio en pesos es diferente (con tolerancia de 0.01)
+        const diferencia = Math.abs(precio_nuevo - precio_anterior_proveedor);
+        if (diferencia > 0.01) {
+          // La variación que dispara la alerta ▲/▼ se calcula en USD, no en
+          // pesos (diseño acordado 12/09/2026): así una devaluación no se ve
+          // como "aumento de precio" del material. Si no hay dólar cargado
+          // para esta factura o para la compra anterior, no se puede
+          // convertir a USD y por lo tanto no se dispara alerta (queda en
+          // NULL); el precio en pesos se sigue guardando igual.
+          const precio_anterior_usd = dolar_anterior ? precio_anterior_proveedor / dolar_anterior : null;
+          const precio_nuevo_usd = dolarValido ? precio_nuevo / parseFloat(dolar) : null;
+          const variacion = (precio_anterior_usd !== null && precio_nuevo_usd !== null && precio_anterior_usd > 0)
+            ? ((precio_nuevo_usd - precio_anterior_usd) / precio_anterior_usd) * 100
+            : null;
+
+          // Registrar en historial de precios (ligado a este proveedor)
+          await client.query(
+            `INSERT INTO historial_precios_materias (
+              materia_prima_id, proveedor_id,
+              precio_anterior, precio_nuevo,
+              precio_anterior_usd, precio_nuevo_usd,
+              variacion_porcentaje, factura_id,
+              fecha_cambio, created_by, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9, CURRENT_TIMESTAMP)`,
+            [
+              materia_prima_id,
+              proveedorId,
+              precio_anterior_proveedor,
+              precio_nuevo,
+              precio_anterior_usd,
+              precio_nuevo_usd,
+              variacion,
+              facturaId,
+              usuarioId
+            ]
+          );
+
+          console.log(`✅ Variación de precio detectada (proveedor ${proveedorId}) para materia prima ${materia_prima_id}: $${precio_anterior_proveedor} → $${precio_nuevo}` + (variacion !== null ? ` (${variacion.toFixed(2)}% en USD)` : ' (sin dólar cargado, no se calcula % ni se dispara alerta)'));
+        } else {
+          console.log(`ℹ️  Precio sin cambios para materia prima ${materia_prima_id} respecto al mismo proveedor (${proveedorId}): $${precio_anterior_proveedor}`);
+        }
+      }
+    }
+
+    // Insertar ítem de factura
+    await client.query(
+      `INSERT INTO factura_items (
+        factura_id, materia_prima_id,
+        codigo, nombre, descripcion,
+        cantidad, unidad_medida,
+        precio_unitario, iva_porcentaje,
+        subtotal, iva, total,
+        es_item_manual, creado_como_materia_prima,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+      [
+        facturaId,
+        materia_prima_id || null,
+        item.codigo || null,
+        item.nombre || null,
+        item.descripcion || null,
+        item.cantidad,
+        item.unidad_medida || 'UNI',
+        item.precio_unitario,
+        item.iva_porcentaje,
+        item.subtotal,
+        item.iva,
+        item.total,
+        es_item_manual,
+        creado_como_materia_prima
+      ]
+    );
+
+    // Si tiene materia_prima_id, actualizar stock inmediatamente si la factura está activa
+    if (materia_prima_id && (estadoFinal === 'PENDIENTE' || estadoFinal === 'PAGADA')) {
+      console.log(`📦 Actualizando stock para materia prima ${materia_prima_id}: +${item.cantidad} unidades (estado: ${estadoFinal})`);
+
+      // Tomar el stock actual ANTES de modificarlo (con lock), para poder dejar
+      // stock_anterior/stock_nuevo en el movimiento, igual que ya se hace en los
+      // ajustes manuales (POST /api/stock/ajuste).
+      const stockActualResult = await client.query(
+        'SELECT stock_actual FROM materias_primas WHERE id = $1 FOR UPDATE',
+        [materia_prima_id]
+      );
+      const stockAnterior = parseFloat(stockActualResult.rows[0]?.stock_actual || 0);
+      const stockNuevo = stockAnterior + parseFloat(item.cantidad);
+
+      // Actualizar stock
+      await client.query(
+        `UPDATE materias_primas
+         SET stock_actual = $1,
+             fecha_ultima_compra = CURRENT_DATE,
+             actualizado_en = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [stockNuevo, materia_prima_id]
+      );
+
+      // Crear movimiento de stock
+      await client.query(
+        `INSERT INTO stock_movimientos (
+          materia_prima_id, tipo_movimiento,
+          cantidad, precio_unitario,
+          factura_id, proveedor_id,
+          observaciones, usuario_id, created_at,
+          fecha_movimiento, unidad,
+          stock_anterior, stock_nuevo
+        ) VALUES ($1, 'ENTRADA', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_DATE, $8, $9, $10)`,
+        [
+          materia_prima_id,
+          item.cantidad,
+          item.precio_unitario,
+          facturaId,
+          proveedorId,
+          `Compra desde factura ${numeroFactura}`,
+          usuarioId,
+          item.unidad_medida || 'UNI',
+          stockAnterior,
+          stockNuevo
+        ]
+      );
+
+      console.log(`✅ Stock actualizado (${stockAnterior} → ${stockNuevo}) y movimiento creado para materia prima ${materia_prima_id}`);
+    } else {
+      console.log(`⚠️  No se actualizó stock para materia prima ${materia_prima_id}:`);
+      if (!materia_prima_id) console.log(`   - materia_prima_id es null o undefined`);
+      if (estadoFinal !== 'PENDIENTE' && estadoFinal !== 'PAGADA') console.log(`   - estado "${estadoFinal}" no es PENDIENTE o PAGADA`);
+    }
+  }
+}
+
+/* =========================
    CREAR FACTURA DE COMPRA
 ========================= */
 router.post('/', soloAdmin, async (req, res) => {
@@ -218,45 +532,9 @@ router.post('/', soloAdmin, async (req, res) => {
       throw new Error('Tipo de factura inválido. Debe ser A, B, C o X');
     }
     
-    // Calcular totales si no se proporcionan
-    let subtotalCalculado = 0;
-    let ivaCalculado = 0;
-    let totalCalculado = 0;
-    
-    // Validar y calcular items
-    const itemsValidados = [];
-    for (const item of items) {
-      if (!item.cantidad || !item.precio_unitario) {
-        throw new Error('Cantidad y precio unitario son obligatorios para cada ítem');
-      }
-      
-      const cantidad = parseFloat(item.cantidad);
-      const precioUnitario = parseFloat(item.precio_unitario);
-      const ivaPorcentaje = item.iva_porcentaje ? parseFloat(item.iva_porcentaje) : 21.00;
-      
-      if (cantidad <= 0 || precioUnitario <= 0) {
-        throw new Error('Cantidad y precio unitario deben ser mayores a 0');
-      }
-      
-      const subtotalItem = cantidad * precioUnitario;
-      const ivaItem = subtotalItem * (ivaPorcentaje / 100);
-      const totalItem = subtotalItem + ivaItem;
-      
-      subtotalCalculado += subtotalItem;
-      ivaCalculado += ivaItem;
-      totalCalculado += totalItem;
-      
-      itemsValidados.push({
-        ...item,
-        cantidad,
-        precio_unitario: precioUnitario,
-        iva_porcentaje: ivaPorcentaje,
-        subtotal: subtotalItem,
-        iva: ivaItem,
-        total: totalItem
-      });
-    }
-    
+    // Validar y calcular items (helper compartido con el PUT)
+    const { itemsValidados, subtotalCalculado, ivaCalculado, totalCalculado } = validarYCalcularItems(items);
+
     // Usar totales calculados si no se proporcionan
     const subtotalFinal = subtotal !== undefined ? parseFloat(subtotal) : subtotalCalculado;
     const ivaFinal = iva !== undefined ? parseFloat(iva) : ivaCalculado;
@@ -314,233 +592,17 @@ router.post('/', soloAdmin, async (req, res) => {
     );
     
     const factura = facturaResult.rows[0];
-    
-    // Insertar items
-    for (const item of itemsValidados) {
-      let materia_prima_id = item.materia_prima_id;
-      let es_item_manual = false;
-      let creado_como_materia_prima = false;
-      
-      // Si es ítem manual y se quiere guardar como nueva materia prima
-      if (item.es_item_manual && item.guardar_como_materia_prima) {
-        // Crear nueva materia prima
-        const mpResult = await client.query(
-          `INSERT INTO materias_primas (
-            codigo, nombre, unidad_medida,
-            precio_referencia, stock_actual,
-            fecha_ultima_compra, created_by,
-            creado_en, actualizado_en
-          ) VALUES ($1, $2, $3, $4, 0, CURRENT_DATE, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-          RETURNING id`,
-          [
-            item.codigo,
-            item.nombre,
-            item.unidad_medida || 'UNI',
-            item.precio_unitario,
-            usuario_id
-          ]
-        );
-        
-        materia_prima_id = mpResult.rows[0].id;
-        es_item_manual = true;
-        creado_como_materia_prima = true;
-        
-        // Registrar en historial de precios (primer precio de este material,
-        // no hay anterior con qué comparar, variación 0)
-        await client.query(
-          `INSERT INTO historial_precios_materias (
-            materia_prima_id, proveedor_id,
-            precio_anterior, precio_nuevo,
-            precio_nuevo_usd,
-            variacion_porcentaje, factura_id,
-            fecha_cambio, created_by, created_at
-          ) VALUES ($1, $2, NULL, $3, $4, 0, $5, CURRENT_DATE, $6, CURRENT_TIMESTAMP)`,
-          [
-            materia_prima_id,
-            proveedor_id,
-            item.precio_unitario,
-            dolarValido ? item.precio_unitario / parseFloat(dolar) : null,
-            factura.id,
-            usuario_id
-          ]
-        );
-      } else if (item.es_item_manual) {
-        // Ítem manual que no se guarda como materia prima
-        es_item_manual = true;
-      } else if (materia_prima_id) {
-        // Ítem existente. El "último precio" global (mp.precio_referencia, lo que
-        // se muestra en el listado de Stock) siempre se actualiza a lo pagado en
-        // ESTA compra, sea cual sea el proveedor — es solo una referencia rápida.
-        //
-        // La "variación" que dispara la alerta, en cambio, es específica del
-        // proveedor: se compara contra la última compra de este material A ESTE
-        // MISMO proveedor (vía stock_movimientos.proveedor_id), no contra el
-        // último precio global. Así, con varios proveedores para un mismo
-        // material, cada uno tiene su propia comparación y no se mezclan entre sí.
-        // (Diseño acordado 12/09/2026, ver doc del proyecto.)
-        // Se trae también el dólar de la factura de esa compra anterior (si
-        // la tenía cargada) para poder comparar precios en USD más abajo.
-        const precioAnteriorProveedorResult = await client.query(
-          `SELECT sm.precio_unitario, hd_anterior.dolar as dolar_anterior
-           FROM stock_movimientos sm
-           LEFT JOIN facturas_compra fc_anterior ON sm.factura_id = fc_anterior.id
-           LEFT JOIN historial_dolar hd_anterior ON fc_anterior.dolar_historial_id = hd_anterior.id
-           WHERE sm.materia_prima_id = $1 AND sm.proveedor_id = $2 AND sm.tipo_movimiento = 'ENTRADA'
-           ORDER BY sm.fecha_movimiento DESC, sm.id DESC LIMIT 1`,
-          [materia_prima_id, proveedor_id]
-        );
 
-        const precio_anterior_proveedor = precioAnteriorProveedorResult.rows.length > 0
-          ? parseFloat(precioAnteriorProveedorResult.rows[0].precio_unitario)
-          : null;
-        const dolar_anterior = precioAnteriorProveedorResult.rows.length > 0 && precioAnteriorProveedorResult.rows[0].dolar_anterior !== null
-          ? parseFloat(precioAnteriorProveedorResult.rows[0].dolar_anterior)
-          : null;
-        const precio_nuevo = item.precio_unitario;
+    // Insertar items (helper compartido con el PUT)
+    await insertarItemsFactura(client, {
+      facturaId: factura.id,
+      proveedorId: proveedor_id,
+      numeroFactura: numero_factura,
+      usuarioId: usuario_id,
+      dolar, dolarValido, itemsValidados,
+      estadoFinal: estado || 'PENDIENTE'
+    });
 
-        // Actualizar precio de referencia global (siempre, independiente del proveedor)
-        await client.query(
-          `UPDATE materias_primas
-           SET precio_referencia = $1, fecha_ultima_compra = CURRENT_DATE, actualizado_en = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [precio_nuevo, materia_prima_id]
-        );
-
-        if (precio_anterior_proveedor === null) {
-          console.log(`ℹ️  Primera compra registrada de materia prima ${materia_prima_id} a este proveedor (${proveedor_id}); no hay precio previo de ese proveedor para comparar`);
-        } else {
-          // Solo registrar variación si el precio en pesos es diferente (con tolerancia de 0.01)
-          const diferencia = Math.abs(precio_nuevo - precio_anterior_proveedor);
-          if (diferencia > 0.01) {
-            // La variación que dispara la alerta ▲/▼ se calcula en USD, no en
-            // pesos (diseño acordado 12/09/2026): así una devaluación no se ve
-            // como "aumento de precio" del material. Si no hay dólar cargado
-            // para esta factura o para la compra anterior, no se puede
-            // convertir a USD y por lo tanto no se dispara alerta (queda en
-            // NULL); el precio en pesos se sigue guardando igual.
-            const precio_anterior_usd = dolar_anterior ? precio_anterior_proveedor / dolar_anterior : null;
-            const precio_nuevo_usd = dolarValido ? precio_nuevo / parseFloat(dolar) : null;
-            const variacion = (precio_anterior_usd !== null && precio_nuevo_usd !== null && precio_anterior_usd > 0)
-              ? ((precio_nuevo_usd - precio_anterior_usd) / precio_anterior_usd) * 100
-              : null;
-
-            // Registrar en historial de precios (ligado a este proveedor)
-            await client.query(
-              `INSERT INTO historial_precios_materias (
-                materia_prima_id, proveedor_id,
-                precio_anterior, precio_nuevo,
-                precio_anterior_usd, precio_nuevo_usd,
-                variacion_porcentaje, factura_id,
-                fecha_cambio, created_by, created_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9, CURRENT_TIMESTAMP)`,
-              [
-                materia_prima_id,
-                proveedor_id,
-                precio_anterior_proveedor,
-                precio_nuevo,
-                precio_anterior_usd,
-                precio_nuevo_usd,
-                variacion,
-                factura.id,
-                usuario_id
-              ]
-            );
-
-            console.log(`✅ Variación de precio detectada (proveedor ${proveedor_id}) para materia prima ${materia_prima_id}: $${precio_anterior_proveedor} → $${precio_nuevo}` + (variacion !== null ? ` (${variacion.toFixed(2)}% en USD)` : ' (sin dólar cargado, no se calcula % ni se dispara alerta)'));
-          } else {
-            console.log(`ℹ️  Precio sin cambios para materia prima ${materia_prima_id} respecto al mismo proveedor (${proveedor_id}): $${precio_anterior_proveedor}`);
-          }
-        }
-      }
-      
-      // Insertar ítem de factura
-      await client.query(
-        `INSERT INTO factura_items (
-          factura_id, materia_prima_id,
-          codigo, nombre, descripcion,
-          cantidad, unidad_medida,
-          precio_unitario, iva_porcentaje,
-          subtotal, iva, total,
-          es_item_manual, creado_como_materia_prima,
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
-        [
-          factura.id,
-          materia_prima_id || null,
-          item.codigo || null,
-          item.nombre || null,
-          item.descripcion || null,
-          item.cantidad,
-          item.unidad_medida || 'UNI',
-          item.precio_unitario,
-          item.iva_porcentaje,
-          item.subtotal,
-          item.iva,
-          item.total,
-          es_item_manual,
-          creado_como_materia_prima
-        ]
-      );
-      
-      // Si tiene materia_prima_id, actualizar stock inmediatamente si la factura está activa
-      // Usar el estado que se guardará en la base de datos (estado || 'PENDIENTE')
-      const estadoFinal = estado || 'PENDIENTE';
-      if (materia_prima_id && (estadoFinal === 'PENDIENTE' || estadoFinal === 'PAGADA')) {
-        console.log(`📦 Actualizando stock para materia prima ${materia_prima_id}: +${item.cantidad} unidades (estado: ${estadoFinal})`);
-
-        // Tomar el stock actual ANTES de modificarlo (con lock), para poder dejar
-        // stock_anterior/stock_nuevo en el movimiento, igual que ya se hace en los
-        // ajustes manuales (POST /api/stock/ajuste). Antes quedaban en null/0 para
-        // los movimientos generados desde una factura.
-        const stockActualResult = await client.query(
-          'SELECT stock_actual FROM materias_primas WHERE id = $1 FOR UPDATE',
-          [materia_prima_id]
-        );
-        const stockAnterior = parseFloat(stockActualResult.rows[0]?.stock_actual || 0);
-        const stockNuevo = stockAnterior + parseFloat(item.cantidad);
-
-        // Actualizar stock
-        await client.query(
-          `UPDATE materias_primas
-           SET stock_actual = $1,
-               fecha_ultima_compra = CURRENT_DATE,
-               actualizado_en = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [stockNuevo, materia_prima_id]
-        );
-
-        // Crear movimiento de stock
-        await client.query(
-          `INSERT INTO stock_movimientos (
-            materia_prima_id, tipo_movimiento,
-            cantidad, precio_unitario,
-            factura_id, proveedor_id,
-            observaciones, usuario_id, created_at,
-            fecha_movimiento, unidad,
-            stock_anterior, stock_nuevo
-          ) VALUES ($1, 'ENTRADA', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_DATE, $8, $9, $10)`,
-          [
-            materia_prima_id,
-            item.cantidad,
-            item.precio_unitario,
-            factura.id,
-            proveedor_id,
-            `Compra desde factura ${numero_factura}`,
-            usuario_id,
-            item.unidad_medida || 'UNI',
-            stockAnterior,
-            stockNuevo
-          ]
-        );
-
-        console.log(`✅ Stock actualizado (${stockAnterior} → ${stockNuevo}) y movimiento creado para materia prima ${materia_prima_id}`);
-      } else {
-        console.log(`⚠️  No se actualizó stock para materia prima ${materia_prima_id}:`);
-        if (!materia_prima_id) console.log(`   - materia_prima_id es null o undefined`);
-        if (estadoFinal !== 'PENDIENTE' && estadoFinal !== 'PAGADA') console.log(`   - estado "${estadoFinal}" no es PENDIENTE o PAGADA`);
-      }
-    }
-    
     await client.query('COMMIT');
     
     // Obtener factura completa para respuesta
@@ -613,7 +675,8 @@ router.put('/:id', soloAdmin, async (req, res) => {
       condicion_pago,
       observaciones,
       estado,
-      dolar
+      dolar,
+      items
     } = req.body;
 
     const usuario_id = req.usuario.id;
@@ -634,7 +697,23 @@ router.put('/:id', soloAdmin, async (req, res) => {
     if (tipo_factura && !['A', 'B', 'C', 'X'].includes(tipo_factura)) {
       throw new Error('Tipo de factura inválido. Debe ser A, B, C o X');
     }
-    
+
+    // Si vienen items, se validan antes de tocar nada (mismo helper que el
+    // alta). Antes esta ruta ignoraba `items` por completo: no había forma
+    // de agregar o corregir un ítem después de guardar la factura sin crear
+    // una nueva y chocar con el UNIQUE de número de factura (hallazgo
+    // 28/09/2026, ver CLAUDE.md).
+    let itemsValidados = null;
+    let totalesDeItems = null;
+    if (items !== undefined) {
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new Error('La factura necesita al menos un ítem');
+      }
+      const calculado = validarYCalcularItems(items);
+      itemsValidados = calculado.itemsValidados;
+      totalesDeItems = calculado;
+    }
+
     // Actualizar cabecera de factura
     const updateFields = [];
     const updateValues = [];
@@ -682,18 +761,27 @@ router.put('/:id', soloAdmin, async (req, res) => {
       paramIndex++;
     }
     
-    if (subtotal !== undefined) {
+    // Si no vino subtotal/iva/total explícito pero sí items, se usa lo
+    // calculado a partir de ellos (mismo criterio que el alta).
+    const subtotalFinal = subtotal !== undefined ? parseFloat(subtotal)
+      : (totalesDeItems ? totalesDeItems.subtotalCalculado : undefined);
+    const ivaFinal = iva !== undefined ? parseFloat(iva)
+      : (totalesDeItems ? totalesDeItems.ivaCalculado : undefined);
+    const totalFinalCampo = total !== undefined ? parseFloat(total)
+      : (totalesDeItems ? totalesDeItems.totalCalculado : undefined);
+
+    if (subtotalFinal !== undefined) {
       updateFields.push(`subtotal = $${paramIndex}`);
-      updateValues.push(parseFloat(subtotal));
+      updateValues.push(subtotalFinal);
       paramIndex++;
     }
-    
-    if (iva !== undefined) {
+
+    if (ivaFinal !== undefined) {
       updateFields.push(`iva = $${paramIndex}`);
-      updateValues.push(parseFloat(iva));
+      updateValues.push(ivaFinal);
       paramIndex++;
     }
-    
+
     if (percepciones !== undefined) {
       updateFields.push(`percepciones = $${paramIndex}`);
       updateValues.push(parseFloat(percepciones));
@@ -712,9 +800,9 @@ router.put('/:id', soloAdmin, async (req, res) => {
       paramIndex++;
     }
 
-    if (total !== undefined) {
+    if (totalFinalCampo !== undefined) {
       updateFields.push(`total = $${paramIndex}`);
-      updateValues.push(parseFloat(total));
+      updateValues.push(totalFinalCampo);
       paramIndex++;
     }
     
@@ -765,9 +853,27 @@ router.put('/:id', soloAdmin, async (req, res) => {
       
       await client.query(updateQuery, updateValues);
     }
-    
+
+    // Reemplazar los ítems si vinieron en el body (mismo patrón que
+    // ficha_devanados_extra: se sustituyen enteros dentro de la misma
+    // transacción). Revierte primero el efecto en stock de los ítems
+    // viejos con el estado ANTERIOR de la factura, después inserta los
+    // nuevos con el estado FINAL (el que se mandó, o el que ya tenía).
+    if (itemsValidados) {
+      const estadoFinal = estado !== undefined ? estado : facturaActual.estado;
+      await revertirItemsFactura(client, id, facturaActual.estado);
+      await insertarItemsFactura(client, {
+        facturaId: id,
+        proveedorId: facturaActual.proveedor_id,
+        numeroFactura: numero_factura !== undefined ? numero_factura : facturaActual.numero_factura,
+        usuarioId: usuario_id,
+        dolar, dolarValido, itemsValidados,
+        estadoFinal
+      });
+    }
+
     await client.query('COMMIT');
-    
+
     // Obtener factura actualizada
     const facturaActualizada = await pool.query(
       `SELECT
@@ -851,14 +957,20 @@ router.delete('/:id', soloAdmin, async (req, res) => {
       }
     }
     
+    // Historial de precios ligado a esta factura: sin borrarlo antes, el
+    // DELETE de más abajo tira un 500 crudo de foreign key en vez de
+    // eliminar la factura (hallazgo 28/09/2026, cualquier factura con una
+    // variación de precio registrada lo pisaba).
+    await client.query('DELETE FROM historial_precios_materias WHERE factura_id = $1', [id]);
+
     // Eliminar items de la factura
     await client.query('DELETE FROM factura_items WHERE factura_id = $1', [id]);
-    
+
     // Eliminar factura
     await client.query('DELETE FROM facturas_compra WHERE id = $1', [id]);
-    
+
     await client.query('COMMIT');
-    
+
     res.json({ message: 'Factura eliminada correctamente' });
     
   } catch (err) {
