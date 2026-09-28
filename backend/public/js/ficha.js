@@ -445,22 +445,19 @@ function closeDetailModal() {
 }
 
 /* =====================
-   DESCARGAR PDF
+   VER PDF — se abre en una pestaña nueva
 ===================== */
-async function exportarPDF() {
+async function verFichaPdf() {
   if (!currentFicha) {
     showAlert('No hay ficha para exportar', 'error');
     return;
   }
 
   try {
-    await descargarArchivoProtegido(
-      `api/ficha-transformador/${currentFicha.id}/pdf`,
-      `Ficha-${currentFicha.modelo}.pdf`
-    );
+    await verArchivoProtegido(`api/ficha-transformador/${currentFicha.id}/pdf`);
   } catch (err) {
-    console.error('Error descargando PDF:', err);
-    showAlert('Error descargando PDF: ' + err.message, 'error');
+    console.error('Error abriendo PDF:', err);
+    showAlert('Error abriendo PDF: ' + err.message, 'error');
   }
 }
 
@@ -481,7 +478,7 @@ function actualizarEtiquetasUI(ficha) {
     <li style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed #e2e8f0">
       <span>${escHtml(e.nombre_original) || ('Etiqueta ' + (i + 1))}</span>
       <span>
-        <button type="button" class="b b-ghost b-sm" onclick="descargarEtiqueta(${e.id})">Descargar</button>
+        <button type="button" class="b b-ghost b-sm" onclick="verEtiqueta(${e.id})">Ver</button>
         <button type="button" class="b b-danger b-sm" onclick="borrarEtiqueta(${e.id})">Quitar</button>
       </span>
     </li>
@@ -523,16 +520,16 @@ async function subirEtiqueta() {
   }
 }
 
-async function descargarEtiqueta(id) {
+async function verEtiqueta(id) {
   if (!currentFicha) return;
   const etiqueta = (currentFicha.etiquetas || []).find(e => e.id === id);
   if (!etiqueta) return;
 
   try {
-    await descargarArchivoProtegido(etiqueta.archivo, etiqueta.nombre_original || `Etiqueta-${currentFicha.modelo}-${id}.pdf`);
+    await verArchivoProtegido(etiqueta.archivo);
   } catch (err) {
-    console.error('Error descargando etiqueta:', err);
-    showAlert('No se pudo descargar la etiqueta: ' + err.message, 'error');
+    console.error('Error abriendo etiqueta:', err);
+    showAlert('No se pudo abrir la etiqueta: ' + err.message, 'error');
   }
 }
 

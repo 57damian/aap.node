@@ -213,14 +213,15 @@
     }
   }
 
-  $('btnDescargarPdf').addEventListener('click', async function () {
+  async function verPedidoPdf() {
     if (!pedidoActual) return;
     try {
-      await descargarArchivoProtegido('api/pedidos-proveedor/' + pedidoActual.id + '/pdf', 'Pedido-' + pedidoActual.numero + '.pdf');
+      await verArchivoProtegido('api/pedidos-proveedor/' + pedidoActual.id + '/pdf');
     } catch (err) {
-      mostrarVpError(errorTexto(err, 'No se pudo descargar el PDF.'));
+      mostrarVpError(errorTexto(err, 'No se pudo abrir el PDF.'));
     }
-  });
+  }
+  $('btnDescargarPdf').addEventListener('click', verPedidoPdf);
 
   $('btnMarcarEnviado').addEventListener('click', async function () {
     if (!pedidoActual) return;

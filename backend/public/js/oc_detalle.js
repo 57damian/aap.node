@@ -321,7 +321,7 @@ async function cargarFacturas() {
           · ${Shell.fecha(factura.fecha_factura)}
           · Remitos: ${factura.remitos || '—'}
           · Total ${Shell.money(factura.total_factura)} (con IVA)
-          · <a href="#" onclick="descargarFacturaPdf(${factura.factura_id}); return false;">PDF</a>
+          · <a href="#" onclick="verFacturaPdf(${factura.factura_id}); return false;">PDF</a>
           ${anulada ? '' : `· Cobrado ${Shell.money(factura.total_cobrado)}
           · <a href="correcciones.html?factura=${encodeURIComponent(factura.factura_id)}">Anular…</a>`}
         </td>
@@ -353,19 +353,19 @@ async function cargarFacturas() {
   }
 }
 
-async function descargarFacturaPdf(facturaId) {
+async function verFacturaPdf(facturaId) {
   try {
-    await descargarArchivoProtegido(`api/facturas/${facturaId}/pdf`, `Factura-${facturaId}.pdf`);
+    await verArchivoProtegido(`api/facturas/${facturaId}/pdf`);
   } catch (err) {
-    mostrarNotificacion(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+    mostrarNotificacion(err.error || err.message || 'No se pudo abrir el PDF', 'error');
   }
 }
 
-async function descargarRemitoPdf(ventaId) {
+async function verRemitoPdf(ventaId) {
   try {
-    await descargarArchivoProtegido(`api/ventas/${ventaId}/pdf`, `Remito-${ventaId}.pdf`);
+    await verArchivoProtegido(`api/ventas/${ventaId}/pdf`);
   } catch (err) {
-    mostrarNotificacion(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+    mostrarNotificacion(err.error || err.message || 'No se pudo abrir el PDF', 'error');
   }
 }
 
@@ -781,7 +781,7 @@ async function cargarRemitos() {
           ? `<strong>${venta.numero_factura}</strong>`
           : Shell.pill('PENDIENTE')}</td>
         <td class="muted solo-escritorio" data-label="Observaciones">${venta.remito_observaciones || '—'}</td>
-        <td><button type="button" class="b b-ghost b-sm" onclick="descargarRemitoPdf(${venta.id})">PDF</button></td>
+        <td><button type="button" class="b b-ghost b-sm" onclick="verRemitoPdf(${venta.id})">PDF</button></td>
       `;
       tbody.appendChild(tr);
     });

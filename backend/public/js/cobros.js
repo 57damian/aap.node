@@ -767,7 +767,7 @@ async function cargarHistorial() {
         <td data-label="Estado">${Shell.pill(p.estado)}
             ${p.tiene_rechazo ? Shell.pill('RECHAZADO') : ''}</td>
         <td data-label="Acciones">
-          <button class="b b-ghost b-sm" onclick="descargarCobroPdf(${p.id})">PDF</button>
+          <button class="b b-ghost b-sm" onclick="verCobroPdf(${p.id})">PDF</button>
           ${num(p.disponible) > 0 && !p.anulado ? `<button class="b b-ghost b-sm" onclick="imputarPendiente(${p.id})">Imputar</button>` : ''}
           ${!p.anulado && !p.recibo_id ? `<button class="b b-danger b-sm" onclick="anularCobro(${p.id})">Anular</button>` : ''}
         </td>
@@ -778,11 +778,11 @@ async function cargarHistorial() {
   }
 }
 
-async function descargarCobroPdf(pagoId) {
+async function verCobroPdf(pagoId) {
   try {
-    await descargarArchivoProtegido(`api/cobros/${pagoId}/pdf`, `Cobro-${pagoId}.pdf`);
+    await verArchivoProtegido(`api/cobros/${pagoId}/pdf`);
   } catch (err) {
-    Shell.error(err, 'No se pudo descargar el PDF');
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 

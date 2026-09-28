@@ -307,29 +307,23 @@ async function confirmarFacturacion() {
 }
 
 /* =====================
-   DESCARGAR PDF (REMITO Y FACTURA)
+   VER PDF (REMITO Y FACTURA) — se abre en una pestaña nueva
 ===================== */
-async function descargarRemitoPdf() {
+async function verRemitoPdf() {
   if (!ventaId) return;
   try {
-    await descargarArchivoProtegido(
-      `api/ventas/${ventaId}/pdf`,
-      `Remito-${(ventaData && ventaData.remito_numero) || ventaId}.pdf`
-    );
+    await verArchivoProtegido(`api/ventas/${ventaId}/pdf`);
   } catch (err) {
-    mostrarAlerta(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+    mostrarAlerta(err.error || err.message || 'No se pudo abrir el PDF', 'error');
   }
 }
 
-async function descargarFacturaPdf() {
+async function verFacturaPdf() {
   if (!facturaData) return;
   try {
-    await descargarArchivoProtegido(
-      `api/facturas/${facturaData.id}/pdf`,
-      `Factura-${facturaData.numero_factura || facturaData.id}.pdf`
-    );
+    await verArchivoProtegido(`api/facturas/${facturaData.id}/pdf`);
   } catch (err) {
-    mostrarAlerta(err.error || err.message || 'No se pudo descargar el PDF', 'error');
+    mostrarAlerta(err.error || err.message || 'No se pudo abrir el PDF', 'error');
   }
 }
 
