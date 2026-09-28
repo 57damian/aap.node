@@ -75,7 +75,8 @@
     { grupo: 'Compras', items: [
       { id: 'proveedores', txt: 'Proveedores',        url: 'proveedores.html',        icon: 'prov',    roles: ['admin'] },
       { id: 'pedidosprov', txt: 'Pedidos a proveedores', url: 'pedidos-proveedor.html', icon: 'pedido', roles: ['admin'], alias: 'pedir materia prima pdf orden de compra remito proveedor' },
-      { id: 'fc',          txt: 'Facturas de compra', url: 'facturas-compra.html',    icon: 'factura', roles: ['admin'], alias: 'compras remitos proveedor' },
+      { id: 'fc',          txt: 'Facturas de compra', url: 'facturas-compra.html',    icon: 'factura', roles: ['admin'], alias: 'compras remitos proveedor cargar nueva' },
+      { id: 'fc-lista',    txt: 'Facturas cargadas',  url: 'facturas-lista-simple.html', icon: 'factura', roles: ['admin'], alias: 'ver listado facturas de compra detalle historial' },
       { id: 'pagosprov',   txt: 'Pagos a proveedores',url: 'pagos-proveedores.html',  icon: 'pagos',   roles: ['admin'], alias: 'deuda pagar cheques endoso a quien le debo' },
       { id: 'alertas',     txt: 'Alertas de pago',    url: 'alertas-pagos.html',      icon: 'alerta',  roles: ['admin'], alias: 'vencimientos vencidas' }
     ]},

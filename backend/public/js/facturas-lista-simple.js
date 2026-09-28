@@ -5,6 +5,10 @@
 let facturasCache = [];
 
 // Funciones de utilidad
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 function formatearMoneda(valor) {
     // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
     const anotar = t => (window.Shell && Shell.monto ? Shell.monto(t) : t);
@@ -56,13 +60,7 @@ async function cargarFacturas() {
         // Guardar en cache
         facturasCache = facturas;
 
-        // Actualizar contador
-        document.getElementById('totalFacturas').textContent = facturas.length;
-        document.getElementById('contadorFacturas').textContent =
-            facturas.length === 1 ? '1 factura' : `${facturas.length} facturas`;
-
-        // Renderizar tabla
-        renderizarTablaFacturas(facturas);
+        pintarFacturas();
 
     } catch (error) {
         Shell.error(error, 'No se pudieron cargar las facturas');
@@ -74,6 +72,27 @@ async function cargarFacturas() {
     }
 }
 
+// Filtro client-side sobre lo ya cargado, sin volver a pedir nada al
+// servidor (mismo patrón que oc.js / correcciones.js).
+function contieneFactura(factura, texto) {
+    const campos = [
+        factura.numero_factura, factura.punto_venta,
+        factura.proveedor_nombre || factura.proveedor?.nombre, factura.cae
+    ];
+    return campos.join(' ').toLowerCase().includes(texto.toLowerCase());
+}
+
+function pintarFacturas() {
+    const texto = document.getElementById('filtroFacturas')?.value.trim() || '';
+    const facturas = texto ? facturasCache.filter(f => contieneFactura(f, texto)) : facturasCache;
+
+    document.getElementById('totalFacturas').textContent = facturasCache.length;
+    document.getElementById('contadorFacturas').textContent =
+        facturasCache.length === 1 ? '1 factura' : `${facturasCache.length} facturas`;
+
+    renderizarTablaFacturas(facturas);
+}
+
 // Función para renderizar la tabla
 function renderizarTablaFacturas(facturas) {
     const tbody = document.getElementById('tablaFacturasBody');
@@ -83,19 +102,21 @@ function renderizarTablaFacturas(facturas) {
     }
     
     if (facturas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
-            'No hay facturas registradas',
-            'Cargá la primera desde Facturas de compra.',
-            { txt: 'Ir a Facturas de compra', url: 'facturas-compra.html' })}</td></tr>`;
+        tbody.innerHTML = facturasCache.length
+            ? `<tr><td colspan="8">${Shell.vacio('No hay resultados', 'Probá con otra búsqueda.')}</td></tr>`
+            : `<tr><td colspan="8">${Shell.vacio(
+                'No hay facturas registradas',
+                'Cargá la primera desde Facturas de compra.',
+                { txt: 'Cargar factura', url: 'facturas-compra.html' })}</td></tr>`;
         return;
     }
 
     try {
         const htmlRows = facturas.map(factura => {
-            const tipoFactura = factura.tipo_factura || 'A';
-            const puntoVenta = factura.punto_venta || '0001';
-            const numeroFactura = factura.numero_factura || '00000000';
-            const proveedorNombre = factura.proveedor_nombre || factura.proveedor?.nombre || '—';
+            const tipoFactura = esc(factura.tipo_factura || 'A');
+            const puntoVenta = esc(factura.punto_venta || '0001');
+            const numeroFactura = esc(factura.numero_factura || '00000000');
+            const proveedorNombre = esc(factura.proveedor_nombre || factura.proveedor?.nombre || '—');
 
             const total = parseFloat(factura.total) || 0;
             const pagado = parseFloat(factura.pagado) || 0;
@@ -109,7 +130,7 @@ function renderizarTablaFacturas(facturas) {
                 <tr>
                     <td>
                         <strong>${tipoFactura} ${puntoVenta}-${numeroFactura}</strong>
-                        ${factura.cae ? `<div class="muted">CAE: ${factura.cae}</div>` : ''}
+                        ${factura.cae ? `<div class="muted">CAE: ${esc(factura.cae)}</div>` : ''}
                     </td>
                     <td data-label="Proveedor">${proveedorNombre}</td>
                     <td class="muted solo-escritorio" data-label="Emisión">${fechaEmision}</td>
@@ -119,6 +140,7 @@ function renderizarTablaFacturas(facturas) {
                     <td data-label="Estado">${estadoBadge}</td>
                     <td class="num">
                         <button class="b b-ghost b-sm" onclick="verDetalleFactura(${factura.id})">Ver</button>
+                        <a class="b b-ghost b-sm" href="facturas-compra.html?id=${factura.id}">Editar</a>
                         ${estado.toUpperCase() === 'PENDIENTE' ? `
                             <button class="b b-ghost b-sm" onclick="registrarPago(${factura.id})">Pagar</button>
                         ` : ''}
@@ -145,9 +167,11 @@ async function verDetalleFactura(facturaId) {
             return;
         }
 
-        // Buscar factura en cache primero; si no está, se pide a la API.
-        const factura = facturasCache.find(f => f.id === facturaId)
-            || await apiFetch(`/api/facturas-compra/${facturaId}`);
+        // Siempre se pide el detalle a la API: GET /api/facturas-compra (la
+        // lista, lo que llena facturasCache) no trae los ítems, así que
+        // usar la caché acá los dejaba afuera del diálogo siempre (hallazgo
+        // 28/09/2026). GET /api/facturas-compra/:id sí los trae.
+        const factura = await apiFetch(`/api/facturas-compra/${facturaId}`);
 
         const total = parseFloat(factura.total) || 0;
         const pagado = parseFloat(factura.pagado) || 0;
@@ -171,11 +195,11 @@ async function verDetalleFactura(facturaId) {
 
         let html = `
             <div class="form-grid">
-                <div class="field"><label>Factura</label><div><strong>${factura.tipo_factura || 'A'} ${factura.punto_venta || '0001'}-${factura.numero_factura || ''}</strong></div></div>
-                <div class="field"><label>Proveedor</label><div>${factura.proveedor_nombre || factura.proveedor?.nombre || '—'}</div></div>
+                <div class="field"><label>Factura</label><div><strong>${esc(factura.tipo_factura || 'A')} ${esc(factura.punto_venta || '0001')}-${esc(factura.numero_factura || '')}</strong></div></div>
+                <div class="field"><label>Proveedor</label><div>${esc(factura.proveedor_nombre || factura.proveedor?.nombre || '—')}</div></div>
                 <div class="field"><label>Emisión</label><div>${formatearFecha(factura.fecha_emision)}</div></div>
                 <div class="field"><label>Vencimiento</label><div>${fechaVencimiento}</div></div>
-                <div class="field"><label>Condición de pago</label><div>${factura.condicion_pago || 'CONTADO'}</div></div>
+                <div class="field"><label>Condición de pago</label><div>${esc(factura.condicion_pago || 'CONTADO')}</div></div>
                 <div class="field"><label>Estado</label><div>${getEstadoBadge(factura.estado)}</div></div>
             </div>
             <div class="panel" style="margin-top:16px"><div class="panel-body">
@@ -197,7 +221,7 @@ async function verDetalleFactura(facturaId) {
                             <tbody>
                                 ${factura.items.map(item => `
                                     <tr>
-                                        <td>${item.articulo_nombre || item.descripcion || '—'}</td>
+                                        <td>${esc(item.nombre || item.materia_nombre || item.descripcion || '—')}</td>
                                         <td class="num" data-label="Cantidad">${item.cantidad || 0}</td>
                                         <td class="num" data-label="Precio unit.">${formatearMoneda(item.precio_unitario)}</td>
                                         <td class="num" data-label="Total">${formatearMoneda(item.total)}</td>
@@ -250,6 +274,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
+    document.getElementById('filtroFacturas')?.addEventListener('input', pintarFacturas);
+
     // Cargar facturas automáticamente
     setTimeout(() => {
         cargarFacturas();

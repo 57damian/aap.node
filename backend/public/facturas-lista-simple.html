@@ -17,7 +17,7 @@
     </div>
     <div class="page-head-actions">
       <button class="b b-ghost" onclick="cargarFacturas()">Recargar</button>
-      <a class="b b-ghost" href="facturas-compra.html">Ver completo</a>
+      <a class="b b-primary" href="facturas-compra.html">Cargar factura</a>
     </div>
   </div>
 
@@ -26,6 +26,13 @@
       <div class="kpi-k">Facturas</div>
       <div class="kpi-v" id="totalFacturas">0</div>
       <div class="kpi-sub" id="contadorFacturas">Cargando…</div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="field grow">
+      <label for="filtroFacturas">Buscar</label>
+      <input class="input" type="search" id="filtroFacturas" placeholder="Número de factura o proveedor">
     </div>
   </div>
 
