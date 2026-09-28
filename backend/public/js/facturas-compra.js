@@ -9,9 +9,15 @@ class FacturasCompra {
         this.currentItemId = 1;
         this.isEditing = false;
         this.currentFacturaId = null;
-        
+
         // Nuevo campo para rastrear precios editados
         this.preciosEditados = new Set();
+
+        // Guarda contra doble submit (doble click o conexión lenta): sin
+        // esto, dos POST con la misma factura terminaban en un 400 de
+        // "duplicate key" contra facturas_compra, mismo patrón ya corregido
+        // en oc.js/ficha.js/pedidos-proveedor.js (hallazgo 28/09/2026).
+        this.guardando = false;
         
         // Marca de versión para depuración en navegador
         console.log('✅ FacturasCompra JS cargado - versión campos MP v2');
@@ -666,17 +672,19 @@ class FacturasCompra {
     
     // Métodos para guardar factura
     async saveFactura() {
+        if (this.guardando) return;
+
         // Validar formulario
         if (!this.validateForm()) {
             return;
         }
-        
+
         // Validar que haya ítems
         if (this.items.length === 0) {
             this.showAlert('Debe agregar al menos un ítem', 'danger');
             return;
         }
-        
+
         // Preparar datos
         const facturaData = {
             proveedor_id: document.getElementById('proveedor').value,
@@ -699,8 +707,13 @@ class FacturasCompra {
             items: this.items
         };
         
+        this.guardando = true;
+        const btnGuardar = document.getElementById('btn-guardar-factura');
+        const textoBoton = btnGuardar?.textContent;
+        if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando…'; }
+
         try {
-            const url = this.isEditing && this.currentFacturaId 
+            const url = this.isEditing && this.currentFacturaId
                 ? `/api/facturas-compra/${this.currentFacturaId}`
                 : '/api/facturas-compra';
             
@@ -753,9 +766,12 @@ class FacturasCompra {
         } catch (error) {
             console.error('Error:', error);
             this.showAlert(`Error: ${error.message}`, 'danger');
+        } finally {
+            this.guardando = false;
+            if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = textoBoton; }
         }
     }
-    
+
     validateForm() {
         const requiredFields = [
             'proveedor',
