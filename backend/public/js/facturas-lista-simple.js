@@ -3,6 +3,7 @@
 
 // Variables globales
 let facturasCache = [];
+let facturaDetalleActualId = null;
 
 // Funciones de utilidad
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => (
@@ -141,6 +142,7 @@ function renderizarTablaFacturas(facturas) {
                     <td class="num">
                         <button class="b b-ghost b-sm" onclick="verDetalleFactura(${factura.id})">Ver</button>
                         <a class="b b-ghost b-sm" href="facturas-compra.html?id=${factura.id}">Editar</a>
+                        <button class="b b-ghost b-sm" onclick="verFacturaPdf(${factura.id})">PDF</button>
                         ${estado.toUpperCase() === 'PENDIENTE' ? `
                             <button class="b b-ghost b-sm" onclick="registrarPago(${factura.id})">Pagar</button>
                         ` : ''}
@@ -193,17 +195,32 @@ async function verDetalleFactura(facturaId) {
             }
         }
 
+        const subtotal = parseFloat(factura.subtotal) || 0;
+        const iva = parseFloat(factura.iva) || 0;
+        const percepciones = parseFloat(factura.percepciones) || 0;
+        const retenciones = parseFloat(factura.retenciones) || 0;
+        const impuestosProvinciales = parseFloat(factura.impuestos_provinciales) || 0;
+
         let html = `
             <div class="form-grid">
                 <div class="field"><label>Factura</label><div><strong>${esc(factura.tipo_factura || 'A')} ${esc(factura.punto_venta || '0001')}-${esc(factura.numero_factura || '')}</strong></div></div>
+                <div class="field"><label>CAE</label><div>${factura.cae ? esc(factura.cae) : '—'}</div></div>
                 <div class="field"><label>Proveedor</label><div>${esc(factura.proveedor_nombre || factura.proveedor?.nombre || '—')}</div></div>
+                <div class="field"><label>CUIT</label><div>${factura.proveedor_cuit ? esc(factura.proveedor_cuit) : '—'}</div></div>
                 <div class="field"><label>Emisión</label><div>${formatearFecha(factura.fecha_emision)}</div></div>
+                <div class="field"><label>Recepción</label><div>${formatearFecha(factura.fecha_recepcion)}</div></div>
                 <div class="field"><label>Vencimiento</label><div>${fechaVencimiento}</div></div>
                 <div class="field"><label>Condición de pago</label><div>${esc(factura.condicion_pago || 'CONTADO')}</div></div>
+                <div class="field"><label>Cotización dólar</label><div>${factura.dolar ? formatearMoneda(factura.dolar) : '—'}</div></div>
                 <div class="field"><label>Estado</label><div>${getEstadoBadge(factura.estado)}</div></div>
             </div>
             <div class="panel" style="margin-top:16px"><div class="panel-body">
                 <div class="totales-inline">
+                    <div><span>Subtotal</span><strong>${formatearMoneda(subtotal)}</strong></div>
+                    <div><span>IVA</span><strong>${formatearMoneda(iva)}</strong></div>
+                    ${percepciones ? `<div><span>Percepciones</span><strong>${formatearMoneda(percepciones)}</strong></div>` : ''}
+                    ${impuestosProvinciales ? `<div><span>Impuestos provinciales</span><strong>${formatearMoneda(impuestosProvinciales)}</strong></div>` : ''}
+                    ${retenciones ? `<div><span>Retenciones</span><strong class="neg">-${formatearMoneda(retenciones)}</strong></div>` : ''}
                     <div><span>Total factura</span><strong>${formatearMoneda(total)}</strong></div>
                     <div><span>Pagado</span><strong>${formatearMoneda(pagado)}</strong></div>
                     <div><span>Saldo pendiente</span><strong class="${saldo > 0 ? 'neg' : 'pos'}">${formatearMoneda(saldo)}</strong></div>
@@ -214,16 +231,26 @@ async function verDetalleFactura(facturaId) {
         if (factura.items && factura.items.length > 0) {
             html += `
                 <div class="panel" style="margin-top:16px">
-                    <div class="panel-head"><h3 style="margin:0;font-size:1rem">Items de la factura</h3></div>
+                    <div class="panel-head"><h3 style="margin:0;font-size:1rem">Ítems de la factura</h3></div>
                     <div class="panel-body flush"><div class="table-wrap">
                         <table class="t">
-                            <thead><tr><th>Artículo</th><th class="num">Cantidad</th><th class="num">Precio unit.</th><th class="num">Total</th></tr></thead>
+                            <thead><tr>
+                                <th>Código</th><th>Material</th>
+                                <th class="num">Cantidad</th><th>Unidad</th>
+                                <th class="num">Precio unit.</th><th class="num">IVA %</th>
+                                <th class="num">Subtotal</th><th class="num">IVA</th><th class="num">Total</th>
+                            </tr></thead>
                             <tbody>
                                 ${factura.items.map(item => `
                                     <tr>
-                                        <td>${esc(item.nombre || item.materia_nombre || item.descripcion || '—')}</td>
-                                        <td class="num" data-label="Cantidad">${item.cantidad || 0}</td>
+                                        <td data-label="Código">${esc(item.codigo || item.materia_codigo || '—')}</td>
+                                        <td data-label="Material">${esc(item.nombre || item.materia_nombre || item.descripcion || '—')}</td>
+                                        <td class="num" data-label="Cantidad">${Number(item.cantidad || 0).toLocaleString('es-AR')}</td>
+                                        <td data-label="Unidad">${esc(item.unidad_medida || '—')}</td>
                                         <td class="num" data-label="Precio unit.">${formatearMoneda(item.precio_unitario)}</td>
+                                        <td class="num" data-label="IVA %">${Number(item.iva_porcentaje || 0).toLocaleString('es-AR')}%</td>
+                                        <td class="num" data-label="Subtotal">${formatearMoneda(item.subtotal)}</td>
+                                        <td class="num" data-label="IVA">${formatearMoneda(item.iva)}</td>
                                         <td class="num" data-label="Total">${formatearMoneda(item.total)}</td>
                                     </tr>
                                 `).join('')}
@@ -234,11 +261,30 @@ async function verDetalleFactura(facturaId) {
             `;
         }
 
+        if (factura.observaciones) {
+            html += `
+                <div class="panel" style="margin-top:16px"><div class="panel-body">
+                    <div class="muted" style="margin-bottom:4px">Observaciones</div>
+                    <div>${esc(factura.observaciones)}</div>
+                </div></div>
+            `;
+        }
+
+        facturaDetalleActualId = factura.id;
         document.getElementById('detalleFacturaContent').innerHTML = html;
         document.getElementById('detalleFacturaModal').showModal();
 
     } catch (error) {
         Shell.error(error, 'No se pudo cargar el detalle de la factura');
+    }
+}
+
+// Función para ver el PDF de una factura (se abre en una pestaña nueva)
+async function verFacturaPdf(facturaId) {
+    try {
+        await verArchivoProtegido(`api/facturas-compra/${facturaId}/pdf`);
+    } catch (error) {
+        Shell.error(error, 'No se pudo abrir el PDF');
     }
 }
 
@@ -275,6 +321,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     document.getElementById('filtroFacturas')?.addEventListener('input', pintarFacturas);
+    document.getElementById('btnDescargarPdfDetalle')?.addEventListener('click', () => {
+        if (facturaDetalleActualId) verFacturaPdf(facturaDetalleActualId);
+    });
 
     // Cargar facturas automáticamente
     setTimeout(() => {

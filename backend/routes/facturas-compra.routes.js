@@ -5,6 +5,8 @@ const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const {
   CTE_FACTURAS_COMPRA, ESTADO_FACTURA_COMPRA, SUBQ_IMPUTADO
 } = require('../services/cuenta-proveedor');
+const { generarPdfFacturaCompra } = require('../services/pdf-factura-compra');
+const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
 
@@ -172,6 +174,62 @@ router.get('/:id', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error obteniendo factura de compra:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   DESCARGAR FACTURA DE COMPRA EN PDF
+   -------------------------------------------------------------------
+   No es un comprobante fiscal (esa la emite el proveedor): es un
+   registro interno de lo cargado, con todos los datos — proveedor,
+   ítems, IVA, percepciones/retenciones/impuestos provinciales — para
+   no tener que volver a entrar a la pantalla a mirarlo.
+========================= */
+router.get('/:id/pdf', soloAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const facturaResult = await pool.query(
+      `SELECT
+        fc.*,
+        p.nombre as proveedor_nombre,
+        p.cuit as proveedor_cuit,
+        p.direccion as proveedor_direccion,
+        p.telefono as proveedor_telefono,
+        hd.dolar as dolar
+       FROM facturas_compra fc
+       JOIN proveedores p ON fc.proveedor_id = p.id
+       LEFT JOIN historial_dolar hd ON fc.dolar_historial_id = hd.id
+       WHERE fc.id = $1`,
+      [id]
+    );
+
+    if (facturaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Factura no encontrada' });
+    }
+
+    const itemsResult = await pool.query(
+      `SELECT
+        fi.*,
+        mp.codigo as materia_codigo,
+        mp.nombre as materia_nombre
+       FROM factura_items fi
+       LEFT JOIN materias_primas mp ON fi.materia_prima_id = mp.id
+       WHERE fi.factura_id = $1
+       ORDER BY fi.id`,
+      [id]
+    );
+
+    const factura = facturaResult.rows[0];
+    factura.items = itemsResult.rows;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="FacturaCompra-${nombreArchivo(factura.numero_factura, factura.id)}.pdf"`);
+    generarPdfFacturaCompra(factura, res);
+  } catch (err) {
+    console.error('Error generando PDF de factura de compra:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 
