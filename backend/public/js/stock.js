@@ -6,22 +6,22 @@ let dolarActual = 0;
 
 // Formatear moneda
 function formatearMoneda(valor) {
-    // Montos ocultos (ver "Montos ocultos" en shell.js).
-    if (window.Shell && Shell.privado()) return Shell.MASCARA;
-    return new Intl.NumberFormat('es-AR', {
+    // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
+    const texto = new Intl.NumberFormat('es-AR', {
         style: 'currency',
         currency: 'ARS'
     }).format(valor);
+    return window.Shell && Shell.monto ? Shell.monto(texto) : texto;
 }
 
 // Formatear dólares
 function formatearDolares(valor) {
-    // Montos ocultos (ver "Montos ocultos" en shell.js).
-    if (window.Shell && Shell.privado()) return Shell.MASCARA;
-    return new Intl.NumberFormat('es-AR', {
+    // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
+    const texto = new Intl.NumberFormat('es-AR', {
         style: 'currency',
         currency: 'USD'
     }).format(valor);
+    return window.Shell && Shell.monto ? Shell.monto(texto) : texto;
 }
 
 // Inicializar página

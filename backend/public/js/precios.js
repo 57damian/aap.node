@@ -56,12 +56,13 @@ function formatDate(dateString) {
 }
 
 function formatCurrency(value) {
-  // Montos ocultos (ver "Montos ocultos" en shell.js).
-  if (window.Shell && Shell.privado()) return '•••••';
-  return new Intl.NumberFormat('es-AR', {
+  // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
+  // Sin "$" delante (lo pone quien llama), así que la máscara tampoco lo lleva.
+  const texto = new Intl.NumberFormat('es-AR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(Number(value || 0));
+  return window.Shell && Shell.monto ? Shell.monto(texto, '•••••') : texto;
 }
 
 function mostrarAlerta(mensaje, tipo = 'success') {

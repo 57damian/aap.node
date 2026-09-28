@@ -6,16 +6,16 @@ let facturasCache = [];
 
 // Funciones de utilidad
 function formatearMoneda(valor) {
-    // Montos ocultos (ver "Montos ocultos" en shell.js).
-    if (window.Shell && Shell.privado()) return Shell.MASCARA;
+    // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
+    const anotar = t => (window.Shell && Shell.monto ? Shell.monto(t) : t);
     if (valor === null || valor === undefined) {
-        return '$0,00';
+        return anotar('$0,00');
     }
     const numero = typeof valor === 'string' ? parseFloat(valor.replace(/[^0-9.-]/g, '')) : valor;
-    return new Intl.NumberFormat('es-AR', {
+    return anotar(new Intl.NumberFormat('es-AR', {
         style: 'currency',
         currency: 'ARS'
-    }).format(numero || 0);
+    }).format(numero || 0));
 }
 
 function formatearFecha(fecha) {

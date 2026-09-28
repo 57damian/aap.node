@@ -169,6 +169,10 @@
                 if (response.token) {
                     // Success - store token and redirect
                     localStorage.setItem('token', response.token);
+                    // Cada inicio de sesión arranca con los montos ocultos
+                    // (el ojo de la barra superior, ver shell.js).
+                    localStorage.removeItem('montosVisibles');
+                    localStorage.removeItem('montosVisiblesHasta');
                     // debe_cambiar_password viaja dentro del usuario guardado:
                     // Shell.montar() lo lee y abre el cambio obligatorio.
                     localStorage.setItem('usuario', JSON.stringify(

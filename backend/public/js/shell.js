@@ -101,36 +101,114 @@
      hasta que se toca el ojo de la barra superior. Es para que no se vea por
      descuido (el celular abierto en el taller, mostrarle algo a un
      empleado), NO es seguridad: el servidor manda los datos igual.
-     Se vuelve a ocultar sola a los 10 minutos, o si la app pasó más de 30
-     segundos en segundo plano (bloquear el teléfono, cambiar de app). */
-  var CLAVE_VISIBLES = 'montosVisiblesHasta';
-  var MONTOS_VISIBLES_MS = 10 * 60 * 1000;
-  var SEGUNDO_PLANO_MS = 30 * 1000;
+
+     Cambio 28/09/2026: antes se volvía a ocultar sola (a los 10 minutos o
+     tras 30 s en segundo plano) recargando la página, y eso borraba lo que
+     se estuviera cargando en un formulario; además cada toque del ojo
+     recargaba todo (lento). Ahora:
+       - arranca oculto en cada inicio de sesión (login.html borra la marca);
+       - si el usuario lo pone visible, queda así hasta que lo cambie a mano o
+         vuelva a iniciar sesión;
+       - mostrar/ocultar es instantáneo, sin recargar: los formateadores
+         devuelven siempre el valor real y lo registran (registrarMonto);
+         mientras está oculto, un MutationObserver reemplaza en pantalla cada
+         monto registrado por la máscara y guarda el texto original para
+         poder devolverlo al mostrar. El observer corre antes de pintar, así
+         que el monto real no llega a verse. */
+  var CLAVE_VISIBLES = 'montosVisibles';
   var MASCARA = '$ •••••';
 
-  function montosVisiblesHasta() {
-    try { return parseInt(localStorage.getItem(CLAVE_VISIBLES), 10) || 0; } catch (e) { return 0; }
-  }
-  function privado() { return montosVisiblesHasta() <= Date.now(); }
-
-  function ocultarMontos() {
-    try { localStorage.removeItem(CLAVE_VISIBLES); } catch (e) { /* nada */ }
+  function privado() {
+    try { return localStorage.getItem(CLAVE_VISIBLES) !== '1'; } catch (e) { return true; }
   }
 
-  function vigilarMontosVisibles() {
-    if (privado()) { ocultarMontos(); return; }
-    // Vencimiento de los 10 minutos con la pantalla abierta.
-    setTimeout(function () { ocultarMontos(); location.reload(); },
-      Math.max(0, montosVisiblesHasta() - Date.now()));
+  // Textos de montos que produjeron los formateadores en esta página, con la
+  // máscara que va en su lugar (texto → máscara).
+  var montosConocidos = {};
+  var patronMontos = null;
+  function registrarMonto(texto, mascara) {
+    texto = String(texto);
+    if (texto && !montosConocidos.hasOwnProperty(texto)) {
+      montosConocidos[texto] = mascara || MASCARA;
+      patronMontos = null;
+    }
+    return texto;
+  }
+  function patron() {
+    if (!patronMontos) {
+      var lista = Object.keys(montosConocidos)
+        .sort(function (a, b) { return b.length - a.length; })
+        .map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+      patronMontos = lista.length ? new RegExp(lista.join('|'), 'g') : null;
+    }
+    return patronMontos;
+  }
 
-    var escondidaDesde = 0;
-    document.addEventListener('visibilitychange', function () {
-      if (document.hidden) { escondidaDesde = Date.now(); return; }
-      if (escondidaDesde && (Date.now() - escondidaDesde > SEGUNDO_PLANO_MS || privado())) {
-        ocultarMontos();
-        location.reload();
-      }
+  // Nodos de texto enmascarados: [{ nodo, original, enmascarado }].
+  var enmascarados = [];
+  var NO_TOCAR = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1 };
+
+  function enmascararNodo(nodo) {
+    var re = patron();
+    if (!re || !nodo.nodeValue || (nodo.parentNode && NO_TOCAR[nodo.parentNode.nodeName])) return;
+    var original = nodo.nodeValue;
+    re.lastIndex = 0;
+    if (!re.test(original)) return;
+    re.lastIndex = 0;
+    var nuevo = original.replace(re, function (t) { return montosConocidos[t]; });
+    nodo.nodeValue = nuevo;
+    enmascarados.push({ nodo: nodo, original: original, enmascarado: nuevo });
+  }
+  function enmascararDentro(raiz) {
+    if (!raiz) return;
+    if (raiz.nodeType === 3) { enmascararNodo(raiz); return; }
+    if (raiz.nodeType !== 1 || NO_TOCAR[raiz.nodeName]) return;
+    var w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, null);
+    var n, nodos = [];
+    while ((n = w.nextNode())) nodos.push(n);
+    nodos.forEach(enmascararNodo);
+  }
+
+  var observador = null;
+  function activarMascara() {
+    enmascararDentro(document.body);
+    if (observador || !global.MutationObserver) return;
+    observador = new MutationObserver(function (cambios) {
+      cambios.forEach(function (c) {
+        if (c.type === 'characterData') enmascararNodo(c.target);
+        else for (var i = 0; i < c.addedNodes.length; i++) enmascararDentro(c.addedNodes[i]);
+      });
     });
+    observador.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  function desactivarMascara() {
+    if (observador) { observador.disconnect(); observador = null; }
+    enmascarados.forEach(function (e) {
+      // Si la pantalla ya cambió ese texto, no se pisa.
+      if (e.nodo.isConnected && e.nodo.nodeValue === e.enmascarado) e.nodo.nodeValue = e.original;
+    });
+    enmascarados = [];
+  }
+
+  function pintarBotonOjo() {
+    var b = document.querySelector('[data-montos]');
+    if (!b) return;
+    var oculto = privado();
+    var txt = oculto ? 'Mostrar montos' : 'Ocultar montos';
+    b.setAttribute('aria-pressed', String(!oculto));
+    b.setAttribute('aria-label', txt);
+    b.title = txt;
+    b.innerHTML = svg(oculto ? 'ojoOff' : 'ojo');
+  }
+
+  function cambiarMontos() {
+    var mostrar = privado();
+    try {
+      if (mostrar) localStorage.setItem(CLAVE_VISIBLES, '1');
+      else localStorage.removeItem(CLAVE_VISIBLES);
+    } catch (e) { return; }
+    if (mostrar) desactivarMascara(); else activarMascara();
+    pintarBotonOjo();
   }
 
   function paginaActual() {
@@ -238,17 +316,9 @@
 
       document.querySelector('[data-cmdk]').addEventListener('click', Shell.abrirBuscador);
 
-      // Mostrar/ocultar recarga la página: así todas las tablas y totales se
-      // vuelven a dibujar con Shell.money, sin tocar cada pantalla.
-      document.querySelector('[data-montos]').addEventListener('click', function () {
-        if (privado()) {
-          try { localStorage.setItem(CLAVE_VISIBLES, String(Date.now() + MONTOS_VISIBLES_MS)); } catch (e) { return; }
-        } else {
-          ocultarMontos();
-        }
-        location.reload();
-      });
-      vigilarMontosVisibles();
+      // Mostrar/ocultar sin recargar (ver "Montos ocultos" arriba).
+      document.querySelector('[data-montos]').addEventListener('click', cambiarMontos);
+      if (privado()) activarMascara();
 
       document.addEventListener('keydown', function (e) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); Shell.abrirBuscador(); }
@@ -346,16 +416,17 @@
     },
 
     /* ---------------- Helpers de formato ---------------- */
-    /** true mientras los montos estén ocultos (ver "Montos ocultos" arriba).
-     *  Los formateadores propios de cada pantalla lo consultan también. */
+    /** true mientras los montos estén ocultos (ver "Montos ocultos" arriba). */
     privado: privado,
     MASCARA: MASCARA,
+    /** Los formateadores propios de cada pantalla pasan su resultado por
+     *  acá: devuelve el mismo texto y lo anota para que el ojo lo oculte. */
+    monto: registrarMonto,
 
     money: function (v) {
       var n = parseFloat(v);
       if (!isFinite(n)) return '—';
-      if (privado()) return MASCARA;
-      return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 });
+      return registrarMonto(n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }));
     },
     fecha: function (v) {
       if (!v) return '—';
