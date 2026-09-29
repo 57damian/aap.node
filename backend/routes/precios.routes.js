@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { fecha: fmtFecha, money } = require('../services/pdf-base');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+
+const COLS_PDF_PRECIOS_MODELO = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 65 },
+  { campo: 'modelo', titulo: 'Modelo', x: 65, ancho: 200 },
+  { campo: 'precio', titulo: 'Precio (USD)', x: 265, ancho: 90, align: 'right' },
+  { campo: 'variacion', titulo: 'Variación', x: 355, ancho: 70, align: 'right' },
+  { campo: 'observaciones', titulo: 'Observaciones', x: 425, ancho: ANCHO_UTIL_REPORTE - 425 }
+];
+
+const COLS_PDF_DOLAR = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 120 },
+  { campo: 'dolar', titulo: 'Cotización', x: 120, ancho: 100, align: 'right' },
+  { campo: 'usuario', titulo: 'Usuario', x: 220, ancho: ANCHO_UTIL_REPORTE - 220 }
+];
 
 router.use(verificarToken);
 
@@ -64,16 +80,109 @@ router.post('/modelo', soloAdmin, async (req, res) => {
 });
 
 /* =========================
+   3️⃣ HISTORIAL DE PRECIOS DE VENTA — TODOS LOS MODELOS
+   GET /api/precios/modelo/historial?ficha_id=&desde=&hasta=
+   Vista agregada para el informe de "rutas de aumento" de venta (ver
+   docs/claude/modulo-reportes.md). precios_modelo no tiene columna de
+   variación propia (a diferencia de historial_precios_materias): se
+   calcula acá con LAG() contra la fila anterior de CADA modelo.
+   IMPORTANTE: va antes de GET /modelo/:ficha_id — si no, "historial"
+   matchea como si fuera un :ficha_id y esta ruta nunca se alcanza.
+========================= */
+function construirQueryHistorialPreciosModelo(req) {
+  const { ficha_id, desde, hasta } = req.query;
+  let query = `
+    SELECT * FROM (
+      SELECT
+        pm.ficha_id, pm.precio AS precio_usd, pm.fecha_desde, pm.observaciones,
+        f.modelo,
+        ROUND(
+          (pm.precio - LAG(pm.precio) OVER (PARTITION BY pm.ficha_id ORDER BY pm.fecha_desde, pm.id))
+          / NULLIF(LAG(pm.precio) OVER (PARTITION BY pm.ficha_id ORDER BY pm.fecha_desde, pm.id), 0) * 100
+        , 1) AS variacion_porcentaje
+      FROM precios_modelo pm
+      JOIN ficha_transformador f ON f.id = pm.ficha_id
+    ) q
+    WHERE 1=1
+  `;
+  const params = [];
+  if (ficha_id) { params.push(ficha_id); query += ` AND q.ficha_id = $${params.length}`; }
+  if (desde) { params.push(desde); query += ` AND q.fecha_desde >= $${params.length}`; }
+  if (hasta) { params.push(hasta); query += ` AND q.fecha_desde <= $${params.length}`; }
+  query += ` ORDER BY q.fecha_desde DESC, q.ficha_id DESC LIMIT 5000`;
+  return { query, params };
+}
+
+router.get('/modelo/historial', soloAdmin, async (req, res) => {
+  try {
+    const { query, params } = construirQueryHistorialPreciosModelo(req);
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error en GET /precios/modelo/historial:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/modelo/historial/pdf', soloAdmin, async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const { query, params } = construirQueryHistorialPreciosModelo(req);
+    const result = await pool.query(query, params);
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="precios-venta-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Evolución de precios de venta (por modelo)',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_PRECIOS_MODELO,
+      filas: result.rows,
+      armarCelda: (r) => ({
+        fecha: fmtFecha(r.fecha_desde),
+        modelo: r.modelo || '—',
+        precio: 'USD ' + Number(r.precio_usd || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        variacion: r.variacion_porcentaje != null ? `${Number(r.variacion_porcentaje) > 0 ? '+' : ''}${r.variacion_porcentaje}%` : '—',
+        observaciones: r.observaciones || '—'
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de precios de venta:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
    3️⃣ HISTORIAL POR MODELO
 ========================= */
 router.get('/modelo/:ficha_id', soloAdmin, async (req, res) => {
   try {
+    const { desde, hasta } = req.query;
+    // La variación se calcula con LAG() sobre TODO el historial de ese
+    // modelo (subquery sin filtrar) y el desde/hasta se aplica después, en
+    // el WHERE de afuera — si se filtrara antes, la primera fila visible
+    // perdería su precio anterior real y la variación saldría mal.
+    const params = [req.params.ficha_id];
+    let filtroFecha = '';
+    if (desde) { params.push(desde); filtroFecha += ` AND fecha_desde >= $${params.length}`; }
+    if (hasta) { params.push(hasta); filtroFecha += ` AND fecha_desde <= $${params.length}`; }
+
     const result = await pool.query(
-      `SELECT precio AS precio_usd, fecha_desde, observaciones
-       FROM precios_modelo
-       WHERE ficha_id = $1
+      `SELECT * FROM (
+         SELECT
+           precio AS precio_usd, fecha_desde, observaciones,
+           ROUND(
+             (precio - LAG(precio) OVER (ORDER BY fecha_desde, id))
+             / NULLIF(LAG(precio) OVER (ORDER BY fecha_desde, id), 0) * 100
+           , 1) AS variacion_porcentaje
+         FROM precios_modelo
+         WHERE ficha_id = $1
+       ) q
+       WHERE 1=1 ${filtroFecha}
        ORDER BY fecha_desde DESC`,
-      [req.params.ficha_id]
+      params
     );
 
     res.json(result.rows);
@@ -339,22 +448,64 @@ router.put('/parametros/dolar', soloAdmin, async (req, res) => {
 /* ============================================
    💲 HISTORIAL DE TIPO DE CAMBIO - CORREGIDO
    ============================================ */
+function construirQueryHistorialDolar(req) {
+  const { desde, hasta } = req.query;
+  let query = `
+    SELECT
+      h.dolar,
+      h.created_at as fecha,
+      COALESCE(u.nombre_usuario, 'Sistema') as usuario
+    FROM historial_dolar h
+    LEFT JOIN usuarios u ON u.id = h.usuario_id
+    WHERE 1=1
+  `;
+  const params = [];
+  // h.created_at es timestamp (no date): "hasta" filtra hasta el final de
+  // ese día, no desde la medianoche, para no cortar las cotizaciones
+  // cargadas más tarde en el día elegido como límite.
+  if (desde) { params.push(desde); query += ` AND h.created_at >= $${params.length}`; }
+  if (hasta) { params.push(hasta); query += ` AND h.created_at < ($${params.length}::date + interval '1 day')`; }
+  // Sin paginación real: si no se filtra por fecha, este LIMIT es solo una
+  // salvaguarda (antes era un recorte fijo de 50, sin avisar al usuario).
+  query += ` ORDER BY h.created_at DESC LIMIT 5000`;
+  return { query, params };
+}
+
 router.get('/parametros/dolar/historial', soloAdmin, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT 
-        h.dolar,
-        h.created_at as fecha,
-        COALESCE(u.nombre_usuario, 'Sistema') as usuario
-      FROM historial_dolar h
-      LEFT JOIN usuarios u ON u.id = h.usuario_id
-      ORDER BY h.created_at DESC
-      LIMIT 50
-    `);
-
+    const { query, params } = construirQueryHistorialDolar(req);
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     console.error('Error obteniendo historial:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/parametros/dolar/historial/pdf', soloAdmin, async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const { query, params } = construirQueryHistorialDolar(req);
+    const result = await pool.query(query, params);
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="cotizacion-dolar-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Historial de cotización del dólar',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_DOLAR,
+      filas: result.rows,
+      armarCelda: (r) => ({
+        fecha: fmtFecha(r.fecha),
+        dolar: money(r.dolar),
+        usuario: r.usuario || '—'
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF del historial de dólar:', err);
     res.status(500).json({ error: err.message });
   }
 });

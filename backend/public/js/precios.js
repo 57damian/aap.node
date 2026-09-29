@@ -109,12 +109,25 @@ async function cargarDolar() {
 }
 
 // Cargar historial de cotizaciones
+let historialDolarCache = [];
+
+function paramsDolar() {
+  const params = new URLSearchParams();
+  const desde = document.getElementById('filtroDolarDesde')?.value;
+  const hasta = document.getElementById('filtroDolarHasta')?.value;
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+  return params;
+}
+
 async function cargarHistorialDolar() {
   const tbody = document.getElementById('historialDolar');
   try {
     showLoading('historialDolar', 'Cargando historial...', 3);
 
-    const historial = await apiFetch('/api/precios/parametros/dolar/historial');
+    const params = paramsDolar();
+    const historial = await apiFetch(`/api/precios/parametros/dolar/historial${params.toString() ? '?' + params : ''}`);
+    historialDolarCache = historial || [];
 
     if (!tbody) return;
 
@@ -126,7 +139,7 @@ async function cargarHistorialDolar() {
     }
 
     let html = '';
-    historial.slice(0, 10).forEach(item => {
+    historial.forEach(item => {
       const fecha = formatDate(item.fecha);
       const dolarFormateado = formatCurrency(item.dolar);
 
@@ -134,7 +147,7 @@ async function cargarHistorialDolar() {
         <tr>
           <td>${fecha}</td>
           <td class="num" data-label="Valor">$ ${dolarFormateado}</td>
-          <td class="muted solo-escritorio" data-label="Cargó">${item.usuario || 'Sistema'}</td>
+          <td class="muted solo-escritorio" data-label="Usuario">${item.usuario || 'Sistema'}</td>
         </tr>`;
     });
 
@@ -146,6 +159,45 @@ async function cargarHistorialDolar() {
         'No se pudo cargar el historial', 'Probá recargar la página.')}</td></tr>`;
     }
     mostrarAlerta('Error cargando historial de cotizaciones', 'error');
+  }
+}
+
+function limpiarFiltrosDolar() {
+  document.getElementById('filtroDolarDesde').value = '';
+  document.getElementById('filtroDolarHasta').value = '';
+  cargarHistorialDolar();
+}
+
+function exportarDolarCSV() {
+  if (!historialDolarCache.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  csvContent += ['Fecha', 'Cotización', 'Usuario'].join(',') + '\n';
+  historialDolarCache.forEach(item => {
+    csvContent += [item.fecha || '', item.dolar ?? '', `"${(item.usuario || 'Sistema').replace(/"/g, '""')}"`].join(',') + '\n';
+  });
+
+  const desde = document.getElementById('filtroDolarDesde')?.value;
+  const hasta = document.getElementById('filtroDolarHasta')?.value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `cotizacion-dolar-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+async function verDolarPdf() {
+  try {
+    const params = paramsDolar();
+    await verArchivoProtegido(`api/precios/parametros/dolar/historial/pdf${params.toString() ? '?' + params : ''}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 
@@ -262,7 +314,7 @@ async function cargarSelectsModelos() {
     const historialSelect = document.getElementById('historialModeloSelect');
 
     if (modeloSelect) modeloSelect.innerHTML = '<option value="">-- Seleccionar Modelo --</option>';
-    if (historialSelect) historialSelect.innerHTML = '<option value="">-- Seleccionar Modelo --</option>';
+    if (historialSelect) historialSelect.innerHTML = '<option value="">Todos los modelos</option>';
 
     modelos.forEach(m => {
       const label = m.modelo || `Modelo ${m.ficha_id}`;
@@ -364,42 +416,113 @@ async function aplicarAumento() {
   }
 }
 
+let historialPreciosCache = [];
+
+function paramsHistorialPrecios() {
+  const params = new URLSearchParams();
+  const desde = document.getElementById('filtroModDesde')?.value;
+  const hasta = document.getElementById('filtroModHasta')?.value;
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+  return params;
+}
+
+// Con modelo elegido: historial de ese modelo. Sin modelo (vacío = "Todos
+// los modelos"): informe agregado de todos, mismos filtros de fecha —
+// ambos endpoints ya calculan la variación % con LAG() en el backend.
 async function cargarHistorialPrecios() {
-  const fichaId = document.getElementById('historialModeloSelect')?.value;
+  const select = document.getElementById('historialModeloSelect');
+  const fichaId = select?.value;
+  const nombreModeloSeleccionado = select?.selectedOptions?.[0]?.textContent || '';
   const tbody = document.getElementById('tablaHistorialPreciosBody');
 
   if (!tbody) return;
 
-  if (!fichaId) {
-    tbody.innerHTML = '<tr><td colspan="3" class="muted">Elegí un modelo para ver su historial.</td></tr>';
-    return;
-  }
-
   try {
-    showLoading('tablaHistorialPreciosBody', 'Cargando historial...', 3);
+    showLoading('tablaHistorialPreciosBody', 'Cargando historial...', 5);
 
-    const data = await apiFetch(`/api/precios/modelo/${fichaId}`);
+    const params = paramsHistorialPrecios();
+    const endpoint = fichaId
+      ? `/api/precios/modelo/${fichaId}${params.toString() ? '?' + params : ''}`
+      : `/api/precios/modelo/historial${params.toString() ? '?' + params : ''}`;
+    const data = await apiFetch(endpoint);
+    historialPreciosCache = (data || []).map(item => ({
+      ...item,
+      modelo: item.modelo || nombreModeloSeleccionado
+    }));
 
-    if (!data || data.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3">${Shell.vacio(
-        'Este modelo no tuvo cambios de precio',
-        'Los cambios quedan registrados acá cuando actualizás el precio.')}</td></tr>`;
+    if (!historialPreciosCache.length) {
+      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+        'No hay cambios de precio para este filtro',
+        'Los cambios quedan registrados acá cuando se actualiza un precio.')}</td></tr>`;
       return;
     }
 
-    // Antes esto llenaba DOS tablas con exactamente los mismos datos, solo
-    // que con las columnas en otro orden ("historial por modelo" e "historial
-    // general"). Quedó una.
-    tbody.innerHTML = data.map(item => `
+    tbody.innerHTML = historialPreciosCache.map(item => {
+      const variacion = item.variacion_porcentaje;
+      const claseVar = variacion > 0 ? 'neg' : (variacion < 0 ? 'pos' : '');
+      return `
       <tr>
         <td>${Shell.fecha(item.fecha_desde)}</td>
+        <td class="muted solo-escritorio" data-label="Modelo">${item.modelo || '—'}</td>
         <td class="num" data-label="Precio">US$ ${formatCurrency(item.precio_usd)}</td>
+        <td class="num ${claseVar}" data-label="Variación">${variacion != null ? (variacion > 0 ? '+' : '') + variacion + '%' : '—'}</td>
         <td class="muted solo-escritorio" data-label="Motivo">${item.observaciones || '—'}</td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   } catch (err) {
     console.error('Error cargando historial de precios:', err);
     mostrarAlerta(err.error || err.message || 'Error cargando historial', 'error');
+  }
+}
+
+function limpiarFiltrosHistorialPrecios() {
+  document.getElementById('historialModeloSelect').value = '';
+  document.getElementById('filtroModDesde').value = '';
+  document.getElementById('filtroModHasta').value = '';
+  cargarHistorialPrecios();
+}
+
+function exportarHistorialPreciosCSV() {
+  if (!historialPreciosCache.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  csvContent += ['Fecha', 'Modelo', 'Precio (USD)', 'Variación %', 'Motivo'].join(',') + '\n';
+  historialPreciosCache.forEach(item => {
+    csvContent += [
+      item.fecha_desde || '',
+      `"${(item.modelo || '').replace(/"/g, '""')}"`,
+      item.precio_usd ?? '',
+      item.variacion_porcentaje ?? '',
+      `"${(item.observaciones || '').replace(/"/g, '""')}"`
+    ].join(',') + '\n';
+  });
+
+  const desde = document.getElementById('filtroModDesde')?.value;
+  const hasta = document.getElementById('filtroModHasta')?.value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `precios-venta-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+async function verHistorialPreciosPdf() {
+  try {
+    const fichaId = document.getElementById('historialModeloSelect')?.value;
+    const params = paramsHistorialPrecios();
+    // El PDF siempre usa el informe agregado (con ficha_id como filtro más,
+    // si hay uno elegido) para tener membrete + columna Modelo consistentes.
+    if (fichaId) params.append('ficha_id', fichaId);
+    await verArchivoProtegido(`api/precios/modelo/historial/pdf${params.toString() ? '?' + params : ''}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 
@@ -417,6 +540,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
 
     await cargarSelectsModelos();
+    await cargarHistorialPrecios();
   } catch (err) {
     console.error('Error inicializando pantalla de precios:', err);
     mostrarAlerta('Error inicializando la pantalla', 'error');

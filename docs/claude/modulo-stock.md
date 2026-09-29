@@ -120,7 +120,33 @@ el commit si se descarta el contenedor de esa sesión.
 **Incidente 29/09/2026 — push bloqueado por acceso a GitHub no conectado:**
 `git push` devolvió `403` con el mensaje "Claude doesn't have GitHub access
 to 57damian/aap.node for your organization". Se reintentó varias veces sin
-éxito (no es un problema transitorio). Solución: reconectar GitHub desde
+éxito (no es un problema transitorio). Se probó además por la API de GitHub
+directamente (crear la rama) y también dio 403, con otro mensaje ("Resource
+not accessible by integration") — confirma que la integración tiene acceso
+de **lectura** al repo pero no de **escritura**, por ningún camino. Solución:
+reconectar GitHub desde
 `https://claude.ai/customize/connectors?auth_start=github&auth_start_force=1`,
-o confirmar que la app de Claude esté instalada en el repo desde
+y si eso no alcanza, confirmar que la app de Claude tenga permiso de
+**escritura** (no solo lectura) sobre el repo desde
 `https://github.com/apps/claude/installations/select_target`.
+
+## Evolución de precios de compra + fix de bugs del modal de precios (29/09/2026)
+
+Como parte de extender el patrón de informes a Precios (ver
+`claude/modulo-reportes.md`), se agregó una tab nueva "Evolución de
+precios" en `stock.html` (todos los materiales, filtro de
+fecha/material/proveedor, export CSV/PDF), alimentada por el endpoint
+agregado nuevo `GET /api/materias-primas/historial-precios`
+(`materias-primas.routes.js`, registrado **antes** de `GET /:id` para que
+Express no lo tape).
+
+De paso se encontraron y corrigieron dos bugs preexistentes en el modal
+"Historial de precios" (botón "Precios" de la tabla de Materiales, sin
+relación con la tab nueva):
+1. `verPrecios()` en `stock.js` buscaba `document.getElementById('preciosBody')`,
+   pero el `<tbody>` real del modal se llama `preciosTableBody` — el modal
+   nunca pudo mostrar datos.
+2. El `<thead>` del modal tenía 4 columnas (Fecha/Precio/Variación/Proveedor)
+   pero el JS pinta 6 `<td>` por fila (Fecha/Precio anterior/Precio
+   nuevo/Variación/Proveedor/N° Factura) — mismo tipo de desalineación que
+   tenía la tab Movimientos antes de esta ronda de trabajo.

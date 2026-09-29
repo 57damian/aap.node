@@ -66,10 +66,13 @@ sistema para remitos/facturas/cobros/fichas (ver "Descarga de PDF" en
 
 - **Backend**: un endpoint `GET /api/<recurso>/reporte/pdf` (mismos query
   params `desde`/`hasta`/filtros que el endpoint de datos) que arma el PDF
-  con `services/pdf-base.js` — reusar `dibujarTabla()` (tabla paginada
-  genérica con membrete) en vez de armar un layout nuevo por informe.
-  Responder con `Content-Type: application/pdf` y **sin** `Content-Disposition:
-  attachment` forzado, para que el botón pueda abrirlo inline (ver frontend).
+  con el generador genérico `backend/services/pdf-reporte.js`
+  (`generarPdfReporte`, sobre `dibujarTabla()` de `pdf-base.js` — tabla
+  paginada con membrete, apaisada para tener más columnas). Responder con
+  `Content-Type: application/pdf` y `Content-Disposition: attachment`
+  (mismo header que ya usan los demás PDF del sistema): no afecta la
+  previsualización porque el frontend nunca ve ese header — llega como blob
+  (ver frontend).
 - **Frontend**: un botón "PDF" que llama a `verArchivoProtegido()`
   (`js/api.js`) contra ese endpoint — abre el PDF en una pestaña nueva con el
   visor nativo del navegador, que ya resuelve **previsualización y descarga**
@@ -82,87 +85,51 @@ sistema para remitos/facturas/cobros/fichas (ver "Descarga de PDF" en
   fechas) y las mismas columnas que la tabla en pantalla — no hace falta que
   sea idéntico al CSV al byte, pero sí consistente en qué datos incluye.
 
-## Candidatos detectados para aplicar este patrón (no implementados todavía)
+## Estado por módulo (actualizado 29/09/2026)
 
-- **Ventas / remitos**: no tiene botón de exportar.
-- **Pagos a proveedores** (pestaña Historial): ya tiene filtro de fecha (`filtroHistDesde`/`filtroHistHasta`), le falta el paso 3 (exportar).
-- Cualquier pantalla nueva de listado con filtro de fecha debería salir directamente con exportación incluida desde el principio, siguiendo esta receta, en vez de agregarla después.
+El patrón (filtros de fecha + export CSV + PDF con previsualización) ya está
+aplicado en todos los módulos que registran movimientos de negocio:
 
-## Plan pendiente de implementar (definido 29/09/2026, todavía no programado)
+| Módulo | Pantalla | Filtros | CSV | PDF |
+|---|---|---|---|---|
+| Stock / compras | `stock.html` → tab Movimientos | desde/hasta/proveedor/material/tipo | sí | sí |
+| Stock / evolución de precios de compra | `stock.html` → tab Evolución de precios (nueva) | desde/hasta/material/proveedor | sí | sí |
+| Producción | `produccion.html` → tab Historial | desde/hasta/modelo (ya existían) | sí | sí |
+| Ventas / remitos (entregas a clientes) | `ventas.html` | desde/hasta/cliente | sí | sí |
+| Cobros | `cobros.html` → pestaña Historial | desde/hasta/cliente/estado (ya existían) | sí | sí |
+| Pagos a proveedores | `pagos-proveedores.html` → pestaña Historial | desde/hasta/proveedor/estado (ya existían) | sí | sí |
+| Precios de venta por modelo | `precios.html` → pestaña Precios por modelo → Historial | desde/hasta/modelo (`""` = todos) | sí | sí |
+| Cotización del dólar | `precios.html` → pestaña Dólar → Cotizaciones anteriores | desde/hasta | sí | sí |
 
-Damian pidió extender este patrón a "todo lo que el sistema registra": entregas
-a clientes, producción, compras (ya resuelto, ver arriba y `modulo-stock.md`)
-y evolución de precios en el tiempo ("rutas de aumento"). Se relevaron los
-tres módulos pendientes contra la receta de arriba. Decisión ya tomada con
-Damian: la evolución de precios se muestra como **tabla con % de variación
-calculado**, no con gráficos — el sistema no usa gráficos en ningún lado hoy
-y no conviene romper esa consistencia por este pedido. Además, cada informe
-de esta lista (incluido el de Stock ya implementado) debe sumar el PDF con
-previsualización y descarga del punto 4 de la receta, no solo el CSV. Orden
-sugerido de implementación: Producción → Cobros/Pagos a proveedores (quick
-wins) → Ventas → Precios (lo más grande). No hace falta ninguna migración de
-esquema en ninguno de los cuatro puntos.
+Backend: nuevo generador genérico `backend/services/pdf-reporte.js`
+(`generarPdfReporte`), reusado por todos los endpoints `GET
+.../reporte/pdf` (o `.../historial/pdf` donde el endpoint de datos ya se
+llamaba así) en vez de un archivo por módulo. Dos endpoints agregados
+nuevos que no existían (antes solo había "un material/modelo a la vez"):
+`GET /api/materias-primas/historial-precios` y `GET
+/api/precios/modelo/historial`, ambos registrados **antes** de su
+`/:id` correspondiente en el router (si no, Express los tapa — ver
+comentario "IMPORTANTE" en el código de ambos). La variación % de precios
+de venta se calcula con `LAG(precio) OVER (PARTITION BY ficha_id ORDER BY
+fecha_desde)` dentro de una subquery sin filtrar por fecha, con el
+`desde`/`hasta` aplicado recién en el `WHERE` de afuera — si se filtrara
+antes de calcular el `LAG()`, la primera fila visible perdería su precio
+anterior real y la variación saldría mal.
 
-### 1. Producción — lo que menos falta
+De paso se corrigieron dos bugs preexistentes en `stock.html`/`stock.js`
+encontrados al tocar esta zona: el modal "Historial de precios" (botón
+"Precios" de la tabla de Materiales) apuntaba a un `id` de tabla
+(`preciosBody`) que no existía en el HTML real (`preciosTableBody`) — el
+modal nunca pudo mostrar datos — y su `<thead>` tenía 4 columnas mientras
+el JS pintaba 6 filas por fila. Se alinearon ambos.
 
-`GET /api/produccion` (`backend/routes/produccion.routes.js:85-136`) y la tab
-"Historial" de `produccion.html`/`produccion.js` **ya** filtran por
-`desde`/`hasta`/`ficha_id` y ya muestran todas las columnas (fecha, modelo,
-cantidad, quién lo cargó, observaciones) — a diferencia de Stock, acá el
-frontend ya manda los filtros. Falta solo:
-- Subir el `limit` por defecto (hoy 100, línea 86) a un valor de salvaguarda
-  mayor (5000, mismo criterio que Stock).
-- Guardar el resultado de `cargarHistorial()` en una variable cache a nivel
-  de módulo (hoy es local a la función) y agregar botón "Exportar CSV" +
-  función `exportarHistorialProduccionCSV()`, calcada de
-  `stock.js:exportarMovimientosCSV()`.
-- Sumar `GET /api/produccion/reporte/pdf` (mismo endpoint de datos, armado
-  con `services/pdf-base.js`) + botón "PDF" con `verArchivoProtegido()`.
+## Candidatos que quedan sin export (fuera de este pedido)
 
-### 2. Quick wins — Cobros y Pagos a proveedores
-
-Ya tienen filtro de fecha funcionando (`cobros.js:cargarHistorial()` línea
-741; pestaña Historial de `pagos-proveedores.js`). Falta el paso 3 de la
-receta (botón "Exportar CSV") y el punto 4 (botón "PDF"), sin tocar backend
-más que el endpoint `.../reporte/pdf` nuevo de cada uno.
-
-### 3. Ventas/remitos (entregas a clientes) — gap real, mismo diagnóstico que tuvo Stock
-
-- **Backend** (`backend/routes/ventas.routes.js`, `GET /api/ventas`,
-  líneas 15-78): agregar `desde`/`hasta` sobre `v.fecha` (mismo patrón que
-  `facturas.routes.js:262-269`); sumar `precio_unitario_usd`/
-  `precio_unitario_pesos` al `json_build_object` de `items` (línea ~44, el
-  dato ya está en `venta_items`); agregar `LIMIT` de salvaguarda (no tiene
-  ninguno hoy).
-- **Frontend** (`ventas.html`/`ventas.js`): agregar filtros `desde`/`hasta`
-  (hoy solo filtra por `cliente_id`); pintar modelo/cantidad (ya vienen en
-  `items` y no se muestran), `remito_numero`, `remito_observaciones` y precio
-  (una vez agregado al backend); botones "Exportar CSV" y "PDF" (este último
-  contra un `GET /api/ventas/reporte/pdf` nuevo, con `verArchivoProtegido()`).
-
-### 4. Precios — "rutas de aumento" en el tiempo (el más grande)
-
-- **Compra de materias primas**: `GET /api/materias-primas/:id/historial-precios`
-  (líneas 197-226) es por material individual y sin fecha — agregar
-  `desde`/`hasta`, y sumar un endpoint agregado nuevo (`GET
-  /api/materias-primas/historial-precios`, no existe hoy) que traiga todos
-  los materiales juntos con filtro de fecha; la variación % ya está calculada
-  en `historial_precios_materias.variacion_porcentaje`, no hay que
-  recalcularla. Frontend: modal `verPrecios()` de `stock.js` hoy usa badges
-  `text-danger`/`text-success` hardcodeados — reemplazar por `Shell.pill`/
-  clases `neg`/`pos`, sumar filtro de fecha y botones "Exportar CSV"/"PDF".
-- **Precios de venta por modelo**: `precios_modelo` ya funciona como
-  historial completo (cada fila = un punto en el tiempo, `precios.routes.js`),
-  pero `GET /modelo/:ficha_id` (líneas 69-83) es por modelo y sin fecha, y no
-  existe ningún cálculo de variación % (a diferencia de compras). Agregar
-  `desde`/`hasta`, calcular variación con `LAG(precio) OVER (ORDER BY
-  fecha_desde)` en la misma query (sin migrar la tabla), y sumar un endpoint
-  agregado nuevo (`GET /api/precios/modelo/historial`, todos los modelos).
-  Frontend (`precios.html`/`precios.js`, pestaña "Precios por modelo"):
-  filtro de fecha, columna de variación %, botones "Exportar CSV"/"PDF".
-- **Dólar**: `GET /api/precios/parametros/dolar/historial` (líneas 342-360)
-  tiene `LIMIT 50` fijo sin filtro de fecha; frontend además recorta a
-  `.slice(0, 10)`. Agregar `desde`/`hasta` al backend, sacar el recorte del
-  frontend, sumar filtro de fecha y botones "Exportar CSV"/"PDF".
-- Los tres endpoints `.../reporte/pdf` (compra MP, venta por modelo, dólar)
-  siguen el mismo patrón del punto 4 de la receta general.
+Pantallas con datos históricos pero sin filtro de fecha por rango,
+detectadas de paso — no forman parte de "lo que el sistema registra" en el
+sentido de movimientos de negocio con fecha (son más bien catálogos o
+configuración), así que no se tocaron:
+- `stock-mp.html` (ABM de materiales, no tiene noción de "período").
+- Historial de precios de un material individual dentro del ABM de
+  materias primas, si en algún momento se agrega uno aparte del de
+  `stock.html`.

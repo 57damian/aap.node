@@ -2,6 +2,7 @@
 let stockCache = [];
 let proveedoresCache = [];
 let movimientosCache = [];
+let preciosCompraCache = [];
 let dolarActual = 0;
 
 // Formatear moneda
@@ -75,19 +76,26 @@ async function cargarProveedores() {
 
         const selectFiltroMov = document.getElementById('filtroMovProveedor');
         if (selectFiltroMov) selectFiltroMov.innerHTML = '<option value="">Todos</option>' + opciones;
+
+        const selectFiltroPrec = document.getElementById('filtroPrecProveedor');
+        if (selectFiltroPrec) selectFiltroPrec.innerHTML = '<option value="">Todos</option>' + opciones;
     } catch (err) {
         console.error('Error cargando proveedores:', err);
     }
 }
 
-// Popula el select de materiales del filtro de Movimientos con el stock ya cargado
+// Popula los selects de material de los filtros de Movimientos y Precios
+// con el stock ya cargado.
 function poblarFiltroMaterial(stock) {
-    const select = document.getElementById('filtroMovMaterial');
-    if (!select) return;
-    const seleccionado = select.value;
-    select.innerHTML = '<option value="">Todos</option>' +
-        stock.map(s => `<option value="${s.articulo_id}">${s.nombre || s.codigo || s.articulo_id}</option>`).join('');
-    select.value = seleccionado;
+    const opciones = stock.map(s => `<option value="${s.articulo_id}">${s.nombre || s.codigo || s.articulo_id}</option>`).join('');
+
+    ['filtroMovMaterial', 'filtroPrecMaterial'].forEach(idSelect => {
+        const select = document.getElementById(idSelect);
+        if (!select) return;
+        const seleccionado = select.value;
+        select.innerHTML = '<option value="">Todos</option>' + opciones;
+        select.value = seleccionado;
+    });
 }
 
 // Cargar stock
@@ -276,6 +284,117 @@ function exportarMovimientosCSV() {
     Shell.toast('ok', 'Reporte exportado');
 }
 
+// ============================================
+// EVOLUCIÓN DE PRECIOS DE COMPRA (tab nueva)
+// ============================================
+function paramsPrecios() {
+    const params = new URLSearchParams();
+    const desde = document.getElementById('filtroPrecDesde')?.value;
+    const hasta = document.getElementById('filtroPrecHasta')?.value;
+    const material = document.getElementById('filtroPrecMaterial')?.value;
+    const proveedor = document.getElementById('filtroPrecProveedor')?.value;
+
+    if (desde) params.append('desde', desde);
+    if (hasta) params.append('hasta', hasta);
+    if (material) params.append('materia_prima_id', material);
+    if (proveedor) params.append('proveedor_id', proveedor);
+    return params;
+}
+
+async function cargarEvolucionPrecios() {
+    try {
+        const params = paramsPrecios();
+        const endpoint = `/api/materias-primas/historial-precios${params.toString() ? '?' + params : ''}`;
+        const precios = await apiFetch(endpoint);
+        preciosCompraCache = precios || [];
+        renderizarEvolucionPrecios(precios);
+    } catch (err) {
+        console.error('Error cargando evolución de precios:', err);
+        Shell.error(err, 'No se pudo cargar la evolución de precios');
+    }
+}
+
+function renderizarEvolucionPrecios(precios) {
+    const tbody = document.getElementById('evolucionPreciosTableBody');
+
+    if (!precios || precios.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+            'No hay cambios de precio para este filtro',
+            'Probá ampliar el rango de fechas o limpiar los filtros.')}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = precios.map(p => {
+        const variacion = p.variacion_porcentaje;
+        const claseVar = variacion > 0 ? 'neg' : (variacion < 0 ? 'pos' : '');
+        return `
+        <tr>
+            <td data-label="Fecha">${Shell.fecha(p.fecha_cambio)}</td>
+            <td data-label="Material"><strong>${p.material_nombre || '-'}</strong>${p.material_codigo ? ' <span class="muted">' + p.material_codigo + '</span>' : ''}</td>
+            <td data-label="Proveedor">${p.proveedor_nombre || '—'}</td>
+            <td class="num" data-label="Precio anterior">${p.precio_anterior != null ? formatearMoneda(p.precio_anterior) : '—'}</td>
+            <td class="num" data-label="Precio nuevo">${formatearMoneda(p.precio_nuevo)}</td>
+            <td class="num ${claseVar}" data-label="Variación">${variacion != null ? (variacion > 0 ? '+' : '') + Number(variacion).toFixed(1) + '%' : '—'}</td>
+            <td class="solo-escritorio" data-label="N° Factura">${p.factura_numero || '—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function limpiarFiltrosPrecios() {
+    document.getElementById('filtroPrecDesde').value = '';
+    document.getElementById('filtroPrecHasta').value = '';
+    document.getElementById('filtroPrecMaterial').value = '';
+    document.getElementById('filtroPrecProveedor').value = '';
+    cargarEvolucionPrecios();
+}
+
+function exportarPreciosCSV() {
+    if (!preciosCompraCache.length) {
+        Shell.toast('err', 'No hay datos para exportar');
+        return;
+    }
+
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    const headers = ['Fecha', 'Material', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° Factura'];
+    csvContent += headers.join(',') + '\n';
+
+    preciosCompraCache.forEach(p => {
+        const fila = [
+            p.fecha_cambio || '',
+            `"${(p.material_nombre || '').replace(/"/g, '""')}"`,
+            `"${(p.material_codigo || '').replace(/"/g, '""')}"`,
+            `"${(p.proveedor_nombre || '').replace(/"/g, '""')}"`,
+            p.precio_anterior ?? '',
+            p.precio_nuevo ?? '',
+            p.variacion_porcentaje ?? '',
+            p.factura_numero || ''
+        ];
+        csvContent += fila.join(',') + '\n';
+    });
+
+    const desde = document.getElementById('filtroPrecDesde')?.value;
+    const hasta = document.getElementById('filtroPrecHasta')?.value;
+    const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+    const link = document.createElement('a');
+    link.href = encodeURI(csvContent);
+    link.download = `precios-compra-${rango}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    Shell.toast('ok', 'Reporte exportado');
+}
+
+async function verPreciosPdf() {
+    try {
+        const params = paramsPrecios();
+        await verArchivoProtegido(`api/materias-primas/historial-precios/pdf${params.toString() ? '?' + params : ''}`);
+    } catch (err) {
+        Shell.error(err, 'No se pudo abrir el PDF');
+    }
+}
+
 // Actualizar estadísticas
 function actualizarEstadisticas(stock) {
     const totalArticulos = stock.length;
@@ -387,16 +506,16 @@ async function verPrecios(articuloId) {
     try {
         const precios = await apiFetch(`/api/materias-primas/${articuloId}/historial-precios`);
         
-        const tbody = document.getElementById('preciosBody');
+        const tbody = document.getElementById('preciosTableBody');
         if (!precios || precios.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
         } else {
             tbody.innerHTML = precios.map(p => `
                 <tr>
-                    <td>${p.fecha_cambio || '-'}</td>
+                    <td>${Shell.fecha(p.fecha_cambio)}</td>
                     <td>${formatearMoneda(p.precio_anterior || 0)}</td>
                     <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
-                    <td class="${p.variacion_porcentaje > 0 ? 'text-danger' : 'text-success'}">
+                    <td class="${p.variacion_porcentaje > 0 ? 'neg' : (p.variacion_porcentaje < 0 ? 'pos' : '')}">
                         ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
                     </td>
                     <td>${p.proveedor_nombre || '-'}</td>
@@ -439,6 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
       boton.classList.add('active');
       document.getElementById('tab-' + boton.dataset.tab)?.classList.add('active');
       if (boton.dataset.tab === 'movimientos') cargarMovimientos();
+      if (boton.dataset.tab === 'precios') cargarEvolucionPrecios();
     });
   });
 

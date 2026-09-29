@@ -57,13 +57,31 @@
     </div>
 
     <div class="panel"><div class="panel-head"><h2>Cotizaciones anteriores</h2></div>
+      <div class="panel-body">
+        <div class="filters">
+          <div class="field">
+            <label for="filtroDolarDesde">Desde</label>
+            <input class="input" type="date" id="filtroDolarDesde">
+          </div>
+          <div class="field">
+            <label for="filtroDolarHasta">Hasta</label>
+            <input class="input" type="date" id="filtroDolarHasta">
+          </div>
+          <div class="filters-actions">
+            <button class="b b-primary" onclick="cargarHistorialDolar()">Filtrar</button>
+            <button class="b b-ghost" onclick="limpiarFiltrosDolar()">Limpiar</button>
+            <button class="b b-ghost" onclick="exportarDolarCSV()">Exportar CSV</button>
+            <button class="b b-ghost" onclick="verDolarPdf()">PDF</button>
+          </div>
+        </div>
+      </div>
       <div class="panel-body flush"><div class="table-wrap">
         <table class="t">
           <thead>
             <tr>
               <th>Fecha</th>
               <th class="num">Valor</th>
-              <th class="solo-escritorio">Observaciones</th>
+              <th class="solo-escritorio">Usuario</th>
             </tr>
           </thead>
           <tbody id="historialDolar">
@@ -125,8 +143,22 @@
           <div class="field grow">
             <label for="historialModeloSelect">Modelo</label>
             <select class="input" id="historialModeloSelect" onchange="cargarHistorialPrecios()">
-              <option value="">Elegí un modelo…</option>
+              <option value="">Todos los modelos</option>
             </select>
+          </div>
+          <div class="field">
+            <label for="filtroModDesde">Desde</label>
+            <input class="input" type="date" id="filtroModDesde">
+          </div>
+          <div class="field">
+            <label for="filtroModHasta">Hasta</label>
+            <input class="input" type="date" id="filtroModHasta">
+          </div>
+          <div class="filters-actions">
+            <button class="b b-primary" onclick="cargarHistorialPrecios()">Filtrar</button>
+            <button class="b b-ghost" onclick="limpiarFiltrosHistorialPrecios()">Limpiar</button>
+            <button class="b b-ghost" onclick="exportarHistorialPreciosCSV()">Exportar CSV</button>
+            <button class="b b-ghost" onclick="verHistorialPreciosPdf()">PDF</button>
           </div>
         </div>
       </div>
@@ -135,12 +167,14 @@
           <thead>
             <tr>
               <th>Desde</th>
+              <th class="solo-escritorio">Modelo</th>
               <th class="num">Precio (USD)</th>
+              <th class="num">Variación</th>
               <th class="solo-escritorio">Motivo</th>
             </tr>
           </thead>
           <tbody id="tablaHistorialPreciosBody">
-            <tr><td colspan="3" class="muted">Elegí un modelo para ver su historial.</td></tr>
+            <tr><td colspan="5" class="muted">Cargando…</td></tr>
           </tbody>
         </table>
       </div></div>

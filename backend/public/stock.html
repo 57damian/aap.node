@@ -53,6 +53,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="materiales">Materiales</button>
     <button class="tab" data-tab="movimientos">Movimientos</button>
+    <button class="tab" data-tab="precios">Evolución de precios</button>
   </div>
 
   <!-- ============ MATERIALES ============ -->
@@ -166,6 +167,57 @@
     </div></div></div>
   </div>
 
+  <!-- ============ EVOLUCIÓN DE PRECIOS DE COMPRA ============ -->
+  <div id="tab-precios" class="tab-content">
+    <div class="filters">
+      <div class="field">
+        <label for="filtroPrecDesde">Desde</label>
+        <input class="input" type="date" id="filtroPrecDesde">
+      </div>
+      <div class="field">
+        <label for="filtroPrecHasta">Hasta</label>
+        <input class="input" type="date" id="filtroPrecHasta">
+      </div>
+      <div class="field">
+        <label for="filtroPrecMaterial">Material</label>
+        <select class="input" id="filtroPrecMaterial">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="filtroPrecProveedor">Proveedor</label>
+        <select class="input" id="filtroPrecProveedor">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button class="b b-ghost" onclick="limpiarFiltrosPrecios()">Limpiar</button>
+        <button class="b b-primary" onclick="cargarEvolucionPrecios()">Filtrar</button>
+        <button class="b b-ghost" onclick="exportarPreciosCSV()">Exportar CSV</button>
+        <button class="b b-ghost" onclick="verPreciosPdf()">PDF</button>
+      </div>
+    </div>
+
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Material</th>
+            <th>Proveedor</th>
+            <th class="num">Precio anterior</th>
+            <th class="num">Precio nuevo</th>
+            <th class="num">Variación</th>
+            <th class="solo-escritorio">N° Factura</th>
+          </tr>
+        </thead>
+        <tbody id="evolucionPreciosTableBody">
+          <tr><td colspan="7" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
+  </div>
+
 <!-- ================= Ventanas =================
      Antes eran modales de Bootstrap. Ahora son <dialog> nativos: se va una
      dependencia externa y con ella el problema de cargar su JS sin su CSS. -->
@@ -246,7 +298,14 @@
   <div class="panel-body flush"><div class="table-wrap">
     <table class="t">
       <thead>
-        <tr><th>Fecha</th><th class="num">Precio</th><th class="num">Variación</th><th class="solo-escritorio">Proveedor</th></tr>
+        <tr>
+          <th>Fecha</th>
+          <th class="num">Precio anterior</th>
+          <th class="num">Precio nuevo</th>
+          <th class="num">Variación</th>
+          <th class="solo-escritorio">Proveedor</th>
+          <th class="solo-escritorio">N° Factura</th>
+        </tr>
       </thead>
       <tbody id="preciosTableBody"></tbody>
     </table>
