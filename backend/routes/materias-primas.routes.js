@@ -2,6 +2,18 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { fecha: fmtFecha, money } = require('../services/pdf-base');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+
+const COLS_PDF_HIST_PRECIOS_MP = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
+  { campo: 'material', titulo: 'Material', x: 60, ancho: 170 },
+  { campo: 'proveedor', titulo: 'Proveedor', x: 230, ancho: 130 },
+  { campo: 'precio_anterior', titulo: 'Precio anterior', x: 360, ancho: 90, align: 'right' },
+  { campo: 'precio_nuevo', titulo: 'Precio nuevo', x: 450, ancho: 90, align: 'right' },
+  { campo: 'variacion', titulo: 'Variación', x: 540, ancho: 70, align: 'right' },
+  { campo: 'factura', titulo: 'N° Factura', x: 610, ancho: ANCHO_UTIL_REPORTE - 610 }
+];
 
 // Todas las rutas requieren autenticación
 router.use(verificarToken);
@@ -66,6 +78,83 @@ router.get('/', soloAdmin, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error en GET /materias-primas:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ============================================
+   HISTORIAL DE PRECIOS DE COMPRA — TODOS LOS MATERIALES
+   GET /api/materias-primas/historial-precios?materia_prima_id=&proveedor_id=&desde=&hasta=
+   Vista agregada (a diferencia de /:id/historial-precios, que es por
+   material): informe de "rutas de aumento" de compra, ver
+   docs/claude/modulo-reportes.md.
+   IMPORTANTE: va antes de GET /:id — si no, "historial-precios" matchea
+   como si fuera un :id y esta ruta nunca se alcanza.
+============================================ */
+function construirQueryHistorialPreciosMP(req) {
+  const { materia_prima_id, proveedor_id, desde, hasta } = req.query;
+  let query = `
+    SELECT
+      hpm.precio_nuevo, hpm.precio_anterior,
+      hpm.precio_nuevo_usd, hpm.precio_anterior_usd,
+      hpm.variacion_porcentaje, hpm.fecha_cambio,
+      mp.nombre as material_nombre, mp.codigo as material_codigo,
+      fc.numero_factura as factura_numero,
+      p.nombre as proveedor_nombre
+    FROM historial_precios_materias hpm
+    JOIN materias_primas mp ON mp.id = hpm.materia_prima_id
+    LEFT JOIN facturas_compra fc ON hpm.factura_id = fc.id
+    LEFT JOIN proveedores p ON hpm.proveedor_id = p.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (materia_prima_id) { params.push(materia_prima_id); query += ` AND hpm.materia_prima_id = $${params.length}`; }
+  if (proveedor_id) { params.push(proveedor_id); query += ` AND hpm.proveedor_id = $${params.length}`; }
+  if (desde) { params.push(desde); query += ` AND hpm.fecha_cambio >= $${params.length}`; }
+  if (hasta) { params.push(hasta); query += ` AND hpm.fecha_cambio <= $${params.length}`; }
+  query += ` ORDER BY hpm.fecha_cambio DESC, hpm.id DESC LIMIT 5000`;
+  return { query, params };
+}
+
+router.get('/historial-precios', soloAdmin, async (req, res) => {
+  try {
+    const { query, params } = construirQueryHistorialPreciosMP(req);
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error en GET /materias-primas/historial-precios:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const { query, params } = construirQueryHistorialPreciosMP(req);
+    const result = await pool.query(query, params);
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="precios-compra-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Evolución de precios de compra (materias primas)',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_HIST_PRECIOS_MP,
+      filas: result.rows,
+      armarCelda: (r) => ({
+        fecha: fmtFecha(r.fecha_cambio),
+        material: `${r.material_nombre || '—'}${r.material_codigo ? ' (' + r.material_codigo + ')' : ''}`,
+        proveedor: r.proveedor_nombre || '—',
+        precio_anterior: r.precio_anterior != null ? money(r.precio_anterior) : '—',
+        precio_nuevo: money(r.precio_nuevo),
+        variacion: r.variacion_porcentaje != null ? `${Number(r.variacion_porcentaje) > 0 ? '+' : ''}${Number(r.variacion_porcentaje).toFixed(1)}%` : '—',
+        factura: r.factura_numero || '—'
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de precios de compra:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -197,7 +286,13 @@ router.delete('/:id', soloAdmin, async (req, res) => {
   router.get('/:id/historial-precios', soloAdmin, async (req, res) => {
     try {
       const { id } = req.params;
-      
+      const { desde, hasta } = req.query;
+
+      const params = [id];
+      let filtroFecha = '';
+      if (desde) { params.push(desde); filtroFecha += ` AND hpm.fecha_cambio >= $${params.length}`; }
+      if (hasta) { params.push(hasta); filtroFecha += ` AND hpm.fecha_cambio <= $${params.length}`; }
+
       const result = await pool.query(`
         SELECT
           hpm.id,
@@ -214,9 +309,9 @@ router.delete('/:id', soloAdmin, async (req, res) => {
         LEFT JOIN facturas_compra fc ON hpm.factura_id = fc.id
         LEFT JOIN proveedores p ON hpm.proveedor_id = p.id
         LEFT JOIN usuarios u ON hpm.created_by = u.id
-        WHERE hpm.materia_prima_id = $1
+        WHERE hpm.materia_prima_id = $1 ${filtroFecha}
         ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC
-      `, [id]);
+      `, params);
 
       res.json(result.rows);
     } catch (err) {

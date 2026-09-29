@@ -5,7 +5,19 @@ const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { asyncHandler } = require('../middlewares/asyncHandler');
 const { vistaPreviaAnulacionRemito, anularRemito } = require('../services/anulaciones');
 const { generarPdfRemito } = require('../services/pdf-remito');
-const { nombreArchivo } = require('../services/pdf-base');
+const { nombreArchivo, fecha: fmtFecha } = require('../services/pdf-base');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+
+const COLS_PDF_VENTAS = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 55 },
+  { campo: 'cliente', titulo: 'Cliente', x: 55, ancho: 120 },
+  { campo: 'remito', titulo: 'Remito', x: 175, ancho: 60 },
+  { campo: 'oc', titulo: 'OC', x: 235, ancho: 60 },
+  { campo: 'modelos', titulo: 'Modelos / cantidad', x: 295, ancho: 220 },
+  { campo: 'unidades', titulo: 'Unidades', x: 515, ancho: 55, align: 'right' },
+  { campo: 'factura', titulo: 'Factura', x: 570, ancho: 70 },
+  { campo: 'observaciones', titulo: 'Observaciones', x: 640, ancho: ANCHO_UTIL_REPORTE - 640 }
+];
 
 router.use(verificarToken);
 
@@ -14,12 +26,12 @@ router.use(verificarToken);
 ========================= */
 router.get('/', soloAdmin, async (req, res) => {
 
-  const { cliente_id, orden_compra_id } = req.query;
+  const { cliente_id, orden_compra_id, desde, hasta } = req.query;
 
   try {
 
     let query = `
-      SELECT 
+      SELECT
         v.id,
         v.fecha,
         v.tipo_cambio,
@@ -41,7 +53,11 @@ router.get('/', soloAdmin, async (req, res) => {
           -- Antes la pestaña "Remitos" de oc_detalle.html pedía este detalle
           -- con un fetch por remito (N+1); único consumidor de este listado,
           -- así que sale más simple traerlo agregado acá.
-          SELECT COALESCE(json_agg(json_build_object('modelo', ft.modelo, 'cantidad', vi.cantidad) ORDER BY ft.modelo), '[]'::json)
+          SELECT COALESCE(json_agg(json_build_object(
+            'modelo', ft.modelo, 'cantidad', vi.cantidad,
+            'precio_unitario_usd', vi.precio_unitario_usd,
+            'precio_unitario_pesos', vi.precio_unitario_pesos
+          ) ORDER BY ft.modelo), '[]'::json)
           FROM venta_items vi
           JOIN ficha_transformador ft ON ft.id = vi.ficha_id
           WHERE vi.venta_id = v.id
@@ -67,7 +83,22 @@ router.get('/', soloAdmin, async (req, res) => {
       paramIndex++;
     }
 
-    query += ` ORDER BY v.id DESC`;
+    if (desde) {
+      query += ` AND v.fecha >= $${paramIndex}`;
+      params.push(desde);
+      paramIndex++;
+    }
+
+    if (hasta) {
+      query += ` AND v.fecha <= $${paramIndex}`;
+      params.push(hasta);
+      paramIndex++;
+    }
+
+    // Sin paginación real: el filtro por fecha acota el volumen en el uso
+    // normal (ver docs/claude/modulo-reportes.md). LIMIT es solo una
+    // salvaguarda, no un mecanismo de recorte.
+    query += ` ORDER BY v.id DESC LIMIT 5000`;
 
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -77,6 +108,77 @@ router.get('/', soloAdmin, async (req, res) => {
   }
 });
 
+/* =========================
+   PDF DEL INFORME DE ENTREGAS (mismos filtros que GET /)
+   GET /api/ventas/reporte/pdf?cliente_id=&orden_compra_id=&desde=&hasta=
+========================= */
+router.get('/reporte/pdf', soloAdmin, async (req, res) => {
+  const { cliente_id, orden_compra_id, desde, hasta } = req.query;
+
+  try {
+    let query = `
+      SELECT
+        v.id, v.fecha, v.remito_numero, v.remito_observaciones,
+        c.nombre AS cliente,
+        oc.numero_oc,
+        (
+          SELECT f.numero_factura
+          FROM factura_venta_items fi
+          JOIN facturas f ON f.id = fi.factura_id
+          JOIN venta_items vi ON vi.id = fi.venta_item_id
+          WHERE vi.venta_id = v.id
+          LIMIT 1
+        ) AS numero_factura,
+        (SELECT COALESCE(SUM(vi.cantidad), 0)::int FROM venta_items vi WHERE vi.venta_id = v.id) AS unidades,
+        (
+          SELECT COALESCE(string_agg(ft.modelo || ' x' || vi.cantidad, ', ' ORDER BY ft.modelo), '—')
+          FROM venta_items vi
+          JOIN ficha_transformador ft ON ft.id = vi.ficha_id
+          WHERE vi.venta_id = v.id
+        ) AS modelos
+      FROM ventas v
+      JOIN clientes c ON c.id = v.cliente_id
+      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
+      WHERE v.anulada_en IS NULL
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (cliente_id) { query += ` AND v.cliente_id = $${paramIndex++}`; params.push(cliente_id); }
+    if (orden_compra_id) { query += ` AND v.orden_compra_id = $${paramIndex++}`; params.push(orden_compra_id); }
+    if (desde) { query += ` AND v.fecha >= $${paramIndex++}`; params.push(desde); }
+    if (hasta) { query += ` AND v.fecha <= $${paramIndex++}`; params.push(hasta); }
+
+    query += ` ORDER BY v.id DESC LIMIT 5000`;
+
+    const result = await pool.query(query, params);
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="entregas-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Informe de entregas a clientes',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_VENTAS,
+      filas: result.rows,
+      armarCelda: (r) => ({
+        fecha: fmtFecha(r.fecha),
+        cliente: r.cliente || '—',
+        remito: r.remito_numero || '—',
+        oc: r.numero_oc || '—',
+        modelos: r.modelos || '—',
+        unidades: Number(r.unidades || 0).toLocaleString('es-AR'),
+        factura: r.numero_factura || '—',
+        observaciones: r.remito_observaciones || '—'
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de entregas:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /* =========================
    CREAR VENTA (ENTREGA) - CORREGIDO

@@ -2,6 +2,7 @@
 let stockCache = [];
 let proveedoresCache = [];
 let movimientosCache = [];
+let preciosCompraCache = [];
 let dolarActual = 0;
 
 // Formatear moneda
@@ -27,10 +28,23 @@ function formatearDolares(valor) {
 // Inicializar página
 document.addEventListener('DOMContentLoaded', () => {
     verificarAuth();
+    precargarFiltroMovFechas();
     cargarProveedores();
     cargarDolar();
     cargarStock();
 });
+
+// Por defecto el informe de Movimientos arranca acotado al mes en curso,
+// para no depender nunca del LIMIT de salvaguarda del backend.
+function precargarFiltroMovFechas() {
+    const hoy = new Date();
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const aISO = d => d.toISOString().slice(0, 10);
+    const campoDesde = document.getElementById('filtroMovDesde');
+    const campoHasta = document.getElementById('filtroMovHasta');
+    if (campoDesde) campoDesde.value = aISO(inicioMes);
+    if (campoHasta) campoHasta.value = aISO(hoy);
+}
 
 // Cargar dólar actual
 async function cargarDolar() {
@@ -54,16 +68,34 @@ async function cargarProveedores() {
     try {
         const proveedores = await apiFetch('/api/proveedores');
         proveedoresCache = proveedores;
-        
+
+        const opciones = proveedores.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+
         const selectFiltro = document.getElementById('filtroProveedor');
-        selectFiltro.innerHTML = '<option value="">Todos los proveedores</option>';
-        
-        proveedores.forEach(p => {
-            selectFiltro.innerHTML += `<option value="${p.id}">${p.nombre}</option>`;
-        });
+        selectFiltro.innerHTML = '<option value="">Todos los proveedores</option>' + opciones;
+
+        const selectFiltroMov = document.getElementById('filtroMovProveedor');
+        if (selectFiltroMov) selectFiltroMov.innerHTML = '<option value="">Todos</option>' + opciones;
+
+        const selectFiltroPrec = document.getElementById('filtroPrecProveedor');
+        if (selectFiltroPrec) selectFiltroPrec.innerHTML = '<option value="">Todos</option>' + opciones;
     } catch (err) {
         console.error('Error cargando proveedores:', err);
     }
+}
+
+// Popula los selects de material de los filtros de Movimientos y Precios
+// con el stock ya cargado.
+function poblarFiltroMaterial(stock) {
+    const opciones = stock.map(s => `<option value="${s.articulo_id}">${s.nombre || s.codigo || s.articulo_id}</option>`).join('');
+
+    ['filtroMovMaterial', 'filtroPrecMaterial'].forEach(idSelect => {
+        const select = document.getElementById(idSelect);
+        if (!select) return;
+        const seleccionado = select.value;
+        select.innerHTML = '<option value="">Todos</option>' + opciones;
+        select.value = seleccionado;
+    });
 }
 
 // Cargar stock
@@ -82,9 +114,10 @@ async function cargarStock() {
         const endpoint = `/api/stock${params.toString() ? '?' + params : ''}`;
         const stock = await apiFetch(endpoint);
         stockCache = stock;
-        
+
         renderizarTablaStock(stock);
         actualizarEstadisticas(stock);
+        poblarFiltroMaterial(stock);
         cargarMovimientos();
     } catch (err) {
         console.error('Error cargando stock:', err);
@@ -146,49 +179,220 @@ function renderizarTablaStock(stock) {
     }).join('');
 }
 
-// Renderizar stock bajo
+// Cargar movimientos (informe de compras/stock), con los filtros de la tab
 async function cargarMovimientos() {
     try {
-        const movimientos = await apiFetch('/api/stock/movimientos');
+        const params = new URLSearchParams();
+
+        const desde = document.getElementById('filtroMovDesde')?.value;
+        const hasta = document.getElementById('filtroMovHasta')?.value;
+        const proveedor = document.getElementById('filtroMovProveedor')?.value;
+        const material = document.getElementById('filtroMovMaterial')?.value;
+        const tipo = document.getElementById('filtroMovTipo')?.value;
+
+        if (desde) params.append('desde', desde);
+        if (hasta) params.append('hasta', hasta);
+        if (proveedor) params.append('proveedor_id', proveedor);
+        if (material) params.append('materia_prima_id', material);
+        if (tipo) params.append('tipo', tipo);
+
+        const endpoint = `/api/stock/movimientos${params.toString() ? '?' + params : ''}`;
+        const movimientos = await apiFetch(endpoint);
         movimientosCache = movimientos;
         renderizarMovimientos(movimientos);
     } catch (err) {
         console.error('Error cargando movimientos:', err);
+        Shell.error(err, 'No se pudo cargar los movimientos');
     }
 }
 
-// Renderizar movimientos
+// Renderizar movimientos (informe de compras/stock)
 function renderizarMovimientos(movimientos) {
     const tbody = document.getElementById('movimientosTableBody');
-    
+
     if (!movimientos || movimientos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No hay movimientos registrados</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
+            'No hay movimientos para este filtro',
+            'Probá ampliar el rango de fechas o limpiar los filtros.')}</td></tr>`;
         return;
     }
-    
-    tbody.innerHTML = movimientos.slice(0, 50).map(m => {
-        let tipoBadge = '';
-        if (m.tipo_movimiento === 'ENTRADA') {
-            tipoBadge = '<span class="badge bg-success">ENTRADA</span>';
-        } else if (m.tipo_movimiento === 'SALIDA') {
-            tipoBadge = '<span class="badge bg-danger">SALIDA</span>';
-        } else {
-            tipoBadge = '<span class="badge bg-warning">AJUSTE</span>';
-        }
-        
+
+    tbody.innerHTML = movimientos.map(m => `
+        <tr>
+            <td data-label="Fecha">${Shell.fecha(m.fecha)}</td>
+            <td data-label="Material"><strong>${m.articulo_nombre || '-'}</strong>${m.articulo_codigo ? ' <span class="muted">' + m.articulo_codigo + '</span>' : ''}</td>
+            <td data-label="Tipo">${Shell.pill(m.tipo_movimiento)}</td>
+            <td class="num" data-label="Cantidad">${m.cantidad ?? 0} ${m.unidad || ''}</td>
+            <td data-label="Proveedor">${m.proveedor_nombre || '—'}</td>
+            <td class="solo-escritorio" data-label="N° Factura">${m.numero_factura ? (m.numero_factura + (m.factura_fecha ? ' (' + Shell.fecha(m.factura_fecha) + ')' : '')) : '—'}</td>
+            <td class="solo-escritorio" data-label="Observación">${m.observacion || '—'}</td>
+            <td class="num solo-escritorio" data-label="Quedó en">${m.stock_nuevo ?? '—'}</td>
+        </tr>
+    `).join('');
+}
+
+// Limpiar filtros de Movimientos
+function limpiarFiltrosMovimientos() {
+    document.getElementById('filtroMovDesde').value = '';
+    document.getElementById('filtroMovHasta').value = '';
+    document.getElementById('filtroMovProveedor').value = '';
+    document.getElementById('filtroMovMaterial').value = '';
+    document.getElementById('filtroMovTipo').value = '';
+    cargarMovimientos();
+}
+
+// Exportar el informe de movimientos (ya filtrado) a CSV
+function exportarMovimientosCSV() {
+    if (!movimientosCache.length) {
+        Shell.toast('err', 'No hay datos para exportar');
+        return;
+    }
+
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    const headers = ['Fecha', 'Material', 'Código', 'Tipo', 'Cantidad', 'Unidad',
+        'Precio unitario', 'Proveedor', 'N° Factura', 'Observaciones', 'Usuario'];
+    csvContent += headers.join(',') + '\n';
+
+    movimientosCache.forEach(m => {
+        const fila = [
+            m.fecha || '',
+            `"${(m.articulo_nombre || '').replace(/"/g, '""')}"`,
+            `"${(m.articulo_codigo || '').replace(/"/g, '""')}"`,
+            m.tipo_movimiento || '',
+            m.cantidad ?? 0,
+            m.unidad || '',
+            m.precio_unitario ?? '',
+            `"${(m.proveedor_nombre || '').replace(/"/g, '""')}"`,
+            m.numero_factura || '',
+            `"${(m.observacion || '').replace(/"/g, '""')}"`,
+            `"${(m.usuario || '').replace(/"/g, '""')}"`
+        ];
+        csvContent += fila.join(',') + '\n';
+    });
+
+    const desde = document.getElementById('filtroMovDesde')?.value;
+    const hasta = document.getElementById('filtroMovHasta')?.value;
+    const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+    const link = document.createElement('a');
+    link.href = encodeURI(csvContent);
+    link.download = `movimientos-stock-${rango}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    Shell.toast('ok', 'Reporte exportado');
+}
+
+// ============================================
+// EVOLUCIÓN DE PRECIOS DE COMPRA (tab nueva)
+// ============================================
+function paramsPrecios() {
+    const params = new URLSearchParams();
+    const desde = document.getElementById('filtroPrecDesde')?.value;
+    const hasta = document.getElementById('filtroPrecHasta')?.value;
+    const material = document.getElementById('filtroPrecMaterial')?.value;
+    const proveedor = document.getElementById('filtroPrecProveedor')?.value;
+
+    if (desde) params.append('desde', desde);
+    if (hasta) params.append('hasta', hasta);
+    if (material) params.append('materia_prima_id', material);
+    if (proveedor) params.append('proveedor_id', proveedor);
+    return params;
+}
+
+async function cargarEvolucionPrecios() {
+    try {
+        const params = paramsPrecios();
+        const endpoint = `/api/materias-primas/historial-precios${params.toString() ? '?' + params : ''}`;
+        const precios = await apiFetch(endpoint);
+        preciosCompraCache = precios || [];
+        renderizarEvolucionPrecios(precios);
+    } catch (err) {
+        console.error('Error cargando evolución de precios:', err);
+        Shell.error(err, 'No se pudo cargar la evolución de precios');
+    }
+}
+
+function renderizarEvolucionPrecios(precios) {
+    const tbody = document.getElementById('evolucionPreciosTableBody');
+
+    if (!precios || precios.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+            'No hay cambios de precio para este filtro',
+            'Probá ampliar el rango de fechas o limpiar los filtros.')}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = precios.map(p => {
+        const variacion = p.variacion_porcentaje;
+        const claseVar = variacion > 0 ? 'neg' : (variacion < 0 ? 'pos' : '');
         return `
-            <tr>
-                <td>${m.fecha || '-'}</td>
-                <td>${m.articulo_nombre || '-'}</td>
-                <td>${tipoBadge}</td>
-                <td>${m.cantidad || 0}</td>
-                <td>${m.stock_anterior || 0}</td>
-                <td>${m.stock_nuevo || 0}</td>
-                <td>${m.usuario || '-'}</td>
-                <td>${m.observacion || '-'}</td>
-            </tr>
-        `;
+        <tr>
+            <td data-label="Fecha">${Shell.fecha(p.fecha_cambio)}</td>
+            <td data-label="Material"><strong>${p.material_nombre || '-'}</strong>${p.material_codigo ? ' <span class="muted">' + p.material_codigo + '</span>' : ''}</td>
+            <td data-label="Proveedor">${p.proveedor_nombre || '—'}</td>
+            <td class="num" data-label="Precio anterior">${p.precio_anterior != null ? formatearMoneda(p.precio_anterior) : '—'}</td>
+            <td class="num" data-label="Precio nuevo">${formatearMoneda(p.precio_nuevo)}</td>
+            <td class="num ${claseVar}" data-label="Variación">${variacion != null ? (variacion > 0 ? '+' : '') + Number(variacion).toFixed(1) + '%' : '—'}</td>
+            <td class="solo-escritorio" data-label="N° Factura">${p.factura_numero || '—'}</td>
+        </tr>`;
     }).join('');
+}
+
+function limpiarFiltrosPrecios() {
+    document.getElementById('filtroPrecDesde').value = '';
+    document.getElementById('filtroPrecHasta').value = '';
+    document.getElementById('filtroPrecMaterial').value = '';
+    document.getElementById('filtroPrecProveedor').value = '';
+    cargarEvolucionPrecios();
+}
+
+function exportarPreciosCSV() {
+    if (!preciosCompraCache.length) {
+        Shell.toast('err', 'No hay datos para exportar');
+        return;
+    }
+
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    const headers = ['Fecha', 'Material', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° Factura'];
+    csvContent += headers.join(',') + '\n';
+
+    preciosCompraCache.forEach(p => {
+        const fila = [
+            p.fecha_cambio || '',
+            `"${(p.material_nombre || '').replace(/"/g, '""')}"`,
+            `"${(p.material_codigo || '').replace(/"/g, '""')}"`,
+            `"${(p.proveedor_nombre || '').replace(/"/g, '""')}"`,
+            p.precio_anterior ?? '',
+            p.precio_nuevo ?? '',
+            p.variacion_porcentaje ?? '',
+            p.factura_numero || ''
+        ];
+        csvContent += fila.join(',') + '\n';
+    });
+
+    const desde = document.getElementById('filtroPrecDesde')?.value;
+    const hasta = document.getElementById('filtroPrecHasta')?.value;
+    const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+    const link = document.createElement('a');
+    link.href = encodeURI(csvContent);
+    link.download = `precios-compra-${rango}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    Shell.toast('ok', 'Reporte exportado');
+}
+
+async function verPreciosPdf() {
+    try {
+        const params = paramsPrecios();
+        await verArchivoProtegido(`api/materias-primas/historial-precios/pdf${params.toString() ? '?' + params : ''}`);
+    } catch (err) {
+        Shell.error(err, 'No se pudo abrir el PDF');
+    }
 }
 
 // Actualizar estadísticas
@@ -302,16 +506,16 @@ async function verPrecios(articuloId) {
     try {
         const precios = await apiFetch(`/api/materias-primas/${articuloId}/historial-precios`);
         
-        const tbody = document.getElementById('preciosBody');
+        const tbody = document.getElementById('preciosTableBody');
         if (!precios || precios.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
         } else {
             tbody.innerHTML = precios.map(p => `
                 <tr>
-                    <td>${p.fecha_cambio || '-'}</td>
+                    <td>${Shell.fecha(p.fecha_cambio)}</td>
                     <td>${formatearMoneda(p.precio_anterior || 0)}</td>
                     <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
-                    <td class="${p.variacion_porcentaje > 0 ? 'text-danger' : 'text-success'}">
+                    <td class="${p.variacion_porcentaje > 0 ? 'neg' : (p.variacion_porcentaje < 0 ? 'pos' : '')}">
                         ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
                     </td>
                     <td>${p.proveedor_nombre || '-'}</td>
@@ -354,6 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
       boton.classList.add('active');
       document.getElementById('tab-' + boton.dataset.tab)?.classList.add('active');
       if (boton.dataset.tab === 'movimientos') cargarMovimientos();
+      if (boton.dataset.tab === 'precios') cargarEvolucionPrecios();
     });
   });
 

@@ -438,9 +438,9 @@
     pill: function (estado) {
       var e = String(estado || '').toUpperCase();
       var clase = 'pill-neutral';
-      if (/^(PAGADA|COBRADA|ACREDITADO|DEBITADO|IMPUTADO)$/.test(e)) clase = 'pill-ok';
-      else if (/^(PARCIAL|EN_GESTION|EN_CARTERA|PAGADA_EN_VALORES|A_CUENTA)$/.test(e)) clase = 'pill-warn';
-      else if (/^(VENCIDA|RECHAZADO|SOBRE_PAGADA|SOBRE_COBRADA)$/.test(e)) clase = 'pill-danger';
+      if (/^(PAGADA|COBRADA|ACREDITADO|DEBITADO|IMPUTADO|ENTRADA)$/.test(e)) clase = 'pill-ok';
+      else if (/^(PARCIAL|EN_GESTION|EN_CARTERA|PAGADA_EN_VALORES|A_CUENTA|AJUSTE)$/.test(e)) clase = 'pill-warn';
+      else if (/^(VENCIDA|RECHAZADO|SOBRE_PAGADA|SOBRE_COBRADA|SALIDA|MERMA)$/.test(e)) clase = 'pill-danger';
       else if (/^(PENDIENTE|DEPOSITADO|ENTREGADO)$/.test(e)) clase = 'pill-info';
       return '<span class="pill ' + clase + '">' + e.replace(/_/g, ' ') + '</span>';
     },

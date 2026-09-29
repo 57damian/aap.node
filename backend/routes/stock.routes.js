@@ -151,7 +151,7 @@ router.get('/actual', LECTURA, async (req, res) => {
  */
 router.get('/movimientos', LECTURA, async (req, res) => {
   try {
-    const { materia_prima_id, desde, hasta, tipo } = req.query;
+    const { materia_prima_id, proveedor_id, desde, hasta, tipo } = req.query;
 
     let query = `
       SELECT
@@ -179,6 +179,10 @@ router.get('/movimientos', LECTURA, async (req, res) => {
       query += ` AND sm.materia_prima_id = $${paramIndex++}`;
       params.push(materia_prima_id);
     }
+    if (proveedor_id) {
+      query += ` AND sm.proveedor_id = $${paramIndex++}`;
+      params.push(proveedor_id);
+    }
     if (desde) {
       query += ` AND sm.fecha_movimiento >= $${paramIndex++}`;
       params.push(desde);
@@ -192,7 +196,10 @@ router.get('/movimientos', LECTURA, async (req, res) => {
       params.push(tipo);
     }
 
-    query += ` ORDER BY sm.fecha_movimiento DESC, sm.id DESC LIMIT 1000`;
+    // Sin paginación real: el filtro por fecha (desde/hasta) acota el volumen
+    // en el uso normal. Este LIMIT es solo una salvaguarda para no devolver
+    // un resultado inmanejable si se consulta sin rango de fechas.
+    query += ` ORDER BY sm.fecha_movimiento DESC, sm.id DESC LIMIT 5000`;
 
     const result = await pool.query(query, params);
     // segunRol: al operario no le llegan precio, variación ni proveedor.
