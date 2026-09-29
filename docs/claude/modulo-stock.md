@@ -108,3 +108,19 @@ Cambios:
 No se tocó ninguna migración: todas las columnas ya existían. El patrón
 general (filtros de fecha + export CSV, aplicable a otros módulos) queda
 documentado en `claude/modulo-reportes.md`.
+
+**Pendiente: falta el `git push` de este cambio.** Quedó commiteado en local
+en la rama `claude/gifted-mendel-jg5wim` (commit `50714e7`), pero el push a
+GitHub falló con 403 — el acceso de Claude a `57damian/aap.node` no estaba
+conectado en ese momento (ver "Incidente" abajo). Al retomar: reconectar el
+acceso y correr `git push -u origin claude/gifted-mendel-jg5wim` (o pedirle a
+Claude que lo haga) antes de seguir trabajando sobre esa rama, para no perder
+el commit si se descarta el contenedor de esa sesión.
+
+**Incidente 29/09/2026 — push bloqueado por acceso a GitHub no conectado:**
+`git push` devolvió `403` con el mensaje "Claude doesn't have GitHub access
+to 57damian/aap.node for your organization". Se reintentó varias veces sin
+éxito (no es un problema transitorio). Solución: reconectar GitHub desde
+`https://claude.ai/customize/connectors?auth_start=github&auth_start_force=1`,
+o confirmar que la app de Claude esté instalada en el repo desde
+`https://github.com/apps/claude/installations/select_target`.
