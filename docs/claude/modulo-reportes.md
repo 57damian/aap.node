@@ -57,6 +57,31 @@ function exportarXCSV() {
 - Ejemplos de referencia: `backend/public/js/alertas-pagos.js:exportarReporte()` (el primero y más prolijo) y, ya aplicado con este mismo patrón, `backend/public/js/stock.js:exportarMovimientosCSV()`.
 - Un PDF de reporte (reusando `services/pdf-base.js`) es una alternativa más pesada de construir, pensada para "algo para imprimir o mandar" más que para "datos para mirar en una planilla" — no usar ese camino salvo que se pida explícitamente un documento, no una exportación de datos.
 
+### 4. PDF con previsualización y descarga (agregado 29/09/2026, pedido explícito de Damian)
+
+Además del CSV (para analizar los datos en una planilla), cada informe debe
+poder verse y bajarse como PDF — mismo criterio que ya usa el resto del
+sistema para remitos/facturas/cobros/fichas (ver "Descarga de PDF" en
+`CLAUDE.md`), no un mecanismo nuevo:
+
+- **Backend**: un endpoint `GET /api/<recurso>/reporte/pdf` (mismos query
+  params `desde`/`hasta`/filtros que el endpoint de datos) que arma el PDF
+  con `services/pdf-base.js` — reusar `dibujarTabla()` (tabla paginada
+  genérica con membrete) en vez de armar un layout nuevo por informe.
+  Responder con `Content-Type: application/pdf` y **sin** `Content-Disposition:
+  attachment` forzado, para que el botón pueda abrirlo inline (ver frontend).
+- **Frontend**: un botón "PDF" que llama a `verArchivoProtegido()`
+  (`js/api.js`) contra ese endpoint — abre el PDF en una pestaña nueva con el
+  visor nativo del navegador, que ya resuelve **previsualización y descarga**
+  en un solo lugar (el visor nativo trae su propio botón de descargar), sin
+  necesitar dos botones separados ni un componente nuevo. Es el mismo patrón
+  ya usado en `oc_detalle.js`, `cobros.js`, `ficha.js`, `pedidos-proveedor.js`
+  — no `descargarArchivoProtegido()` (esa fuerza la descarga directa, sin
+  preview).
+- El PDF muestra los mismos filtros aplicados (encabezado con el rango de
+  fechas) y las mismas columnas que la tabla en pantalla — no hace falta que
+  sea idéntico al CSV al byte, pero sí consistente en qué datos incluye.
+
 ## Candidatos detectados para aplicar este patrón (no implementados todavía)
 
 - **Ventas / remitos**: no tiene botón de exportar.
@@ -71,9 +96,11 @@ y evolución de precios en el tiempo ("rutas de aumento"). Se relevaron los
 tres módulos pendientes contra la receta de arriba. Decisión ya tomada con
 Damian: la evolución de precios se muestra como **tabla con % de variación
 calculado**, no con gráficos — el sistema no usa gráficos en ningún lado hoy
-y no conviene romper esa consistencia por este pedido. Orden sugerido de
-implementación: Producción → Cobros/Pagos a proveedores (quick wins) →
-Ventas → Precios (lo más grande). No hace falta ninguna migración de
+y no conviene romper esa consistencia por este pedido. Además, cada informe
+de esta lista (incluido el de Stock ya implementado) debe sumar el PDF con
+previsualización y descarga del punto 4 de la receta, no solo el CSV. Orden
+sugerido de implementación: Producción → Cobros/Pagos a proveedores (quick
+wins) → Ventas → Precios (lo más grande). No hace falta ninguna migración de
 esquema en ninguno de los cuatro puntos.
 
 ### 1. Producción — lo que menos falta
@@ -89,12 +116,15 @@ frontend ya manda los filtros. Falta solo:
   de módulo (hoy es local a la función) y agregar botón "Exportar CSV" +
   función `exportarHistorialProduccionCSV()`, calcada de
   `stock.js:exportarMovimientosCSV()`.
+- Sumar `GET /api/produccion/reporte/pdf` (mismo endpoint de datos, armado
+  con `services/pdf-base.js`) + botón "PDF" con `verArchivoProtegido()`.
 
 ### 2. Quick wins — Cobros y Pagos a proveedores
 
 Ya tienen filtro de fecha funcionando (`cobros.js:cargarHistorial()` línea
-741; pestaña Historial de `pagos-proveedores.js`). Solo falta el paso 3 de la
-receta: botón "Exportar CSV" por pantalla, sin tocar backend.
+741; pestaña Historial de `pagos-proveedores.js`). Falta el paso 3 de la
+receta (botón "Exportar CSV") y el punto 4 (botón "PDF"), sin tocar backend
+más que el endpoint `.../reporte/pdf` nuevo de cada uno.
 
 ### 3. Ventas/remitos (entregas a clientes) — gap real, mismo diagnóstico que tuvo Stock
 
@@ -107,7 +137,8 @@ receta: botón "Exportar CSV" por pantalla, sin tocar backend.
 - **Frontend** (`ventas.html`/`ventas.js`): agregar filtros `desde`/`hasta`
   (hoy solo filtra por `cliente_id`); pintar modelo/cantidad (ya vienen en
   `items` y no se muestran), `remito_numero`, `remito_observaciones` y precio
-  (una vez agregado al backend); botón "Exportar CSV".
+  (una vez agregado al backend); botones "Exportar CSV" y "PDF" (este último
+  contra un `GET /api/ventas/reporte/pdf` nuevo, con `verArchivoProtegido()`).
 
 ### 4. Precios — "rutas de aumento" en el tiempo (el más grande)
 
@@ -119,7 +150,7 @@ receta: botón "Exportar CSV" por pantalla, sin tocar backend.
   en `historial_precios_materias.variacion_porcentaje`, no hay que
   recalcularla. Frontend: modal `verPrecios()` de `stock.js` hoy usa badges
   `text-danger`/`text-success` hardcodeados — reemplazar por `Shell.pill`/
-  clases `neg`/`pos`, sumar filtro de fecha y export CSV.
+  clases `neg`/`pos`, sumar filtro de fecha y botones "Exportar CSV"/"PDF".
 - **Precios de venta por modelo**: `precios_modelo` ya funciona como
   historial completo (cada fila = un punto en el tiempo, `precios.routes.js`),
   pero `GET /modelo/:ficha_id` (líneas 69-83) es por modelo y sin fecha, y no
@@ -128,8 +159,10 @@ receta: botón "Exportar CSV" por pantalla, sin tocar backend.
   fecha_desde)` en la misma query (sin migrar la tabla), y sumar un endpoint
   agregado nuevo (`GET /api/precios/modelo/historial`, todos los modelos).
   Frontend (`precios.html`/`precios.js`, pestaña "Precios por modelo"):
-  filtro de fecha, columna de variación %, export CSV.
+  filtro de fecha, columna de variación %, botones "Exportar CSV"/"PDF".
 - **Dólar**: `GET /api/precios/parametros/dolar/historial` (líneas 342-360)
   tiene `LIMIT 50` fijo sin filtro de fecha; frontend además recorta a
   `.slice(0, 10)`. Agregar `desde`/`hasta` al backend, sacar el recorte del
-  frontend, sumar filtro de fecha y export CSV.
+  frontend, sumar filtro de fecha y botones "Exportar CSV"/"PDF".
+- Los tres endpoints `.../reporte/pdf` (compra MP, venta por modelo, dólar)
+  siguen el mismo patrón del punto 4 de la receta general.
