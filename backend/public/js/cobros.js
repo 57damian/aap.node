@@ -14,7 +14,8 @@ const estado = {
   formas: [],          // formas de cobro cargadas en el formulario
   facturas: [],        // facturas pendientes del cliente elegido
   imputaciones: {},    // { factura_id: monto }
-  seqForma: 0
+  seqForma: 0,
+  historial: []        // último resultado de cargarHistorial(), para exportar
 };
 
 /* ---------------------- utilidades ---------------------- */
@@ -59,6 +60,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnCancelarCobro').addEventListener('click', resetFormularioCobro);
   $('btnFiltrarCheques').addEventListener('click', cargarCheques);
   $('btnFiltrarHistorial').addEventListener('click', cargarHistorial);
+  $('btnExportarHistorialCSV').addEventListener('click', exportarHistorialCSV);
+  $('btnVerHistorialPdf').addEventListener('click', verHistorialPdf);
   $('btnCerrarDrawer').addEventListener('click', cerrarDrawer);
   $('drawerBg').addEventListener('click', cerrarDrawer);
 
@@ -738,16 +741,22 @@ async function accionCheque(id, accion) {
 
 /* ---------------------- historial de cobros ---------------------- */
 
-async function cargarHistorial() {
+function paramsHistorial() {
   const params = new URLSearchParams();
   if ($('filtroHistCliente').value) params.set('cliente_id', $('filtroHistCliente').value);
   if ($('filtroHistDesde').value) params.set('desde', $('filtroHistDesde').value);
   if ($('filtroHistHasta').value) params.set('hasta', $('filtroHistHasta').value);
   if ($('filtroHistEstado').value) params.set('estado', $('filtroHistEstado').value);
+  return params;
+}
+
+async function cargarHistorial() {
+  const params = paramsHistorial();
 
   const tbody = $('tablaHistorial');
   try {
     const cobros = await apiFetch(`${API}?${params}`);
+    estado.historial = cobros || [];
 
     if (!cobros.length) {
       tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No hay cobros con ese filtro', '') + '</td></tr>';
@@ -775,6 +784,55 @@ async function cargarHistorial() {
   } catch (err) {
     Shell.error(err, 'No se pudo cargar el historial de cobros');
     tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+  }
+}
+
+// Exportar el historial ya filtrado (mismo patrón que stock.js:exportarMovimientosCSV)
+function exportarHistorialCSV() {
+  if (!estado.historial.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  const headers = ['Fecha', 'Cliente', 'Formas', 'Monto', 'Imputado', 'Sin imputar', 'Recibo', 'Estado'];
+  csvContent += headers.join(',') + '\n';
+
+  estado.historial.forEach(p => {
+    const fila = [
+      p.fecha_recepcion || '',
+      `"${(p.cliente_nombre || '').replace(/"/g, '""')}"`,
+      `"${(p.formas || '').replace(/_/g, ' ').toLowerCase().replace(/"/g, '""')}"`,
+      p.monto_total ?? 0,
+      p.imputado ?? 0,
+      p.disponible ?? 0,
+      p.numero_recibo || '',
+      p.estado || ''
+    ];
+    csvContent += fila.join(',') + '\n';
+  });
+
+  const desde = $('filtroHistDesde').value;
+  const hasta = $('filtroHistHasta').value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `cobros-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+// Previsualizar/descargar el informe (mismos filtros aplicados) en PDF
+async function verHistorialPdf() {
+  try {
+    const params = paramsHistorial();
+    await verArchivoProtegido(`api/cobros/reporte/pdf?${params}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 

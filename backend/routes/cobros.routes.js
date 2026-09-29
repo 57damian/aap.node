@@ -25,7 +25,19 @@ const {
 } = require('../services/cuenta-cliente');
 const { anularCobro } = require('../services/anulaciones');
 const { generarPdfCobro } = require('../services/pdf-cobro');
-const { nombreArchivo } = require('../services/pdf-base');
+const { nombreArchivo, fecha: fmtFecha, money } = require('../services/pdf-base');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+
+const COLS_PDF_COBROS = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
+  { campo: 'cliente', titulo: 'Cliente', x: 60, ancho: 140 },
+  { campo: 'formas', titulo: 'Formas', x: 200, ancho: 90 },
+  { campo: 'monto', titulo: 'Monto', x: 290, ancho: 70, align: 'right' },
+  { campo: 'imputado', titulo: 'Imputado', x: 360, ancho: 70, align: 'right' },
+  { campo: 'disponible', titulo: 'Sin imputar', x: 430, ancho: 75, align: 'right' },
+  { campo: 'recibo', titulo: 'Recibo', x: 505, ancho: 70 },
+  { campo: 'estado', titulo: 'Estado', x: 575, ancho: ANCHO_UTIL_REPORTE - 575 }
+];
 
 router.use(verificarToken);
 
@@ -480,6 +492,84 @@ router.get('/', soloAdmin, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error listando cobros:', err);
+    fallar(res, 500, err.message);
+  }
+});
+
+/* PDF del historial de cobros (mismos filtros que GET /). */
+router.get('/reporte/pdf', soloAdmin, async (req, res) => {
+  const { cliente_id, desde, hasta, estado } = req.query;
+  const params = [];
+  let filtro = '';
+
+  if (cliente_id) { params.push(cliente_id); filtro += ` AND p.cliente_id = $${params.length}`; }
+  if (desde)      { params.push(desde);      filtro += ` AND p.fecha_recepcion >= $${params.length}`; }
+  if (hasta)      { params.push(hasta);      filtro += ` AND p.fecha_recepcion <= $${params.length}`; }
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM (
+        SELECT
+          p.id, p.cliente_id, p.fecha_recepcion, p.observaciones, p.anulado,
+          p.recibo_id, r.numero_recibo,
+          c.nombre AS cliente_nombre,
+          ROUND(p.monto_total, 2) AS monto_total,
+          ROUND(COALESCE(t.imputado, 0), 2)   AS imputado,
+          ROUND(COALESCE(t.disponible, 0), 2) AS disponible,
+          t.formas,
+          CASE
+            WHEN p.anulado                              THEN 'ANULADO'
+            WHEN COALESCE(t.disponible, 0) <= 0.005     THEN 'IMPUTADO'
+            WHEN COALESCE(t.imputado, 0) > 0.005        THEN 'PARCIAL'
+            ELSE 'A_CUENTA'
+          END AS estado
+        FROM pagos p
+        LEFT JOIN clientes c ON c.id = p.cliente_id
+        LEFT JOIN recibos  r ON r.id = p.recibo_id
+        LEFT JOIN (
+          SELECT
+            pi.pago_id,
+            SUM(CASE WHEN pi.estado IN ('RECHAZADO','ANULADO') THEN 0
+                     ELSE COALESCE(ap.imputado, 0) END)                                AS imputado,
+            SUM(CASE WHEN pi.estado IN ('RECHAZADO','ANULADO') THEN 0
+                     ELSE pi.monto - COALESCE(ap.imputado, 0) END)                     AS disponible,
+            string_agg(DISTINCT pi.tipo, ' + ' ORDER BY pi.tipo)                       AS formas
+          FROM pago_items pi
+          LEFT JOIN (SELECT pago_item_id, SUM(monto_aplicado) AS imputado
+                     FROM aplicacion_pagos GROUP BY pago_item_id) ap ON ap.pago_item_id = pi.id
+          GROUP BY pi.pago_id
+        ) t ON t.pago_id = p.id
+        WHERE 1=1 ${filtro}
+      ) q
+      ${estado ? 'WHERE q.estado = $' + (params.push(estado.toUpperCase())) : ''}
+      ORDER BY q.fecha_recepcion DESC, q.id DESC
+      LIMIT 5000
+    `, params);
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+    if (estado) filtros.push(`Estado: ${estado}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="cobros-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Historial de cobros',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_COBROS,
+      filas: rows,
+      armarCelda: (r) => ({
+        fecha: fmtFecha(r.fecha_recepcion),
+        cliente: r.cliente_nombre || '—',
+        formas: (r.formas || '').replace(/_/g, ' ').toLowerCase() || '—',
+        monto: money(r.monto_total),
+        imputado: money(r.imputado),
+        disponible: money(r.disponible),
+        recibo: r.numero_recibo || '—',
+        estado: r.estado
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de cobros:', err);
     fallar(res, 500, err.message);
   }
 });

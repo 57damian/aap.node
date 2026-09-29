@@ -287,26 +287,29 @@ async function cargarStock() {
 // ============================================
 // CARGAR HISTORIAL
 // ============================================
+let historialProduccionCache = [];
+
+function paramsHistorialProduccion() {
+  const modelo = document.getElementById('filtroModelo')?.value;
+  const desde = document.getElementById('filtroDesde')?.value;
+  const hasta = document.getElementById('filtroHasta')?.value;
+
+  const params = new URLSearchParams();
+  if (modelo) params.append('ficha_id', modelo);
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+  return params;
+}
+
 async function cargarHistorial() {
   try {
-    const modelo = document.getElementById('filtroModelo')?.value;
-    const desde = document.getElementById('filtroDesde')?.value;
-    const hasta = document.getElementById('filtroHasta')?.value;
-    
-    let url = '/api/produccion';
-    const params = [];
-    
-    if (modelo) params.push(`ficha_id=${modelo}`);
-    if (desde) params.push(`desde=${desde}`);
-    if (hasta) params.push(`hasta=${hasta}`);
-    
-    if (params.length > 0) {
-      url += '?' + params.join('&');
-    }
+    const params = paramsHistorialProduccion();
+    const url = `/api/produccion${params.toString() ? '?' + params : ''}`;
 
     const historial = await apiFetch(url);
+    historialProduccionCache = historial || [];
     const tbody = document.getElementById('historialTable');
-    
+
     if (!historial || historial.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
         'Sin registros en este período',
@@ -326,6 +329,52 @@ async function cargarHistorial() {
   } catch (err) {
     console.error('Error cargando historial:', err);
     mostrarAlerta('Error cargando historial', 'error');
+  }
+}
+
+// Exportar el historial ya filtrado (mismo patrón que stock.js:exportarMovimientosCSV)
+function exportarHistorialProduccionCSV() {
+  if (!historialProduccionCache.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  const headers = ['Fecha', 'Modelo', 'Cantidad', 'Registró', 'Observaciones'];
+  csvContent += headers.join(',') + '\n';
+
+  historialProduccionCache.forEach(item => {
+    const fila = [
+      item.fecha_produccion || '',
+      `"${(item.modelo || '').replace(/"/g, '""')}"`,
+      item.cantidad ?? 0,
+      `"${(item.registrado_por || '').replace(/"/g, '""')}"`,
+      `"${(item.observaciones || '').replace(/"/g, '""')}"`
+    ];
+    csvContent += fila.join(',') + '\n';
+  });
+
+  const desde = document.getElementById('filtroDesde')?.value;
+  const hasta = document.getElementById('filtroHasta')?.value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `produccion-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+// Previsualizar/descargar el mismo informe en PDF (mismos filtros aplicados)
+async function verHistorialProduccionPdf() {
+  try {
+    const params = paramsHistorialProduccion();
+    await verArchivoProtegido(`api/produccion/reporte/pdf${params.toString() ? '?' + params : ''}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 

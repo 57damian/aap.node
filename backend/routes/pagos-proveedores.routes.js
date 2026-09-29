@@ -33,6 +33,19 @@ const {
   EXCESO_PAGADO, ESTADO_FACTURA_COMPRA,
   resumenProveedor, cuentaCorrienteProveedor
 } = require('../services/cuenta-proveedor');
+const { fecha: fmtFecha, money } = require('../services/pdf-base');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+
+const COLS_PDF_PAGOS_PROVEEDORES = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
+  { campo: 'proveedor', titulo: 'Proveedor', x: 60, ancho: 140 },
+  { campo: 'formas', titulo: 'Formas', x: 200, ancho: 80 },
+  { campo: 'referencia', titulo: 'Referencia', x: 280, ancho: 90 },
+  { campo: 'monto', titulo: 'Monto', x: 370, ancho: 65, align: 'right' },
+  { campo: 'imputado', titulo: 'Imputado', x: 435, ancho: 65, align: 'right' },
+  { campo: 'disponible', titulo: 'Sin imputar', x: 500, ancho: 70, align: 'right' },
+  { campo: 'estado', titulo: 'Estado', x: 570, ancho: ANCHO_UTIL_REPORTE - 570 }
+];
 
 router.use(verificarToken);
 
@@ -614,6 +627,94 @@ router.get('/', soloAdmin, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error listando pagos a proveedores:', err);
+    fallar(res, 500, err.message);
+  }
+});
+
+/* PDF del historial de pagos a proveedores (mismos filtros que GET /). */
+router.get('/reporte/pdf', soloAdmin, async (req, res) => {
+  const { proveedor_id, desde, hasta, estado, fecha_desde, fecha_hasta } = req.query;
+  const params = [];
+  let filtro = '';
+
+  const d = desde || fecha_desde;
+  const h = hasta || fecha_hasta;
+
+  if (proveedor_id) { params.push(proveedor_id); filtro += ` AND pp.proveedor_id = $${params.length}`; }
+  if (d) { params.push(d); filtro += ` AND pp.fecha >= $${params.length}`; }
+  if (h) { params.push(h); filtro += ` AND pp.fecha <= $${params.length}`; }
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM (
+        SELECT
+          pp.id, pp.proveedor_id, pp.fecha, pp.referencia, pp.observaciones, pp.anulado,
+          pr.nombre AS proveedor_nombre,
+          ROUND(pp.monto, 2)                  AS monto,
+          ROUND(COALESCE(t.imputado, 0), 2)   AS imputado,
+          ROUND(COALESCE(t.disponible, 0), 2) AS disponible,
+          t.formas,
+          CASE
+            WHEN pp.anulado                          THEN 'ANULADO'
+            WHEN COALESCE(t.disponible, 0) <= 0.005  THEN 'IMPUTADO'
+            WHEN COALESCE(t.imputado, 0) > 0.005      THEN 'PARCIAL'
+            ELSE 'A_CUENTA'
+          END AS estado
+        FROM pagos_proveedores pp
+        LEFT JOIN proveedores pr ON pr.id = pp.proveedor_id
+        LEFT JOIN (
+          SELECT
+            ppi.pago_id,
+            SUM(CASE WHEN est.efectivo IN ('RECHAZADO','ANULADO') THEN 0
+                     ELSE COALESCE(ap.imputado, 0) END)                        AS imputado,
+            SUM(CASE WHEN est.efectivo IN ('RECHAZADO','ANULADO') THEN 0
+                     ELSE ppi.monto - COALESCE(ap.imputado, 0) END)            AS disponible,
+            string_agg(DISTINCT ppi.tipo, ' + ' ORDER BY ppi.tipo)              AS formas
+          FROM pago_proveedor_items ppi
+          JOIN pagos_proveedores pp2 ON pp2.id = ppi.pago_id
+          LEFT JOIN pago_items    orig ON orig.id = ppi.pago_item_origen_id
+          CROSS JOIN LATERAL (
+            SELECT CASE
+              WHEN pp2.anulado THEN 'ANULADO'
+              WHEN ppi.tipo = 'CHEQUE_ENDOSADO' AND orig.estado IN ('RECHAZADO','ANULADO') THEN 'RECHAZADO'
+              WHEN ppi.tipo = 'CHEQUE_ENDOSADO' AND orig.estado = 'ACREDITADO' THEN 'DEBITADO'
+              ELSE ppi.estado END AS efectivo
+          ) est
+          LEFT JOIN (SELECT pago_item_id, SUM(monto_aplicado) AS imputado
+                     FROM aplicacion_pagos_proveedores GROUP BY pago_item_id) ap ON ap.pago_item_id = ppi.id
+          GROUP BY ppi.pago_id
+        ) t ON t.pago_id = pp.id
+        WHERE 1=1 ${filtro}
+      ) q
+      ${estado ? 'WHERE q.estado = $' + (params.push(estado.toUpperCase())) : ''}
+      ORDER BY q.fecha DESC, q.id DESC
+      LIMIT 5000
+    `, params);
+
+    const filtros = [];
+    if (d || h) filtros.push(`Período: ${d ? fmtFecha(d) : 'inicio'} a ${h ? fmtFecha(h) : 'hoy'}`);
+    if (estado) filtros.push(`Estado: ${estado}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="pagos-proveedores-${d || 'todo'}_a_${h || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Historial de pagos a proveedores',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_PAGOS_PROVEEDORES,
+      filas: rows,
+      armarCelda: (r) => ({
+        fecha: fmtFecha(r.fecha),
+        proveedor: r.proveedor_nombre || '—',
+        formas: (r.formas || '').replace(/_/g, ' ').toLowerCase() || '—',
+        referencia: r.referencia || '—',
+        monto: money(r.monto),
+        imputado: money(r.imputado),
+        disponible: money(r.disponible),
+        estado: r.estado
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de pagos a proveedores:', err);
     fallar(res, 500, err.message);
   }
 });

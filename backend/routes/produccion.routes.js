@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+const { fecha } = require('../services/pdf-base');
+
+const COLS_PDF_PRODUCCION = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 70 },
+  { campo: 'modelo', titulo: 'Modelo', x: 70, ancho: 250 },
+  { campo: 'cantidad', titulo: 'Cantidad', x: 320, ancho: 80, align: 'right' },
+  { campo: 'registrado_por', titulo: 'Registró', x: 400, ancho: 150 },
+  { campo: 'observaciones', titulo: 'Observaciones', x: 550, ancho: ANCHO_UTIL_REPORTE - 550 }
+];
 
 router.use(verificarToken);
 /* ============================================
@@ -83,7 +93,10 @@ router.post('/', adminYOperario, async (req, res) => {
    GET /api/produccion?ficha_id=1&desde=2024-01-01&hasta=2024-12-31
 ============================================ */
 router.get('/', adminYOperario, async (req, res) => {
-  const { ficha_id, desde, hasta, limit = 100 } = req.query;
+  // Sin paginación real: el filtro por fecha acota el volumen en el uso
+  // normal (ver docs/claude/modulo-reportes.md). limit es solo una
+  // salvaguarda, no un mecanismo de recorte.
+  const { ficha_id, desde, hasta, limit = 5000 } = req.query;
 
   try {
     let query = `
@@ -131,6 +144,67 @@ router.get('/', adminYOperario, async (req, res) => {
 
   } catch (err) {
     console.error('Error listando producción:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ============================================
+   PDF DEL INFORME DE PRODUCCIÓN (mismos filtros que GET /)
+   GET /api/produccion/reporte/pdf?ficha_id=&desde=&hasta=
+============================================ */
+router.get('/reporte/pdf', adminYOperario, async (req, res) => {
+  const { ficha_id, desde, hasta } = req.query;
+
+  try {
+    let query = `
+      SELECT
+        p.cantidad, p.fecha_produccion, p.observaciones,
+        f.modelo,
+        u.nombre_usuario as registrado_por
+      FROM produccion p
+      JOIN ficha_transformador f ON f.id = p.ficha_id
+      LEFT JOIN usuarios u ON u.id = p.usuario_id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramCounter = 1;
+
+    if (ficha_id) {
+      query += ` AND p.ficha_id = $${paramCounter++}`;
+      params.push(ficha_id);
+    }
+    if (desde) {
+      query += ` AND p.fecha_produccion >= $${paramCounter++}`;
+      params.push(desde);
+    }
+    if (hasta) {
+      query += ` AND p.fecha_produccion <= $${paramCounter++}`;
+      params.push(hasta);
+    }
+    query += ` ORDER BY p.fecha_produccion DESC, p.id DESC LIMIT 5000`;
+
+    const result = await pool.query(query, params);
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Período: ${desde ? fecha(desde) : 'inicio'} a ${hasta ? fecha(hasta) : 'hoy'}`);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="produccion-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
+    generarPdfReporte({
+      titulo: 'Informe de producción',
+      filtrosTexto: filtros.join(' · ') || undefined,
+      cols: COLS_PDF_PRODUCCION,
+      filas: result.rows,
+      armarCelda: (r) => ({
+        fecha: fecha(r.fecha_produccion),
+        modelo: r.modelo || '—',
+        cantidad: Number(r.cantidad).toLocaleString('es-AR'),
+        registrado_por: r.registrado_por || '—',
+        observaciones: r.observaciones || '—'
+      })
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de producción:', err);
     res.status(500).json({ error: err.message });
   }
 });

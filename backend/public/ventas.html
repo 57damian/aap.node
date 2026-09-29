@@ -24,11 +24,22 @@
         <option value="">Todos</option>
       </select>
     </div>
+    <div class="field">
+      <label for="filtroDesde">Desde</label>
+      <input class="input" type="date" id="filtroDesde">
+    </div>
+    <div class="field">
+      <label for="filtroHasta">Hasta</label>
+      <input class="input" type="date" id="filtroHasta">
+    </div>
     <div class="filters-actions">
       <label class="check">
         <input type="checkbox" id="filtroSinFacturar"><span>Solo sin facturar</span>
       </label>
       <button class="b b-primary" onclick="cargarVentas()">Aplicar</button>
+      <button class="b b-ghost" onclick="limpiarFiltrosVentas()">Limpiar</button>
+      <button class="b b-ghost" onclick="exportarVentasCSV()">Exportar CSV</button>
+      <button class="b b-ghost" onclick="verVentasPdf()">PDF</button>
     </div>
   </div>
 
@@ -38,14 +49,17 @@
         <tr>
           <th>Cliente</th>
           <th>Fecha</th>
+          <th class="solo-escritorio">Remito</th>
           <th class="solo-escritorio">Orden de compra</th>
+          <th class="solo-escritorio">Modelos / cantidad</th>
           <th class="solo-escritorio">Factura</th>
+          <th class="solo-escritorio">Observaciones</th>
           <th>Estado</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="tablaVentas">
-        <tr><td colspan="6" class="muted">Cargando…</td></tr>
+        <tr><td colspan="9" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>

@@ -14,7 +14,8 @@ const estado = {
   facturas: [],        // facturas pendientes del proveedor elegido
   formas: [],          // formas de pago cargadas en el formulario
   endosables: [],      // cheques de clientes disponibles para endosar
-  secuencia: 0
+  secuencia: 0,
+  historial: []        // último resultado de cargarHistorial(), para exportar
 };
 
 /* ---------------------------------------------------------------------
@@ -51,6 +52,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnCancelarPago').addEventListener('click', resetFormularioPago);
   $('btnFiltrarCheques').addEventListener('click', cargarCheques);
   $('btnFiltrarHistorial').addEventListener('click', cargarHistorial);
+  $('btnExportarHistorialCSV').addEventListener('click', exportarHistorialCSV);
+  $('btnVerHistorialPdf').addEventListener('click', verHistorialPdf);
   $('btnCerrarDrawer').addEventListener('click', cerrarDrawer);
   $('drawerBg').addEventListener('click', cerrarDrawer);
 
@@ -781,16 +784,21 @@ async function accionCheque(id, accion) {
 /* ---------------------------------------------------------------------
  * Historial de pagos
  * ------------------------------------------------------------------- */
+function paramsHistorial() {
+  const qs = new URLSearchParams();
+  if ($('filtroHistProveedor').value) qs.set('proveedor_id', $('filtroHistProveedor').value);
+  if ($('filtroHistDesde').value) qs.set('desde', $('filtroHistDesde').value);
+  if ($('filtroHistHasta').value) qs.set('hasta', $('filtroHistHasta').value);
+  if ($('filtroHistEstado').value) qs.set('estado', $('filtroHistEstado').value);
+  return qs;
+}
+
 async function cargarHistorial() {
   const tbody = $('tablaHistorial');
   try {
-    const qs = new URLSearchParams();
-    if ($('filtroHistProveedor').value) qs.set('proveedor_id', $('filtroHistProveedor').value);
-    if ($('filtroHistDesde').value) qs.set('desde', $('filtroHistDesde').value);
-    if ($('filtroHistHasta').value) qs.set('hasta', $('filtroHistHasta').value);
-    if ($('filtroHistEstado').value) qs.set('estado', $('filtroHistEstado').value);
-
+    const qs = paramsHistorial();
     const pagos = await apiFetch(`${API}?${qs}`);
+    estado.historial = pagos || [];
 
     if (!pagos.length) {
       tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No hay pagos registrados', '') + '</td></tr>';
@@ -816,6 +824,55 @@ async function cargarHistorial() {
   } catch (err) {
     Shell.error(err, 'No se pudo cargar el historial de pagos');
     tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+  }
+}
+
+// Exportar el historial ya filtrado (mismo patrón que stock.js:exportarMovimientosCSV)
+function exportarHistorialCSV() {
+  if (!estado.historial.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  const headers = ['Fecha', 'Proveedor', 'Formas', 'Referencia', 'Monto', 'Imputado', 'Sin imputar', 'Estado'];
+  csvContent += headers.join(',') + '\n';
+
+  estado.historial.forEach(p => {
+    const fila = [
+      p.fecha || '',
+      `"${(p.proveedor_nombre || '').replace(/"/g, '""')}"`,
+      `"${(p.formas || '').replace(/_/g, ' ').toLowerCase().replace(/"/g, '""')}"`,
+      `"${(p.referencia || '').replace(/"/g, '""')}"`,
+      p.monto ?? 0,
+      p.imputado ?? 0,
+      p.disponible ?? 0,
+      p.estado || ''
+    ];
+    csvContent += fila.join(',') + '\n';
+  });
+
+  const desde = $('filtroHistDesde').value;
+  const hasta = $('filtroHistHasta').value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `pagos-proveedores-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+// Previsualizar/descargar el informe (mismos filtros aplicados) en PDF
+async function verHistorialPdf() {
+  try {
+    const qs = paramsHistorial();
+    await verArchivoProtegido(`api/pagos-proveedores/reporte/pdf?${qs}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 

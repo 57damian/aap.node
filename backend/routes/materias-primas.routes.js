@@ -2,6 +2,18 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
+const { fecha: fmtFecha, money } = require('../services/pdf-base');
+const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+
+const COLS_PDF_HIST_PRECIOS_MP = [
+  { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
+  { campo: 'material', titulo: 'Material', x: 60, ancho: 170 },
+  { campo: 'proveedor', titulo: 'Proveedor', x: 230, ancho: 130 },
+  { campo: 'precio_anterior', titulo: 'Precio anterior', x: 360, ancho: 90, align: 'right' },
+  { campo: 'precio_nuevo', titulo: 'Precio nuevo', x: 450, ancho: 90, align: 'right' },
+  { campo: 'variacion', titulo: 'Variación', x: 540, ancho: 70, align: 'right' },
+  { campo: 'factura', titulo: 'N° Factura', x: 610, ancho: ANCHO_UTIL_REPORTE - 610 }
+];
 
 // Todas las rutas requieren autenticación
 router.use(verificarToken);

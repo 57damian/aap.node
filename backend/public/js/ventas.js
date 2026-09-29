@@ -40,12 +40,12 @@ function formatFecha(fecha) {
 
 function renderLoadingTabla() {
   if (!tablaVentas) return;
-  tablaVentas.innerHTML = '<tr><td colspan="6" class="muted">Cargando…</td></tr>';
+  tablaVentas.innerHTML = '<tr><td colspan="9" class="muted">Cargando…</td></tr>';
 }
 
 function renderEmptyTabla() {
   if (!tablaVentas) return;
-  tablaVentas.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+  tablaVentas.innerHTML = `<tr><td colspan="9">${Shell.vacio(
     'No hay ventas para este filtro',
     'Las ventas se generan al entregar una orden de compra.',
     { txt: 'Ver órdenes de compra', url: 'oc.html' })}</td></tr>`;
@@ -53,9 +53,16 @@ function renderEmptyTabla() {
 
 function renderErrorTabla() {
   if (!tablaVentas) return;
-  tablaVentas.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+  tablaVentas.innerHTML = `<tr><td colspan="9">${Shell.vacio(
     'No se pudieron cargar las ventas',
     'Probá recargar la página.')}</td></tr>`;
+}
+
+// Texto "Modelo x2, Otro modelo x1" a partir de items (ya viene del backend
+// con modelo/cantidad, ver ventas.routes.js).
+function modelosTexto(venta) {
+  if (!venta.items || !venta.items.length) return '—';
+  return venta.items.map(i => `${i.modelo} x${i.cantidad}`).join(', ');
 }
 
 /* =====================
@@ -83,17 +90,31 @@ async function cargarClientes() {
 /* =====================
    CARGAR VENTAS
 ===================== */
+let ventasCache = [];
+
+function paramsVentas() {
+  const clienteId = filtroCliente ? filtroCliente.value : '';
+  const desde = document.getElementById('filtroDesde')?.value;
+  const hasta = document.getElementById('filtroHasta')?.value;
+
+  const params = new URLSearchParams();
+  if (clienteId) params.append('cliente_id', clienteId);
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+  return params;
+}
+
 async function cargarVentas() {
   if (!tablaVentas) return;
 
   try {
     renderLoadingTabla();
 
-    const clienteId = filtroCliente ? filtroCliente.value : '';
-    let endpoint = '/api/ventas';
-    if (clienteId) endpoint += `?cliente_id=${clienteId}`;
+    const params = paramsVentas();
+    const endpoint = `/api/ventas${params.toString() ? '?' + params : ''}`;
 
     const ventas = await apiFetch(endpoint);
+    ventasCache = ventas || [];
     tablaVentas.innerHTML = '';
 
     if (!ventas || ventas.length === 0) {
@@ -117,8 +138,11 @@ async function cargarVentas() {
         <tr>
           <td><strong>${venta.cliente || 'Sin cliente'}</strong></td>
           <td data-label="Fecha">${Shell.fecha(venta.fecha)}</td>
+          <td class="muted solo-escritorio" data-label="Remito">${venta.remito_numero || '—'}</td>
           <td class="muted solo-escritorio" data-label="OC">${venta.numero_oc || '—'}</td>
+          <td class="muted solo-escritorio" data-label="Modelos / cantidad">${modelosTexto(venta)}</td>
           <td class="muted solo-escritorio" data-label="Factura">${venta.numero_factura || '—'}</td>
+          <td class="muted solo-escritorio" data-label="Observaciones">${venta.remito_observaciones || '—'}</td>
           <td data-label="Estado">${Shell.pill(facturada ? 'FACTURADA' : 'PENDIENTE')}</td>
           <td class="num">
             <button class="b b-ghost b-sm" onclick="verVenta(${venta.id})">
@@ -132,6 +156,63 @@ async function cargarVentas() {
     console.error('Error cargando ventas:', err);
     renderErrorTabla();
     Shell.error(err, 'No se pudieron cargar las ventas');
+  }
+}
+
+function limpiarFiltrosVentas() {
+  if (filtroCliente) filtroCliente.value = '';
+  document.getElementById('filtroDesde').value = '';
+  document.getElementById('filtroHasta').value = '';
+  document.getElementById('filtroSinFacturar').checked = false;
+  cargarVentas();
+}
+
+// Exportar lo ya filtrado (mismo patrón que stock.js:exportarMovimientosCSV)
+function exportarVentasCSV() {
+  if (!ventasCache.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  const headers = ['Fecha', 'Cliente', 'Remito', 'Orden de compra', 'Modelos y cantidad', 'Factura', 'Observaciones', 'Estado'];
+  csvContent += headers.join(',') + '\n';
+
+  ventasCache.forEach(v => {
+    const fila = [
+      v.fecha || '',
+      `"${(v.cliente || '').replace(/"/g, '""')}"`,
+      v.remito_numero || '',
+      v.numero_oc || '',
+      `"${modelosTexto(v).replace(/"/g, '""')}"`,
+      v.numero_factura || '',
+      `"${(v.remito_observaciones || '').replace(/"/g, '""')}"`,
+      v.numero_factura ? 'FACTURADA' : 'PENDIENTE'
+    ];
+    csvContent += fila.join(',') + '\n';
+  });
+
+  const desde = document.getElementById('filtroDesde')?.value;
+  const hasta = document.getElementById('filtroHasta')?.value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `entregas-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+// Previsualizar/descargar el informe (mismos filtros aplicados) en PDF
+async function verVentasPdf() {
+  try {
+    const params = paramsVentas();
+    await verArchivoProtegido(`api/ventas/reporte/pdf${params.toString() ? '?' + params : ''}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
   }
 }
 
