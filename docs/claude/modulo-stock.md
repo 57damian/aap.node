@@ -109,26 +109,19 @@ No se tocó ninguna migración: todas las columnas ya existían. El patrón
 general (filtros de fecha + export CSV, aplicable a otros módulos) queda
 documentado en `claude/modulo-reportes.md`.
 
-**Pendiente: falta el `git push` de este cambio.** Quedó commiteado en local
-en la rama `claude/gifted-mendel-jg5wim` (commit `50714e7`), pero el push a
-GitHub falló con 403 — el acceso de Claude a `57damian/aap.node` no estaba
-conectado en ese momento (ver "Incidente" abajo). Al retomar: reconectar el
-acceso y correr `git push -u origin claude/gifted-mendel-jg5wim` (o pedirle a
-Claude que lo haga) antes de seguir trabajando sobre esa rama, para no perder
-el commit si se descarta el contenedor de esa sesión.
-
-**Incidente 29/09/2026 — push bloqueado por acceso a GitHub no conectado:**
-`git push` devolvió `403` con el mensaje "Claude doesn't have GitHub access
-to 57damian/aap.node for your organization". Se reintentó varias veces sin
-éxito (no es un problema transitorio). Se probó además por la API de GitHub
-directamente (crear la rama) y también dio 403, con otro mensaje ("Resource
-not accessible by integration") — confirma que la integración tiene acceso
-de **lectura** al repo pero no de **escritura**, por ningún camino. Solución:
-reconectar GitHub desde
-`https://claude.ai/customize/connectors?auth_start=github&auth_start_force=1`,
-y si eso no alcanza, confirmar que la app de Claude tenga permiso de
-**escritura** (no solo lectura) sobre el repo desde
-`https://github.com/apps/claude/installations/select_target`.
+**Incidente 29/09/2026 — push bloqueado temporalmente por acceso a GitHub no
+conectado, resuelto el mismo día.** `git push` devolvió `403` ("Claude
+doesn't have GitHub access to 57damian/aap.node") varias veces seguidas, y
+probar por la API de GitHub directamente (crear una rama) dio también 403
+pero con otro mensaje ("Resource not accessible by integration") — o sea que
+mientras duró el incidente la integración tenía acceso de **lectura** al
+repo pero no de **escritura**, por ningún camino (ni git CLI ni API). Se
+resolvió reconectando GitHub desde
+`https://claude.ai/customize/connectors?auth_start=github&auth_start_force=1`;
+la rama `claude/gifted-mendel-jg5wim` con todos los commits de esta sesión
+ya está pusheada. Si vuelve a pasar, el mismo camino (o confirmar permiso de
+escritura de la app en `https://github.com/apps/claude/installations/select_target`)
+lo soluciona.
 
 ## Evolución de precios de compra + fix de bugs del modal de precios (29/09/2026)
 
