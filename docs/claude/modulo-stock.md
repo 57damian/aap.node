@@ -65,3 +65,46 @@ No auditado ni tocado durante el trabajo de Stock. Probablemente se revise al tr
 
 - Confirmar que Damian corrió los `git rm` de 3 archivos muertos (`stock-movimientos.js`, `auth.controller.js`, `clientes.controller.js`) y comitear los cambios de Stock en la rama `reorganizacion`.
 - Opcionalmente borrar la factura de prueba `TEST-CLAUDE-0003` (id 31).
+
+## Informe de movimientos (compras) con filtros y exportación (29/09/2026)
+
+Pedido de Damian: quería ver qué se compró en un mes, qué día se compró cada
+material, con qué observación y con qué peso/unidad, y poder exportarlo. El
+dato ya estaba completo en `stock_movimientos` y `GET /api/stock/movimientos`
+ya soportaba `desde`/`hasta`/`tipo` con el JOIN a proveedor y factura — el
+problema era 100% de consumo/presentación en el frontend, no de datos:
+
+- `js/stock.js:cargarMovimientos()` pedía el endpoint sin ningún filtro y
+  encima recortaba a `slice(0, 50)` en el cliente.
+- `renderizarMovimientos()` no mostraba `proveedor_nombre`, `numero_factura`
+  ni `factura_fecha` pese a que ya venían en la respuesta.
+- El `<thead>` de la tab Movimientos tenía 6 columnas pero el JS armaba filas
+  de 8 `<td>` (tabla desalineada).
+- No había ningún filtro de fecha/proveedor en esa tab, ni forma de exportar.
+
+Cambios:
+
+- **Backend** (`stock.routes.js`, `GET /movimientos`): se agregó filtro
+  `proveedor_id` (ya existían `materia_prima_id`, `desde`, `hasta`, `tipo`).
+  Se subió el `LIMIT` fijo de 1000 a 5000 como salvaguarda — **no se
+  implementó paginación real**: el volumen de compras del negocio es bajo y
+  el filtro de fecha ya acota el resultado en el uso normal.
+- **Frontend** (`stock.html` + `stock.js`, tab Movimientos): se agregó un
+  bloque de filtros (desde/hasta/proveedor/material/tipo, mismo patrón que
+  Cobros → Historial), la tab arranca precargada con el mes en curso, se
+  sacó el `slice(0, 50)`, se corrigió el `<thead>`/`colspan` desalineado, y
+  se agregaron las columnas Proveedor, N° Factura y Cantidad con unidad. Los
+  badges Bootstrap hardcodeados (`bg-success`/`bg-danger`/`bg-warning`) se
+  reemplazaron por `Shell.pill()` — para eso se sumaron
+  `ENTRADA/SALIDA/AJUSTE/MERMA` a los regex de `Shell.pill()` en `shell.js`
+  (antes solo reconocía estados de facturas/cobros/pagos; es un cambio
+  aditivo, no rompe ningún uso existente).
+- **Exportación**: botón "Exportar CSV" que arma el archivo en el navegador
+  desde `movimientosCache` (el mismo dataset ya filtrado que se ve en
+  pantalla), mismo patrón que `alertas-pagos.js:exportarReporte()` — no hay
+  generación de CSV/Excel en el servidor en ningún lado del sistema, y no se
+  justificaba sumar una dependencia nueva para esto.
+
+No se tocó ninguna migración: todas las columnas ya existían. El patrón
+general (filtros de fecha + export CSV, aplicable a otros módulos) queda
+documentado en `claude/modulo-reportes.md`.
