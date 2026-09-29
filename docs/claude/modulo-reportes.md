@@ -62,3 +62,74 @@ function exportarXCSV() {
 - **Ventas / remitos**: no tiene botón de exportar.
 - **Pagos a proveedores** (pestaña Historial): ya tiene filtro de fecha (`filtroHistDesde`/`filtroHistHasta`), le falta el paso 3 (exportar).
 - Cualquier pantalla nueva de listado con filtro de fecha debería salir directamente con exportación incluida desde el principio, siguiendo esta receta, en vez de agregarla después.
+
+## Plan pendiente de implementar (definido 29/09/2026, todavía no programado)
+
+Damian pidió extender este patrón a "todo lo que el sistema registra": entregas
+a clientes, producción, compras (ya resuelto, ver arriba y `modulo-stock.md`)
+y evolución de precios en el tiempo ("rutas de aumento"). Se relevaron los
+tres módulos pendientes contra la receta de arriba. Decisión ya tomada con
+Damian: la evolución de precios se muestra como **tabla con % de variación
+calculado**, no con gráficos — el sistema no usa gráficos en ningún lado hoy
+y no conviene romper esa consistencia por este pedido. Orden sugerido de
+implementación: Producción → Cobros/Pagos a proveedores (quick wins) →
+Ventas → Precios (lo más grande). No hace falta ninguna migración de
+esquema en ninguno de los cuatro puntos.
+
+### 1. Producción — lo que menos falta
+
+`GET /api/produccion` (`backend/routes/produccion.routes.js:85-136`) y la tab
+"Historial" de `produccion.html`/`produccion.js` **ya** filtran por
+`desde`/`hasta`/`ficha_id` y ya muestran todas las columnas (fecha, modelo,
+cantidad, quién lo cargó, observaciones) — a diferencia de Stock, acá el
+frontend ya manda los filtros. Falta solo:
+- Subir el `limit` por defecto (hoy 100, línea 86) a un valor de salvaguarda
+  mayor (5000, mismo criterio que Stock).
+- Guardar el resultado de `cargarHistorial()` en una variable cache a nivel
+  de módulo (hoy es local a la función) y agregar botón "Exportar CSV" +
+  función `exportarHistorialProduccionCSV()`, calcada de
+  `stock.js:exportarMovimientosCSV()`.
+
+### 2. Quick wins — Cobros y Pagos a proveedores
+
+Ya tienen filtro de fecha funcionando (`cobros.js:cargarHistorial()` línea
+741; pestaña Historial de `pagos-proveedores.js`). Solo falta el paso 3 de la
+receta: botón "Exportar CSV" por pantalla, sin tocar backend.
+
+### 3. Ventas/remitos (entregas a clientes) — gap real, mismo diagnóstico que tuvo Stock
+
+- **Backend** (`backend/routes/ventas.routes.js`, `GET /api/ventas`,
+  líneas 15-78): agregar `desde`/`hasta` sobre `v.fecha` (mismo patrón que
+  `facturas.routes.js:262-269`); sumar `precio_unitario_usd`/
+  `precio_unitario_pesos` al `json_build_object` de `items` (línea ~44, el
+  dato ya está en `venta_items`); agregar `LIMIT` de salvaguarda (no tiene
+  ninguno hoy).
+- **Frontend** (`ventas.html`/`ventas.js`): agregar filtros `desde`/`hasta`
+  (hoy solo filtra por `cliente_id`); pintar modelo/cantidad (ya vienen en
+  `items` y no se muestran), `remito_numero`, `remito_observaciones` y precio
+  (una vez agregado al backend); botón "Exportar CSV".
+
+### 4. Precios — "rutas de aumento" en el tiempo (el más grande)
+
+- **Compra de materias primas**: `GET /api/materias-primas/:id/historial-precios`
+  (líneas 197-226) es por material individual y sin fecha — agregar
+  `desde`/`hasta`, y sumar un endpoint agregado nuevo (`GET
+  /api/materias-primas/historial-precios`, no existe hoy) que traiga todos
+  los materiales juntos con filtro de fecha; la variación % ya está calculada
+  en `historial_precios_materias.variacion_porcentaje`, no hay que
+  recalcularla. Frontend: modal `verPrecios()` de `stock.js` hoy usa badges
+  `text-danger`/`text-success` hardcodeados — reemplazar por `Shell.pill`/
+  clases `neg`/`pos`, sumar filtro de fecha y export CSV.
+- **Precios de venta por modelo**: `precios_modelo` ya funciona como
+  historial completo (cada fila = un punto en el tiempo, `precios.routes.js`),
+  pero `GET /modelo/:ficha_id` (líneas 69-83) es por modelo y sin fecha, y no
+  existe ningún cálculo de variación % (a diferencia de compras). Agregar
+  `desde`/`hasta`, calcular variación con `LAG(precio) OVER (ORDER BY
+  fecha_desde)` en la misma query (sin migrar la tabla), y sumar un endpoint
+  agregado nuevo (`GET /api/precios/modelo/historial`, todos los modelos).
+  Frontend (`precios.html`/`precios.js`, pestaña "Precios por modelo"):
+  filtro de fecha, columna de variación %, export CSV.
+- **Dólar**: `GET /api/precios/parametros/dolar/historial` (líneas 342-360)
+  tiene `LIMIT 50` fijo sin filtro de fecha; frontend además recorta a
+  `.slice(0, 10)`. Agregar `desde`/`hasta` al backend, sacar el recorte del
+  frontend, sumar filtro de fecha y export CSV.
