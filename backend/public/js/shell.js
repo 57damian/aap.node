@@ -83,7 +83,8 @@
     { grupo: 'Producción', items: [
       { id: 'ficha',   txt: 'Fichas técnicas', url: 'ficha.html',      icon: 'ficha', roles: ['admin'], alias: 'modelos transformador' },
       { id: 'prod',    txt: 'Producción',      url: 'produccion.html', icon: 'prod',  roles: ['admin','operario'] },
-      { id: 'stock',   txt: 'Stock',           url: 'stock.html',      icon: 'stock', roles: ['admin'], alias: 'materias primas materiales' }
+      { id: 'stock',   txt: 'Stock',           url: 'stock.html',      icon: 'stock', roles: ['admin'], alias: 'materias primas materiales' },
+      { id: 'calctrafo', txt: 'Calculadora de trafos', url: 'calculadora-trafo.html', icon: 'ficha', roles: ['admin'], alias: 'calcular espiras alambre carretel bobinado' }
     ]},
     { grupo: 'Configuración', items: [
       { id: 'precios',  txt: 'Precios y dólar', url: 'precios.html',  icon: 'precios',  roles: ['admin'], alias: 'cotizacion tipo de cambio aumento' },

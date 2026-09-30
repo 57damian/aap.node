@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculadora de transformadores — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Calculadora de transformadores</h1>
+      <p>Espiras, alambre, llenado del carretel, resistencias y tensión con carga. Es una estimación: se calibra con trafos reales medidos.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Datos del trafo</h2></div>
+    <div class="panel-body">
+      <form id="calcForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="c_vin">Tensión de entrada (V)</label>
+            <input class="input" type="number" id="c_vin" value="220" min="1" step="any" required>
+          </div>
+          <div class="field">
+            <label for="c_familia">Familia</label>
+            <select class="select" id="c_familia"></select>
+          </div>
+          <div class="field">
+            <label for="c_pines">Pines</label>
+            <select class="select" id="c_pines">
+              <option value="">Con o sin pines</option>
+              <option value="con">Con pines</option>
+              <option value="sin">Sin pines</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="c_sep">Separador</label>
+            <select class="select" id="c_sep">
+              <option value="">Con o sin separador</option>
+              <option value="con">Con separador (2 cámaras)</option>
+              <option value="sin">Sin separador (1 cámara)</option>
+            </select>
+          </div>
+          <div class="field ancho-total">
+            <label for="c_carretel">Carretel</label>
+            <select class="select" id="c_carretel"></select>
+          </div>
+          <div class="field">
+            <label for="c_modo">La tensión de cada salida es…</label>
+            <select class="select" id="c_modo">
+              <option value="vacio">En vacío</option>
+              <option value="carga">Con la corriente indicada (ajusta espiras)</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="muted" id="c_familiasSin" style="margin:0"></p>
+        <p class="muted" id="c_resumenCarreteles" style="margin:0"></p>
+        <div id="c_carretelInfo" style="margin-top:var(--space-3)"></div>
+
+        <div class="table-wrap" style="margin-top:var(--space-3)">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Salida</th>
+                <th>V (por sección)</th>
+                <th>I (A, por sección)</th>
+                <th title="2 = toma central, como 14+14">Secciones</th>
+                <th>Alambre</th>
+                <th title="Vacío = elegir automático">Hebras</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="c_salidas"></tbody>
+          </table>
+        </div>
+        <div style="padding:var(--space-3) 0">
+          <button type="button" class="b b-ghost" id="btnAgregarSalida">+ Agregar salida</button>
+        </div>
+
+        <div class="ancho-total">
+          <button type="submit" class="b b-primary">Calcular</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="c_resultado"></div>
+
+  <details class="panel" style="margin-top:var(--space-3)">
+    <summary class="panel-head" style="cursor:pointer"><h2 style="display:inline">Alambres del taller</h2></summary>
+    <div class="panel-body">
+      <p class="muted">Alias = cómo lo llama el taller. Si cargás el diámetro medido (con esmalte), reemplaza al del catálogo. Se guarda en este navegador.</p>
+      <div class="table-wrap">
+        <table class="t">
+          <thead><tr><th>Alias</th><th>Alambre (catálogo)</th><th>Grado</th><th>d medido (mm)</th><th></th></tr></thead>
+          <tbody id="c_stock"></tbody>
+        </table>
+      </div>
+      <div style="padding:var(--space-3) 0">
+        <button type="button" class="b b-ghost" id="btnAgregarHilo">+ Agregar alambre</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="panel" style="margin-top:var(--space-3)">
+    <summary class="panel-head" style="cursor:pointer"><h2 style="display:inline">Parámetros y laminaciones</h2></summary>
+    <div class="panel-body">
+      <div class="form-grid" id="c_params"></div>
+      <h3 style="margin-top:var(--space-4)">Laminaciones por familia</h3>
+      <p class="muted">Una familia solo aparece en la calculadora si tiene BA_ref. El BA de cada carretel es BA_ref · A / A_ref (A_ref = pila del trafo real con el que se calibró). Con pierna y ancho de ventana (de SOMA) se calcula la profundidad útil y reemplaza a la máxima estimada.</p>
+      <div class="table-wrap">
+        <table class="t">
+          <thead><tr><th>Familia</th><th>BA_ref (T·cm²)</th><th>A_ref (mm)</th><th>Pierna (mm)</th><th>Ventana ancho (mm)</th><th>Ventana alto (mm)</th><th>Apilado</th><th>Origen</th></tr></thead>
+          <tbody id="c_lams"></tbody>
+        </table>
+      </div>
+      <div style="padding:var(--space-3) 0">
+        <button type="button" class="b b-ghost" id="btnRestaurar">Restaurar valores originales</button>
+      </div>
+    </div>
+  </details>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Calculadora de transformadores', sub: 'Producción' });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/calc-trafo.js"></script>
+<script src="js/calculadora-trafo.js"></script>
+</body>
+</html>

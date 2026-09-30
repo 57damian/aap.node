@@ -158,6 +158,16 @@ Cada transformador lleva pegada una etiqueta física, y algunos modelos llevan m
 - `middlewares/uploadEtiqueta.js`: nombre aleatorio, tamaño máximo 5 MB, y la validación de verdad es la firma real del archivo (todo PDF empieza con `%PDF-`), comprobada después de guardarlo. **No filtra por el `Content-Type`/`mimetype` que declara el navegador**: para PDF viene inconsistente o vacío seguido (adjuntos de mail, escaneos, "imprimir a PDF" de ciertos programas) — filtrar por eso rechazaba PDF válidos antes de mirar el archivo (bug encontrado y corregido el 22-23/09/2026). Se sirve por el mismo mount protegido `/uploads` de `index.js` (sesión + cabeceras que impiden ejecutarlo).
 - UI en el modal de detalle de `ficha.html` (`ficha.js`): lista de etiquetas cargadas, cada una con "Descargar" (`descargarArchivoProtegido`) y "Quitar", más un botón para agregar otra. El chequeo del lado del cliente es por extensión `.pdf`, no por `archivo.type`, por la misma razón de arriba. No está en el formulario de alta porque la ficha necesita existir (tener `id`) antes de poder subirle un archivo.
 
+## Calculadora de transformadores (30/09/2026)
+
+Pantalla `calculadora-trafo.html` (menú Producción, **solo admin**): espiras, alambre, llenado del carretel, resistencias y tensión con carga. Todo corre en el navegador: no hay API ni migración.
+
+- Lógica pura en `public/js/calc-trafo.js` (sirve también desde Node); UI en `public/js/calculadora-trafo.js`. Los alambres del taller, parámetros, laminaciones y medidas por carretel editados se guardan en `localStorage` (por navegador).
+- Carreteles: `public/data/carreteles.csv` (solo filas Monofásico EI; trifásicos y ferritas irían a otras calculadoras). Al importar, `estado` = `ok` | `revisar` (aviso visible al elegirlo) | `excluido` (no se ofrece). "–" y vacío son `null`, nunca 0.
+- Una familia solo se ofrece si tiene `BA_ref` en laminaciones (hoy EI 37 y EI 25, calibradas con trafos reales). El BA de cada carretel es `BA_ref · A / A_ref`. La profundidad útil sale de la medida real o de pierna+ventana; si no, se usa la máxima estimada `(U − N)/2 − pared`.
+- Pruebas (solo lectura): `cd backend && node scripts/probar-calculadora-trafo.js`. Tolera ±1 espira porque el `BA_ref` de la especificación está redondeado.
+- Pendiente: medir profundidad útil, pierna y ventana (SOMA) y cargar más trafos reales para calibrar `factor_capa`, `pared` y la caída de tensión. El 012180 da rojo de altura (7,36 mm reales contra 6,75 mm estimados).
+
 ## Fichas técnicas: devanados
 
 - Primario y secundario viven en columnas de `ficha_transformador`; las **espiras son texto** (`"422 + 422"` si el secundario tiene punto medio). Los devanados **terciario, cuarto… hasta décimo** (máximo 8 adicionales) viven en `ficha_devanados_extra` (`orden` 3 en adelante, un renglón por devanado: alambre, diámetro, espiras, pines, peso).
