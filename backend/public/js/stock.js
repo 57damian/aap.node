@@ -171,7 +171,7 @@ function renderizarTablaStock(stock) {
                 <td class="muted solo-escritorio" data-label="Proveedor">${s.proveedor_nombre || '—'}</td>
                 <td data-label="Estado">${Shell.pill(estado)}</td>
                 <td class="num">
-                    <button class="b b-ghost b-sm" onclick="abrirModalAjuste(${s.articulo_id}, '${nombreSeguro}', ${actual})">Ajustar</button>
+                    <button class="b b-ghost b-sm" onclick="abrirModalAjuste(${s.articulo_id}, '${nombreSeguro}', ${actual}, '${unidad}')">Ajustar</button>
                     <button class="b b-ghost b-sm solo-escritorio" onclick="verHistorial(${s.articulo_id})">Movimientos</button>
                     <button class="b b-ghost b-sm solo-escritorio" onclick="verPrecios(${s.articulo_id})">Precios</button>
                 </td>
@@ -413,7 +413,10 @@ function actualizarEstadisticas(stock) {
 }
 
 // Abrir modal de ajuste
-function abrirModalAjuste(articuloId, articuloNombre, stockActual) {
+let ajusteUnidadActual = '';
+
+function abrirModalAjuste(articuloId, articuloNombre, stockActual, unidad) {
+    ajusteUnidadActual = unidad || '';
     document.getElementById('ajuste_articulo_id').value = articuloId;
     document.getElementById('ajuste_articulo_nombre').value = articuloNombre;
     document.getElementById('ajuste_stock_actual').value = stockActual;
@@ -421,8 +424,36 @@ function abrirModalAjuste(articuloId, articuloNombre, stockActual) {
     document.getElementById('ajuste_tipo').value = '';
     document.getElementById('ajuste_motivo').value = '';
     document.getElementById('ajuste_fecha').valueAsDate = new Date();
-    
+
     document.getElementById('ajusteModal').showModal();
+}
+
+// "Vaciar" (30/09/2026): corrección general de inventario para cuando un
+// material quedó físicamente en 0 aunque la cuenta diga que debería sobrar
+// algo (ej.: un rollo vacío). Deja el stock en 0, así que pide confirmación
+// con un <dialog> propio en vez de someter el ajuste directo.
+function abrirConfirmarVaciar() {
+    const nombre = document.getElementById('ajuste_articulo_nombre').value;
+    const stockActual = parseFloat(document.getElementById('ajuste_stock_actual').value) || 0;
+
+    if (stockActual <= 0) {
+        Shell.toast('err', 'Este material ya está en 0');
+        return;
+    }
+
+    document.getElementById('vaciarConfirmTexto').textContent =
+        `¿Vaciar el stock de "${nombre}"? Va a quedar en 0 (hoy tiene ${stockActual.toLocaleString('es-AR')} ${ajusteUnidadActual}).`;
+    document.getElementById('vaciarConfirmModal').showModal();
+}
+
+// Confirmado: precarga el ajuste (tipo MERMA, stock nuevo 0) pero no lo
+// manda solo — el motivo sigue siendo obligatorio y "Guardar ajuste" queda
+// como el paso final, mismo control que cualquier otro ajuste.
+function confirmarVaciar() {
+    document.getElementById('ajuste_nuevo_stock').value = 0;
+    document.getElementById('ajuste_tipo').value = 'MERMA';
+    document.getElementById('vaciarConfirmModal').close();
+    document.getElementById('ajuste_motivo').focus();
 }
 
 // Guardar ajuste

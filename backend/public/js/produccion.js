@@ -39,6 +39,7 @@ function puedeVerReportes() {
 // VARIABLES GLOBALES
 // ============================================
 let modelos = [];
+let materialesConsumoCache = []; // stock de materia prima, para la sección "Material consumido"
 
 
 
@@ -57,6 +58,18 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarStock();
   cargarHistorial();
   cargarFiltrosReporte();
+  cargarMaterialesParaConsumo();
+
+  document.getElementById('btnAgregarMaterialProduccion')?.addEventListener('click', agregarFilaMaterialProduccion);
+  agregarFilaMaterialProduccion(); // arranca con una fila vacía, mismo patrón que oc.js
+
+  // Cierre de diálogos: mismo patrón data-cerrar que el resto de las pantallas.
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+  document.getElementById('btnConfirmarAnularProduccion')?.addEventListener('click', confirmarAnularProduccion);
+  document.getElementById('anularProduccionMotivo')?.addEventListener('input', () => { limpiarErrorAnularProduccion(); validarAnularProduccion(); });
+  document.getElementById('anularProduccionConfirmar')?.addEventListener('input', () => { limpiarErrorAnularProduccion(); validarAnularProduccion(); });
 
   // Pestañas: un solo listener, en vez de un onclick por botón en el HTML.
   document.querySelectorAll('.tab[data-tab]').forEach(boton => {
@@ -157,12 +170,123 @@ async function cargarModelos() {
       });
     }
 
+    // Select para filtro de la tab "Consumo de materiales"
+    const consumoModelo = document.getElementById('consumoModelo');
+    if (consumoModelo) {
+      consumoModelo.innerHTML = '<option value="">Todos</option>';
+      modelos.forEach(modelo => {
+        const option = document.createElement('option');
+        option.value = modelo.id;
+        option.textContent = modelo.modelo;
+        consumoModelo.appendChild(option);
+      });
+    }
+
     console.log(`✅ ${modelos.length} modelos cargados`);
 
   } catch (err) {
     console.error('Error cargando modelos:', err);
     mostrarAlerta('Error cargando modelos', 'error');
   }
+}
+
+// ============================================
+// MATERIAL CONSUMIDO (30/09/2026)
+// ============================================
+// Todavía no hay receta por modelo, así que el consumo de materia prima se
+// carga a mano junto con la producción. Mismo patrón de filas dinámicas que
+// "+ Agregar ítem" en oc.js.
+async function cargarMaterialesParaConsumo() {
+  try {
+    // /api/stock (no /api/materias-primas): ese es soloAdmin y el operario
+    // no puede llamarlo. Acá solo hace falta nombre + stock_actual.
+    materialesConsumoCache = await apiFetch('/api/stock');
+  } catch (err) {
+    console.error('Error cargando materiales para consumo:', err);
+    materialesConsumoCache = [];
+  }
+
+  // Select del filtro de material en la tab "Consumo de materiales" (admin).
+  const consumoMaterial = document.getElementById('consumoMaterial');
+  if (consumoMaterial) {
+    const seleccionPrevia = consumoMaterial.value;
+    consumoMaterial.innerHTML = '<option value="">Todos</option>' +
+      materialesConsumoCache.map(m => `<option value="${m.articulo_id}">${m.nombre}</option>`).join('');
+    consumoMaterial.value = seleccionPrevia;
+  }
+}
+
+function opcionesMaterialConsumo() {
+  return '<option value="">Elegí un material…</option>' +
+    materialesConsumoCache.map(m => {
+      const stock = Number(m.stock_actual) || 0;
+      const etiqueta = m.nombre + (stock === 0 ? ' (sin stock)' : '');
+      return `<option value="${m.articulo_id}" data-stock="${stock}" data-unidad="${m.unidad_medida || ''}">${etiqueta}</option>`;
+    }).join('');
+}
+
+function agregarFilaMaterialProduccion() {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><select class="input" data-campo="materia_prima_id">${opcionesMaterialConsumo()}</select></td>
+    <td><input class="input" type="number" data-campo="cantidad_usada" min="0" step="any" value="0"></td>
+    <td><input class="input" type="number" data-campo="cantidad_desperdiciada" min="0" step="any" value="0"></td>
+    <td><input class="input" type="text" data-campo="observaciones" placeholder="Opcional"></td>
+    <td>
+      <button type="button" class="b b-ghost b-sm" data-vaciar-resto>Vaciar resto</button>
+      <button type="button" class="b b-ghost b-sm" data-quitar-material>Quitar</button>
+    </td>
+  `;
+
+  const campoUsada = tr.querySelector('[data-campo="cantidad_usada"]');
+  const campoDesperdiciada = tr.querySelector('[data-campo="cantidad_desperdiciada"]');
+  const selectMaterial = tr.querySelector('[data-campo="materia_prima_id"]');
+
+  // "Vaciar resto": el material que quedó físicamente vacío aunque la
+  // cuenta (stock conocido - usado) diga que debería sobrar algo.
+  tr.querySelector('[data-vaciar-resto]').addEventListener('click', () => {
+    const opt = selectMaterial.selectedOptions[0];
+    if (!opt || !opt.value) {
+      Shell.toast('err', 'Elegí primero el material');
+      return;
+    }
+    const stockConocido = Number(opt.dataset.stock || 0);
+    const usada = Number(campoUsada.value || 0);
+    campoDesperdiciada.value = Math.max(0, stockConocido - usada);
+    tr.dataset.vaciado = '1';
+  });
+
+  // Si se toca "Vaciar resto" y después se cambia la cantidad usada, la
+  // cuenta queda vieja — se recalcula sola en vez de dejarla desactualizada.
+  campoUsada.addEventListener('input', () => {
+    if (tr.dataset.vaciado !== '1') return;
+    const opt = selectMaterial.selectedOptions[0];
+    const stockConocido = Number(opt?.dataset.stock || 0);
+    campoDesperdiciada.value = Math.max(0, stockConocido - Number(campoUsada.value || 0));
+  });
+
+  selectMaterial.addEventListener('change', () => { tr.dataset.vaciado = ''; });
+
+  tr.querySelector('[data-quitar-material]').addEventListener('click', () => tr.remove());
+  document.getElementById('produccion_materialesBody')?.appendChild(tr);
+}
+
+function resetMaterialesProduccion() {
+  const body = document.getElementById('produccion_materialesBody');
+  if (body) body.innerHTML = '';
+  agregarFilaMaterialProduccion();
+}
+
+function recolectarMaterialesProduccion() {
+  const filas = [...(document.getElementById('produccion_materialesBody')?.querySelectorAll('tr') || [])];
+  return filas
+    .map(fila => ({
+      materia_prima_id: fila.querySelector('[data-campo="materia_prima_id"]').value,
+      cantidad_usada: fila.querySelector('[data-campo="cantidad_usada"]').value,
+      cantidad_desperdiciada: fila.querySelector('[data-campo="cantidad_desperdiciada"]').value,
+      observaciones: fila.querySelector('[data-campo="observaciones"]').value || undefined
+    }))
+    .filter(m => m.materia_prima_id && (Number(m.cantidad_usada) > 0 || Number(m.cantidad_desperdiciada) > 0));
 }
 
 // ============================================
@@ -194,6 +318,22 @@ async function registrarProduccion(e) {
 
   const modelo = modelos.find(m => m.id == ficha_id);
 
+  const materiales = recolectarMaterialesProduccion();
+  // Mismas reglas que valida el backend (validarMateriales en
+  // produccion.routes.js), para no depender solo del rechazo del servidor.
+  const idsVistos = new Set();
+  for (const m of materiales) {
+    if (idsVistos.has(m.materia_prima_id)) {
+      mostrarAlerta('Hay un material repetido en "Material consumido": sumá las cantidades en una sola fila', 'error');
+      return;
+    }
+    idsVistos.add(m.materia_prima_id);
+    if (Number(m.cantidad_usada) < 0 || Number(m.cantidad_desperdiciada) < 0) {
+      mostrarAlerta('Las cantidades de material no pueden ser negativas', 'error');
+      return;
+    }
+  }
+
   produccionEnviando = true;
   const btn = e.target.querySelector('button[type="submit"]');
   const textoBoton = btn?.textContent;
@@ -207,20 +347,24 @@ async function registrarProduccion(e) {
         cantidad: parseInt(cantidad),
         fecha_produccion: fecha_produccion || undefined,
         observaciones: observaciones || null,
-        usuario_id: usuario.id
+        usuario_id: usuario.id,
+        materiales
       })
     });
 
     mostrarAlerta(response.mensaje || '✅ Producción registrada', 'success');
-    
+
     // Limpiar formulario
     document.getElementById('cantidad').value = '';
     document.getElementById('observaciones').value = '';
-    
-    // Recargar datos
+    resetMaterialesProduccion();
+
+    // Recargar datos (el consumo de materiales movió stock, así que el
+    // select de la próxima carga tiene que reflejar los valores nuevos)
     await cargarStock();
     await cargarHistorial();
     await cargarReporte();
+    await cargarMaterialesParaConsumo();
 
   } catch (err) {
     console.error('Error registrando producción:', err);
@@ -311,7 +455,7 @@ async function cargarHistorial() {
     const tbody = document.getElementById('historialTable');
 
     if (!historial || historial.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+      tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio(
         'Sin registros en este período',
         'Probá ampliar las fechas o sacar el filtro de modelo.')}</td></tr>`;
       return;
@@ -324,6 +468,12 @@ async function cargarHistorial() {
           <td class="num" data-label="Cantidad">${item.cantidad}</td>
           <td class="muted solo-escritorio" data-label="Registró">${item.registrado_por || '—'}</td>
           <td class="muted solo-escritorio" data-label="Observaciones">${item.observaciones || '—'}</td>
+          <td data-label="Acciones">
+            <button type="button" class="b b-ghost b-sm" onclick="verConsumoProduccion(${item.id})">Ver consumo</button>
+            ${usuario.rol === 'admin'
+              ? `<button type="button" class="b b-ghost b-sm" onclick="abrirAnularProduccion(${item.id})">Anular</button>`
+              : ''}
+          </td>
         </tr>`).join('');
 
   } catch (err) {
@@ -373,6 +523,217 @@ async function verHistorialProduccionPdf() {
   try {
     const params = paramsHistorialProduccion();
     await verArchivoProtegido(`api/produccion/reporte/pdf${params.toString() ? '?' + params : ''}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
+  }
+}
+
+// ============================================
+// VER CONSUMO DE UNA CARGA PUNTUAL (30/09/2026)
+// ============================================
+async function verConsumoProduccion(id) {
+  try {
+    const materiales = await apiFetch(`/api/produccion/${id}/materiales`);
+    const item = historialProduccionCache.find(h => h.id === id);
+    document.getElementById('verConsumoTitulo').textContent = item
+      ? `Material consumido — ${item.modelo} (${Shell.fecha(item.fecha_produccion)})`
+      : 'Material consumido';
+
+    const body = document.getElementById('verConsumoBody');
+    if (!materiales.length) {
+      body.innerHTML = `<tr><td colspan="4">${Shell.vacio('Sin material cargado', 'Esta carga no tiene consumo de materia prima registrado.')}</td></tr>`;
+    } else {
+      body.innerHTML = materiales.map(m => `
+        <tr>
+          <td>${m.nombre}${m.codigo ? ' <span class="muted">' + m.codigo + '</span>' : ''}</td>
+          <td>${m.tipo_movimiento === 'MERMA' ? 'Desperdiciado' : 'Usado'}</td>
+          <td class="num">${Math.abs(Number(m.cantidad)).toLocaleString('es-AR')} ${m.unidad_medida || ''}</td>
+          <td class="muted solo-escritorio">${m.observaciones || '—'}</td>
+        </tr>`).join('');
+    }
+
+    document.getElementById('verConsumoModal').showModal();
+  } catch (err) {
+    Shell.error(err, 'No se pudo cargar el consumo de esta carga');
+  }
+}
+
+// ============================================
+// ANULAR PRODUCCIÓN (30/09/2026)
+// Mismo patrón que correcciones.js: preview -> motivo + confirmar número -> POST.
+// No hay "editar" una carga: para corregir se anula (revierte el material
+// al stock) y se vuelve a cargar bien.
+// ============================================
+const MOTIVO_ANULAR_PRODUCCION_MIN = 10;
+let anularProduccionActual = null;
+let anularProduccionEnviando = false;
+
+function limpiarErrorAnularProduccion() {
+  const el = document.getElementById('anularProduccionError');
+  el.hidden = true;
+  el.textContent = '';
+}
+
+function validarAnularProduccion() {
+  if (!anularProduccionActual) return;
+  const motivoOk = document.getElementById('anularProduccionMotivo').value.trim().length >= MOTIVO_ANULAR_PRODUCCION_MIN;
+  const numOk = document.getElementById('anularProduccionConfirmar').value.trim() === String(anularProduccionActual.identificador).trim();
+  const btn = document.getElementById('btnConfirmarAnularProduccion');
+  btn.disabled = anularProduccionEnviando || !(motivoOk && numOk);
+  document.getElementById('anularProduccionMotivo').classList.toggle('is-invalid',
+    document.getElementById('anularProduccionMotivo').value.length > 0 && !motivoOk);
+  document.getElementById('anularProduccionConfirmar').classList.toggle('is-invalid',
+    document.getElementById('anularProduccionConfirmar').value.length > 0 && !numOk);
+}
+
+async function abrirAnularProduccion(id) {
+  try {
+    const preview = await apiFetch(`/api/produccion/${id}/anulacion-preview`);
+    const { produccion, movimientos } = preview;
+    anularProduccionActual = { id, identificador: produccion.identificador };
+
+    document.getElementById('anularProduccionNumeroRef').textContent = produccion.identificador;
+    document.getElementById('anularProduccionMotivo').value = '';
+    document.getElementById('anularProduccionConfirmar').value = '';
+    limpiarErrorAnularProduccion();
+
+    document.getElementById('anularProduccionResumen').innerHTML = `
+      <p><strong>${produccion.modelo}</strong> — ${produccion.cantidad} unidades, ${Shell.fecha(produccion.fecha_produccion)}</p>
+      ${movimientos.length ? `
+        <p class="muted" style="margin-bottom:var(--space-2)">Esto va a volver al stock de materia prima:</p>
+        <ul class="consecuencias">
+          ${movimientos.map(m => `<li>${m.tipo_movimiento === 'MERMA' ? 'Desperdiciado' : 'Usado'}: ${Math.abs(Number(m.cantidad)).toLocaleString('es-AR')} ${m.unidad || ''} de ${m.material_nombre}</li>`).join('')}
+        </ul>` : ''}
+    `;
+    document.getElementById('anularProduccionSinMateriales').hidden = movimientos.length > 0;
+
+    validarAnularProduccion();
+    document.getElementById('anularProduccionModal').showModal();
+  } catch (err) {
+    Shell.error(err, 'No se pudo preparar la anulación');
+  }
+}
+
+async function confirmarAnularProduccion() {
+  if (!anularProduccionActual || anularProduccionEnviando) return;
+  anularProduccionEnviando = true;
+  limpiarErrorAnularProduccion();
+  const btn = document.getElementById('btnConfirmarAnularProduccion');
+  btn.disabled = true;
+  btn.textContent = 'Anulando…';
+
+  try {
+    const r = await apiFetch(`/api/produccion/${anularProduccionActual.id}/anular`, {
+      method: 'POST',
+      body: JSON.stringify({
+        motivo: document.getElementById('anularProduccionMotivo').value.trim(),
+        confirmar_numero: document.getElementById('anularProduccionConfirmar').value.trim()
+      })
+    });
+    document.getElementById('anularProduccionModal').close();
+    Shell.toast('ok', 'Producción anulada', r.message || '');
+    await cargarHistorial();
+    await cargarStock();
+    await cargarMaterialesParaConsumo();
+  } catch (err) {
+    const el = document.getElementById('anularProduccionError');
+    el.hidden = false;
+    el.textContent = err.error || 'No se pudo anular la producción.';
+    btn.textContent = 'Anular producción';
+  } finally {
+    anularProduccionEnviando = false;
+    validarAnularProduccion();
+  }
+}
+
+// ============================================
+// CONSUMO DE MATERIALES (tab, solo admin — 30/09/2026)
+// ============================================
+let consumoMaterialesCache = [];
+
+function paramsConsumoMateriales() {
+  const desde = document.getElementById('consumoDesde')?.value;
+  const hasta = document.getElementById('consumoHasta')?.value;
+  const ficha_id = document.getElementById('consumoModelo')?.value;
+  const materia_prima_id = document.getElementById('consumoMaterial')?.value;
+
+  const params = new URLSearchParams();
+  if (desde) params.append('desde', desde);
+  if (hasta) params.append('hasta', hasta);
+  if (ficha_id) params.append('ficha_id', ficha_id);
+  if (materia_prima_id) params.append('materia_prima_id', materia_prima_id);
+  return params;
+}
+
+async function cargarConsumoMateriales() {
+  if (!puedeVerReportes()) return;
+  const tbody = document.getElementById('consumoMaterialesTable');
+  try {
+    const params = paramsConsumoMateriales();
+    const url = `/api/produccion/materiales-informe${params.toString() ? '?' + params : ''}`;
+    const datos = await apiFetch(url);
+    consumoMaterialesCache = datos || [];
+
+    if (!consumoMaterialesCache.length) {
+      tbody.innerHTML = `<tr><td colspan="4">${Shell.vacio(
+        'Sin consumo en este período',
+        'Probá ampliar las fechas o sacar los filtros.')}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = consumoMaterialesCache.map(m => `
+      <tr>
+        <td><strong>${m.nombre}</strong>${m.codigo ? ' <span class="muted">' + m.codigo + '</span>' : ''}</td>
+        <td class="num" data-label="Usado">${Number(m.total_usado).toLocaleString('es-AR')} ${m.unidad_medida || ''}</td>
+        <td class="num" data-label="Desperdiciado">${Number(m.total_desperdiciado).toLocaleString('es-AR')} ${m.unidad_medida || ''}</td>
+        <td class="num" data-label="% Merma">${m.porcentaje_merma != null ? m.porcentaje_merma + '%' : '—'}</td>
+      </tr>`).join('');
+  } catch (err) {
+    Shell.error(err, 'No se pudo cargar el consumo de materiales');
+    tbody.innerHTML = `<tr><td colspan="4">${Shell.vacio('No se pudo cargar', 'Probá recargar la página.')}</td></tr>`;
+  }
+}
+
+function exportarConsumoMaterialesCSV() {
+  if (!consumoMaterialesCache.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  const headers = ['Material', 'Código', 'Usado', 'Desperdiciado', 'Unidad', '% Merma'];
+  csvContent += headers.join(',') + '\n';
+
+  consumoMaterialesCache.forEach(m => {
+    const fila = [
+      `"${(m.nombre || '').replace(/"/g, '""')}"`,
+      `"${(m.codigo || '').replace(/"/g, '""')}"`,
+      m.total_usado ?? 0,
+      m.total_desperdiciado ?? 0,
+      `"${(m.unidad_medida || '').replace(/"/g, '""')}"`,
+      m.porcentaje_merma ?? ''
+    ];
+    csvContent += fila.join(',') + '\n';
+  });
+
+  const desde = document.getElementById('consumoDesde')?.value;
+  const hasta = document.getElementById('consumoHasta')?.value;
+  const rango = (desde || hasta) ? `${desde || 'inicio'}_a_${hasta || 'hoy'}` : new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = encodeURI(csvContent);
+  link.download = `consumo-materiales-${rango}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  Shell.toast('ok', 'Reporte exportado');
+}
+
+async function verConsumoMaterialesPdf() {
+  try {
+    const params = paramsConsumoMateriales();
+    await verArchivoProtegido(`api/produccion/materiales-informe/pdf${params.toString() ? '?' + params : ''}`);
   } catch (err) {
     Shell.error(err, 'No se pudo abrir el PDF');
   }
@@ -524,6 +885,7 @@ function mostrarTab(nombre, boton) {
   if (nombre === 'materiaprima') cargarMateriaPrima();
   if (nombre === 'historial') cargarHistorial();
   if (nombre === 'reporte' && puedeVerReportes()) cargarReporte();
+  if (nombre === 'consumo' && puedeVerReportes()) cargarConsumoMateriales();
 }
 
 // ============================================

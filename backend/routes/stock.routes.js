@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin, adminYOperario } = require('../middlewares/auth');
 const { segunRol } = require('../services/vista-operario');
+const { aplicarMovimientoStock } = require('../services/stock-movimientos');
 
 router.use(verificarToken);
 
@@ -269,77 +270,26 @@ router.get('/materia-prima/:id/movimientos', LECTURA, async (req, res) => {
  * Para ajuste directo (nuevo stock), se debe calcular la diferencia en el frontend
  */
 router.post('/ajuste', GESTION, async (req, res) => {
+  const { materia_prima_id, cantidad, tipo_movimiento, observaciones, fecha_movimiento } = req.body;
+
+  if (!materia_prima_id || cantidad === undefined || !tipo_movimiento) {
+    return res.status(400).json({ error: 'Faltan datos obligatorios' });
+  }
+
   const client = await pool.connect();
   try {
-    const { materia_prima_id, cantidad, tipo_movimiento, observaciones, fecha_movimiento } = req.body;
-
-    if (!materia_prima_id || cantidad === undefined || !tipo_movimiento) {
-      return res.status(400).json({ error: 'Faltan datos obligatorios' });
-    }
-
-    // hallazgo D5: antes se aceptaba cualquier texto libre en tipo_movimiento.
-    const TIPOS = ['ENTRADA', 'SALIDA', 'AJUSTE', 'MERMA'];
-    if (!TIPOS.includes(String(tipo_movimiento).toUpperCase())) {
-      await client.release();
-      return res.status(400).json({ error: `Tipo de movimiento inválido: "${tipo_movimiento}"` });
-    }
-
-    const delta = parseFloat(cantidad);
-    if (!Number.isFinite(delta) || delta === 0) {
-      await client.release();
-      return res.status(400).json({ error: 'La cantidad del ajuste tiene que ser un número distinto de cero' });
-    }
-
     await client.query('BEGIN');
 
-    // Obtener stock actual y unidad (con lock)
-    const stockRes = await client.query(
-      'SELECT stock_actual, unidad_medida FROM materias_primas WHERE id = $1 FOR UPDATE',
-      [materia_prima_id]
-    );
-    if (stockRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Materia prima no encontrada' });
-    }
-
-    const stockAnterior = parseFloat(stockRes.rows[0].stock_actual);
-    const unidad = stockRes.rows[0].unidad_medida || 'UNI';
-    // hallazgo D5: antes esto recortaba en silencio con Math.max(0, ...) —
-    // si había 10 unidades y se pedía un ajuste de -50, el movimiento
-    // quedaba grabado con cantidad=-50 pero stock_nuevo=0, y el libro de
-    // movimientos dejaba de cuadrar contra el stock actual. Ahora se
-    // rechaza en vez de mentir en el registro.
-    const stockNuevo = stockAnterior + delta;
-    if (stockNuevo < 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        error: `No se puede descontar ${Math.abs(delta)}: el stock actual es ${stockAnterior}`
-      });
-    }
-
-    // Insertar movimiento
-    await client.query(`
-      INSERT INTO stock_movimientos
-        (materia_prima_id, fecha_movimiento, tipo_movimiento, cantidad, unidad,
-         stock_anterior, stock_nuevo, observaciones, usuario_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [
-      materia_prima_id,
-      fecha_movimiento || new Date(),
-      tipo_movimiento,
-      cantidad,
-      unidad,
-      stockAnterior,
-      stockNuevo,
+    // produccion_id se omite a propósito: el ajuste manual siempre es un
+    // movimiento suelto, ese campo solo lo pasa produccion.routes.js.
+    const { stockAnterior, stockNuevo } = await aplicarMovimientoStock(client, {
+      materiaPrimaId: materia_prima_id,
+      tipoMovimiento: tipo_movimiento,
+      delta: cantidad,
       observaciones,
-      req.usuario.id
-    ]);
-
-    // Actualizar stock en materias_primas
-    await client.query(
-      'UPDATE materias_primas SET stock_actual = $1 WHERE id = $2',
-      [stockNuevo, materia_prima_id]
-    );
+      usuarioId: req.usuario.id,
+      fechaMovimiento: fecha_movimiento || new Date()
+    });
 
     await client.query('COMMIT');
 
@@ -351,6 +301,9 @@ router.post('/ajuste', GESTION, async (req, res) => {
     });
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
     console.error('Error en POST /stock/ajuste:', err);
     res.status(500).json({ error: err.message });
   } finally {

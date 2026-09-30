@@ -280,6 +280,22 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-consumo-materiales-produccion.sql (30/09): stock_movimientos.produccion_id
+  // + columnas de anulación en produccion.
+  {
+    const tieneProduccionId = await existeColumna('stock_movimientos', 'produccion_id');
+    const tieneAnulada = await existeColumna('produccion', 'anulada_en');
+    const ok = tieneProduccionId && tieneAnulada;
+    resultados.push({
+      migracion: 'migracion-consumo-materiales-produccion.sql',
+      aplicada: ok,
+      falta: ok ? '' : [
+        !tieneProduccionId && 'falta stock_movimientos.produccion_id',
+        !tieneAnulada && 'falta produccion.anulada_en/anulada_por/motivo_anulacion'
+      ].filter(Boolean).join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

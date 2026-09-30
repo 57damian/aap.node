@@ -249,6 +249,7 @@
             <option value="ENTRADA">Entrada</option>
             <option value="SALIDA">Salida</option>
             <option value="AJUSTE">Ajuste</option>
+            <option value="MERMA">Merma</option>
           </select>
         </div>
         <div class="field">
@@ -263,11 +264,32 @@
                placeholder="Por qué se ajusta">
       </div>
 
+      <p class="muted" style="margin:0 0 var(--space-2)">
+        "Vaciar" es para una corrección general de inventario (ej.: un rollo que en la
+        práctica quedó vacío). Para el desperdicio de una tanda de producción puntual,
+        cargalo desde "Material consumido" al registrar esa producción — así queda
+        en el informe de consumo por lote.
+      </p>
+
       <div class="page-head-actions">
+        <button type="button" class="b b-ghost" onclick="abrirConfirmarVaciar()">Vaciar</button>
         <button type="button" class="b b-ghost" data-cerrar="ajusteModal">Cancelar</button>
         <button type="button" class="b b-primary" onclick="guardarAjuste()">Guardar ajuste</button>
       </div>
     </form>
+  </div>
+</dialog>
+
+<dialog id="vaciarConfirmModal" class="panel">
+  <div class="panel-head"><h2>Vaciar stock</h2></div>
+  <div class="panel-body">
+    <div class="notice notice-warn dialog-bloque" id="vaciarConfirmTexto"></div>
+    <p class="muted">Esto va a registrar una <strong>MERMA</strong> y va a dejar el material sin stock. No se puede
+    deshacer automáticamente — si era un error, habría que cargar una entrada nueva.</p>
+    <div class="page-head-actions">
+      <button type="button" class="b b-ghost" data-cerrar="vaciarConfirmModal">Cancelar</button>
+      <button type="button" class="b b-danger" onclick="confirmarVaciar()">Sí, vaciar</button>
+    </div>
   </div>
 </dialog>
 

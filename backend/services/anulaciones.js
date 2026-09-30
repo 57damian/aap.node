@@ -11,6 +11,8 @@
  * correcto (400 datos inválidos, 404 no existe, 409 estado que no lo permite).
  * ===================================================================== */
 
+const { aplicarMovimientoStock } = require('./stock-movimientos');
+
 const MOTIVO_MIN = 10;
 
 function fallo(status, mensaje) {
@@ -405,10 +407,81 @@ async function anularOC(client, ocId, { motivo, confirmar_numero, usuario }) {
   return { oc_id: ocId, identificador: oc.identificador };
 }
 
+/* ---------------------------------------------------------------------
+ * PRODUCCIÓN (30/09/2026 — ver docs/claude/modulo-produccion.md)
+ * ------------------------------------------------------------------- */
+
+/** Qué pasaría al anular una carga de producción: qué movimientos de stock
+ * (consumo de materiales) se van a revertir. Con `bloquear`, FOR UPDATE de
+ * la producción. */
+async function vistaPreviaAnulacionProduccion(client, produccionId, { bloquear = false } = {}) {
+  const r = await client.query(`
+    SELECT p.*, f.modelo
+    FROM produccion p
+    JOIN ficha_transformador f ON f.id = p.ficha_id
+    WHERE p.id = $1
+    ${bloquear ? 'FOR UPDATE OF p' : ''}
+  `, [produccionId]);
+  if (!r.rows.length) throw fallo(404, 'Producción no encontrada');
+  const produccion = r.rows[0];
+  // No hay un "número" de producción como en facturas/OC — se confirma
+  // tipeando el id, que es lo que se ve en la tab Historial.
+  produccion.identificador = String(produccion.id);
+
+  const movimientos = (await client.query(`
+    SELECT sm.id, sm.materia_prima_id, sm.tipo_movimiento, sm.cantidad, sm.unidad,
+           mp.nombre AS material_nombre
+    FROM stock_movimientos sm
+    JOIN materias_primas mp ON mp.id = sm.materia_prima_id
+    WHERE sm.produccion_id = $1
+    ORDER BY sm.id
+  `, [produccionId])).rows;
+
+  return { produccion, movimientos };
+}
+
+/** Anula una carga de producción: revierte cada movimiento de stock ligado
+ * (material usado y desperdiciado vuelven, la carga se anula como si no
+ * hubiera pasado) y marca la producción como anulada. No borra nada — ni
+ * la fila de producción ni sus movimientos originales, para que quede todo
+ * el historial (carga + reversión) trazado. */
+async function anularProduccion(client, produccionId, { motivo, confirmar_numero, usuario }) {
+  const prev = await vistaPreviaAnulacionProduccion(client, produccionId, { bloquear: true });
+  const { produccion, movimientos } = prev;
+  if (produccion.anulada_en) throw fallo(409, 'La producción ya estaba anulada');
+  const motivoLimpio = validarConfirmacion(motivo, confirmar_numero, produccion.identificador);
+
+  for (const m of movimientos) {
+    await aplicarMovimientoStock(client, {
+      materiaPrimaId: m.materia_prima_id,
+      tipoMovimiento: 'AJUSTE',
+      delta: -Number(m.cantidad), // invierte el signo del movimiento original
+      observaciones: `Reversión por anulación de producción #${produccionId}: ${motivoLimpio}`,
+      usuarioId: usuario?.id || null,
+      fechaMovimiento: new Date(),
+      produccionId
+    });
+  }
+
+  await client.query(`
+    UPDATE produccion SET anulada_en = now(), anulada_por = $2, motivo_anulacion = $3 WHERE id = $1
+  `, [produccionId, usuario?.id || null, motivoLimpio]);
+
+  await registrarAuditoria(client, 'PRODUCCION', produccionId, produccion.identificador, motivoLimpio, usuario,
+    { produccion, movimientos });
+
+  return {
+    produccion_id: produccionId,
+    identificador: produccion.identificador,
+    movimientos_revertidos: movimientos.length
+  };
+}
+
 module.exports = {
   anularCobro,
   vistaPreviaAnulacion, anularFactura,
   vistaPreviaAnulacionRemito, anularRemito,
   vistaPreviaAnulacionOC, anularOC,
+  vistaPreviaAnulacionProduccion, anularProduccion,
   MOTIVO_MIN
 };

@@ -47,8 +47,8 @@ Hay dos conceptos de stock distintos en el sistema: stock de **materia prima** (
 **Unidades — ya funcionaba así:**
 - Cada material tiene una unidad fija (kg, unidad o litro), sin conversión entre unidades. No requirió cambios.
 
-**Salida de stock (consumo para producción) — manual, sin cambios de código en Stock:**
-- Queda manual (un operario carga cuánto se usó), sin automatizar por receta. La idea de receta/lista de materiales por modelo de transformador (para proyectar necesidad de material, ej. alambre/carreteles para un pedido de N transformadores) queda anotada como punto de entrada del módulo **Producción** — ver `claude/modulo-produccion.md`.
+**Salida de stock (consumo para producción) — manual, ligada a la carga de producción desde el 30/09/2026:**
+- Se carga a mano (un operario indica cuánto se usó y cuánto se desperdició de cada material) al registrar una carga de Producción, sin automatizar todavía por receta. Diseño completo, migración y endpoints en `claude/modulo-produccion.md`, sección "Consumo de materiales por producción". La idea de receta/lista de materiales por modelo de transformador (para proyectar necesidad de material y pre-completar esa carga manual) sigue pendiente, anotada en ese mismo doc.
 
 **Trazabilidad de stock (`stock_anterior`/`stock_nuevo`) — implementado y verificado en vivo:**
 - Antes quedaban en null/0 para los movimientos generados desde una factura de compra (solo se completaban en los ajustes manuales). Se corrigió `facturas-compra.routes.js` para que también los complete, igual que en `POST /api/stock/ajuste`. **Verificado en vivo**: la factura de prueba dejó `stock_anterior: 718, stock_nuevo: 728` correctamente en `stock_movimientos`.
@@ -143,3 +143,24 @@ relación con la tab nueva):
    pero el JS pinta 6 `<td>` por fila (Fecha/Precio anterior/Precio
    nuevo/Variación/Proveedor/N° Factura) — mismo tipo de desalineación que
    tenía la tab Movimientos antes de esta ronda de trabajo.
+
+## Botón "Vaciar" en Ajuste de Stock (30/09/2026)
+
+Parte del mismo pedido que "Consumo de materiales" de Producción (ver
+`claude/modulo-produccion.md`): para el caso de un material que en la
+práctica quedó físicamente en 0 aunque la cuenta diga que debería sobrar
+algo (ej. un rollo vacío), el modal de "Ajustar stock" (`stock.html`) tiene
+un botón "Vaciar" al lado de "Guardar ajuste". Precarga "Stock nuevo" en 0 y
+el tipo en `MERMA` (se agregó esa opción al `<select>` de tipo, que antes
+solo tenía ENTRADA/SALIDA/AJUSTE) — pero **no envía nada solo**: primero
+pide confirmación en un `<dialog id="vaciarConfirmModal">` propio (nunca
+`confirm()` nativo, por la convención de `CLAUDE.md`), y después de
+confirmar el motivo sigue siendo obligatorio antes de poder tocar "Guardar
+ajuste", igual que cualquier otro ajuste manual.
+
+Es siempre un ajuste **suelto** (`produccion_id = NULL`, vía `POST
+/api/stock/ajuste`, sin cambios de backend) — para el desperdicio de una
+tanda de producción puntual está "Material consumido"/"Vaciar resto" en el
+formulario de Producción, que si queda ligado a esa carga y entra en su
+informe de consumo. Un texto de ayuda al lado del botón en el propio modal
+aclara esta diferencia.

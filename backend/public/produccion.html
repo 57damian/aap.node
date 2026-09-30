@@ -23,6 +23,7 @@
     <button class="tab" data-tab="materiaprima">Materia prima</button>
     <button class="tab" data-tab="historial">Historial</button>
     <button class="tab" data-tab="reporte" data-roles="admin">Producido vs entregado</button>
+    <button class="tab" data-tab="consumo" data-roles="admin">Consumo de materiales</button>
   </div>
 
   <!-- ============ REGISTRAR ============ -->
@@ -51,6 +52,32 @@
           <div class="field ancho-total">
             <label for="observaciones">Observaciones <span class="muted">(opcional)</span></label>
             <input class="input" type="text" id="observaciones" placeholder="Lote, novedades…">
+          </div>
+
+          <div class="ancho-total">
+            <label>Material consumido <span class="muted">(opcional)</span></label>
+            <p class="muted" style="margin:2px 0 8px">
+              Todavía no hay receta por modelo, así que se descuenta a mano: cargá lo que se
+              usó y lo que se rompió/desperdició de cada material en esta tanda. Para el rollo
+              que quedó vacío aunque la cuenta dé menos, usá "Vaciar resto" en su fila.
+            </p>
+            <div class="table-wrap">
+              <table class="t">
+                <thead>
+                  <tr>
+                    <th>Material</th>
+                    <th style="width:14%">Usado</th>
+                    <th style="width:14%">Desperdiciado</th>
+                    <th style="width:22%">Observación</th>
+                    <th style="width:14%"></th>
+                  </tr>
+                </thead>
+                <tbody id="produccion_materialesBody"></tbody>
+              </table>
+            </div>
+            <div style="padding:var(--space-3) 0">
+              <button type="button" class="b b-ghost" id="btnAgregarMaterialProduccion">+ Agregar material</button>
+            </div>
           </div>
 
           <div class="ancho-total">
@@ -172,10 +199,11 @@
             <th class="num">Cantidad</th>
             <th class="solo-escritorio">Registró</th>
             <th class="solo-escritorio">Observaciones</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="historialTable">
-          <tr><td colspan="5" class="muted">Cargando…</td></tr>
+          <tr><td colspan="6" class="muted">Cargando…</td></tr>
         </tbody>
       </table>
     </div></div></div>
@@ -215,6 +243,119 @@
       </table>
     </div></div></div>
   </div>
+
+  <!-- ============ CONSUMO DE MATERIALES (solo admin) ============
+       Agregado por material de lo que se descontó al registrar producción
+       (Material consumido). Siempre excluye ajustes sueltos del botón
+       "Vaciar" de Stock: acá es específicamente consumo de producción. -->
+  <div id="tab-consumo" class="tab-content">
+    <div class="filters" data-roles="admin">
+      <div class="field">
+        <label for="consumoDesde">Desde</label>
+        <input class="input" type="date" id="consumoDesde">
+      </div>
+      <div class="field">
+        <label for="consumoHasta">Hasta</label>
+        <input class="input" type="date" id="consumoHasta">
+      </div>
+      <div class="field grow">
+        <label for="consumoModelo">Modelo</label>
+        <select class="input" id="consumoModelo">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="field grow">
+        <label for="consumoMaterial">Material</label>
+        <select class="input" id="consumoMaterial">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button class="b b-primary" onclick="cargarConsumoMateriales()">Aplicar</button>
+        <button class="b b-ghost" onclick="exportarConsumoMaterialesCSV()">Exportar CSV</button>
+        <button class="b b-ghost" onclick="verConsumoMaterialesPdf()">PDF</button>
+      </div>
+    </div>
+
+    <div class="panel" data-roles="admin"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th class="num">Usado</th>
+            <th class="num">Desperdiciado</th>
+            <th class="num">% Merma</th>
+          </tr>
+        </thead>
+        <tbody id="consumoMaterialesTable">
+          <tr><td colspan="4" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
+  </div>
+
+  <!-- ================= Ventanas =================
+       Van adentro de [data-content]: Shell.montar() reemplaza el body y solo
+       conserva lo de adentro. -->
+
+  <dialog id="verConsumoModal" class="panel">
+  <div class="panel-head"><h2 id="verConsumoTitulo">Material consumido</h2></div>
+  <div class="panel-body">
+    <div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th>Tipo</th>
+            <th class="num">Cantidad</th>
+            <th class="solo-escritorio">Observación</th>
+          </tr>
+        </thead>
+        <tbody id="verConsumoBody"></tbody>
+      </table>
+    </div>
+    <div class="page-head-actions" style="margin-top:var(--space-3)">
+      <button type="button" class="b b-ghost" data-cerrar="verConsumoModal">Cerrar</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="anularProduccionModal" class="panel">
+  <div class="panel-head"><h2>Anular producción</h2></div>
+  <div class="panel-body">
+
+    <div class="notice notice-warn dialog-bloque">
+      Anular devuelve al stock de materia prima todo lo que esta carga había descontado
+      (usado y desperdiciado) y deja registrado quién, cuándo y por qué. La carga no se borra,
+      queda marcada como anulada en el historial.
+    </div>
+
+    <div class="dialog-bloque" id="anularProduccionResumen"></div>
+
+    <div class="dialog-bloque" id="anularProduccionSinMateriales" hidden>
+      <p class="muted">Esta carga no tiene material consumido cargado — al anularla solo se marca
+      como anulada, no hay stock de materia prima para devolver.</p>
+    </div>
+
+    <div class="dialog-bloque">
+      <div class="field" style="margin-bottom:var(--space-3)">
+        <label for="anularProduccionMotivo">Motivo de la anulación <span class="muted">(obligatorio, al menos 10 caracteres)</span></label>
+        <textarea class="input" id="anularProduccionMotivo" rows="3" maxlength="500" placeholder="Ej.: se cargó el modelo equivocado"></textarea>
+      </div>
+      <div class="field">
+        <label for="anularProduccionConfirmar">Para confirmar, escribí el número: <strong id="anularProduccionNumeroRef"></strong></label>
+        <input class="input" type="text" id="anularProduccionConfirmar" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="notice notice-err dialog-bloque" id="anularProduccionError" role="alert" hidden></div>
+
+    <div class="page-head-actions">
+      <button type="button" class="b b-ghost" data-cerrar="anularProduccionModal">Cancelar</button>
+      <button type="button" class="b b-danger" id="btnConfirmarAnularProduccion" disabled>Anular producción</button>
+    </div>
+  </div>
+  </dialog>
 
 </div>
 
