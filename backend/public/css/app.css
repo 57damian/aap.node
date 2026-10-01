@@ -348,6 +348,7 @@ table.t .muted { color: var(--text-muted); }
 .pill-warn    { background: #fef3c7; color: #92400e; }  /* PARCIAL, EN_GESTION, EN_CARTERA */
 .pill-danger  { background: #fee2e2; color: #991b1b; }  /* VENCIDA, RECHAZADO */
 .pill-info    { background: #dbeafe; color: #1e40af; }  /* PENDIENTE, DEPOSITADO, ENTREGADO */
+.pill-review  { background: #ede9fe; color: #5b21b6; }  /* SOBRE_COBRADA: hay que revisar una imputación, no cobrar */
 .pill-neutral { background: var(--gray-100); color: var(--gray-700); } /* ANULADO */
 
 /* =====================================================================
@@ -535,6 +536,44 @@ table.t .muted { color: var(--text-muted); }
 .drawer-head .meta { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
 .drawer > * + * { margin-top: var(--space-4); }
 @media (max-width: 640px) { .drawer { width: 100vw; } }
+
+/* Ficha de cliente de Cobros: cabecera y solapas fijas, scroll solo del
+   contenido (así no se pierde de vista de qué cliente se trata). */
+.drawer.drawer-fijo { display: flex; flex-direction: column; overflow: hidden; }
+.drawer-fijo #drawerCuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 0; }
+.dtabs-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-3); border-bottom: 1px solid var(--border-color); flex: none; }
+.dtabs-bar .tabs { border-bottom: none; }
+.dtabs-bar > .b { margin-bottom: var(--space-2); }
+.dtab {
+  padding: var(--space-2) var(--space-4); background: none; border: none;
+  border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  cursor: pointer; white-space: nowrap;
+}
+.dtab:hover { color: var(--text-primary); }
+.dtab.active { color: var(--primary-600); border-bottom-color: var(--primary-600); font-weight: 600; }
+.dscroll { flex: 1; min-height: 0; overflow-y: auto; padding-top: var(--space-4); }
+.dpane { display: none; }
+.dpane.active { display: block; }
+.dpane > * + * { margin-top: var(--space-4); }
+
+/* Estado de cuenta: filtros y filas expandibles */
+.ec-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.ec-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.ec-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
+.ec-link { color: var(--primary-600); text-decoration: none; }
+.ec-link:hover { text-decoration: underline; }
+.ec-toggle {
+  background: none; border: 1px solid var(--border-color); border-radius: 6px;
+  padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; color: var(--text-primary);
+}
+.ec-toggle:hover { background: var(--gray-100); }
+.ec-flecha { font-size: 10px; }
+.ec-fila.abierta td { background: var(--gray-50, #f9fafb); }
+.ec-hijo td { font-size: 12px; background: var(--gray-50, #f9fafb); border-top: none; }
+.ec-hijo td:first-child { padding-left: 28px; }
+.ec-gestion { font-size: 11px; color: #92400e; }
+.ec-total td { font-weight: 700; border-top: 2px solid var(--border-color); }
 
 /* =====================================================================
  * 17. FILA DE FORMA DE PAGO/COBRO — usada al registrar cobros y pagos

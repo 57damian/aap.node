@@ -117,6 +117,11 @@ Mismo patrón que "Pedidos a proveedores" (abajo): PDF membretado generado en el
 - Un documento anulado se puede seguir descargando como registro (banner "ANULADO/A" con el motivo).
 - Frontend: botón/link "PDF" o "Descargar PDF" con `descargarArchivoProtegido` en `venta_detalle.html`, `oc_detalle.js` (junto a cada factura y cada remito), `cobros.js` (historial) y `ficha.html`/`ficha.js`.
 
+## Estado de cuenta por cliente (01/10/2026)
+
+Ficha del cliente en Cobros (drawer), solapa **Estado de cuenta** (la otra solapa es la cuenta corriente de siempre): una línea por factura con total, cobrado, saldo, estado y, al expandir "N pagos", los cobros aplicados con el monto de cada uno (`aplicacion_pagos` agrupado por factura + cobro) y las notas de crédito. Orden por urgencia: VENCIDA → PARCIAL/EN_GESTION → PENDIENTE → SOBRE_COBRADA → COBRADA. "Solo pendientes" incluye EN_GESTION (el saldo no se redefine: un cheque en cartera no cobra). SOBRE_COBRADA tiene pill propio (`pill-review`, "COBRADA DE MÁS").
+- API: `GET /api/cobros/clientes/:id/estado-cuenta[?desde&hasta&solo_pendientes=true]` y `.../estado-cuenta/pdf[?detalle=false]`; lógica en `estadoCuenta()` de `services/cuenta-cliente.js`, PDF en `services/pdf-estado-cuenta.js`. Sin migraciones.
+
 ## Pedidos a proveedores (PDF de materia prima)
 
 - No es `ordenes_compra` (esa es la orden que manda el **cliente**). Es un documento propio para pedirle materia prima a un **proveedor**: se arma en `pedidos-proveedor.html`, queda guardado como borrador y se descarga como PDF con membrete para mandarlo por correo a mano (el sistema no manda el correo, solo genera el PDF).

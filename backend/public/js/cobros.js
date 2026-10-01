@@ -64,6 +64,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnVerHistorialPdf').addEventListener('click', verHistorialPdf);
   $('btnCerrarDrawer').addEventListener('click', cerrarDrawer);
   $('drawerBg').addEventListener('click', cerrarDrawer);
+  $('drawerCuerpo').addEventListener('click', clicEnDrawer);
+  $('drawerCuerpo').addEventListener('change', (e) => {
+    if (e.target.matches('#ecDesde, #ecHasta, #ecSoloPend')) cargarEstadoCuenta();
+  });
 
   await cargarClientes();
   await cargarTodo();
@@ -195,11 +199,26 @@ async function cargarDeuda() {
 }
 
 /* ---------------------- ficha del cliente (panel lateral) ---------------------- */
+/* Dos solapas: "Estado de cuenta" (una línea por factura, con los pagos
+ * aplicados al expandir) y "Cuenta corriente" (movimientos cronológicos).
+ * Nunca dos tablas de facturas a la vez. */
+
+const ec = {
+  clienteId: null,
+  datos: null,
+  abiertas: new Set()   // ids de factura con los pagos desplegados
+};
+
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function verCliente(clienteId) {
   abrirDrawer();
   $('drawerTitulo').textContent = 'Cargando...';
+  $('drawerMeta').innerHTML = '';
   $('drawerCuerpo').innerHTML = '';
+  ec.clienteId = clienteId;
+  ec.abiertas = new Set();
 
   try {
     const [ficha, cc] = await Promise.all([
@@ -209,117 +228,310 @@ async function verCliente(clienteId) {
 
     const t = ficha.totales;
     $('drawerTitulo').textContent = ficha.cliente.nombre;
-    $('drawerMeta').innerHTML = [
+    $('drawerMeta').textContent = [
       ficha.cliente.cuit, ficha.cliente.telefono, ficha.cliente.correo,
       ficha.cliente.dias_max_pago ? `plazo ${ficha.cliente.dias_max_pago} días` : null
     ].filter(Boolean).join(' · ');
 
     $('drawerCuerpo').innerHTML = `
-      <div class="kpi-row">
-        <div class="kpi"><div class="kpi-k">Saldo</div><div class="kpi-v">${Shell.money(t.saldo)}</div></div>
-        <div class="kpi is-warning"><div class="kpi-k">Vencido</div><div class="kpi-v">${Shell.money(t.vencido)}</div>
-          <div class="kpi-sub">${t.dias_atraso_max > 0 ? 'hasta ' + t.dias_atraso_max + ' días' : 'al día'}</div></div>
-        <div class="kpi is-info"><div class="kpi-k">En gestión</div><div class="kpi-v">${Shell.money(t.en_gestion)}</div>
-          <div class="kpi-sub">${ficha.cheques_en_cartera.length} cheque(s)</div></div>
-        <div class="kpi is-success"><div class="kpi-k">A favor</div>
-          <div class="kpi-v">${Shell.money(num(t.saldo_a_favor) + num(t.exceso_cobrado))}</div>
-          ${num(t.exceso_cobrado) > 0
-            ? `<div class="kpi-sub">${Shell.money(t.exceso_cobrado)} cobrado de más</div>` : ''}</div>
+      <div class="dtabs-bar">
+        <div class="tabs" role="tablist">
+          <button type="button" class="dtab active" data-dtab="estado">Estado de cuenta</button>
+          <button type="button" class="dtab" data-dtab="cc">Cuenta corriente</button>
+        </div>
+        <button class="b b-primary b-sm" onclick="cobrarA(${clienteId})">Registrar un cobro</button>
       </div>
 
-      ${ficha.facturas.some(f => f.estado === 'SOBRE_COBRADA') ? `
-      <div class="notice notice-warn">
-        Hay factura(s) con saldo negativo: se imputó más plata de la que facturaban.
-        Ese exceso se cuenta como saldo a favor del cliente. Revisá las marcadas
-        <strong>cobrada de más</strong> y deshacé la imputación sobrante desde el cobro correspondiente.
-      </div>` : ''}
-
-      <div>
-        <button class="b b-primary b-sm" onclick="cobrarA(${clienteId})">Registrar un cobro de este cliente</button>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">Facturas</div>
-        <div class="panel-body flush">
-          <div class="table-wrap">
-            <table class="t">
-              <thead><tr>
-                <th>Factura</th><th>Fecha</th><th>Vence</th>
-                <th class="num">Total</th><th class="num">Cobrado</th><th class="num">Saldo</th><th>Estado</th>
-              </tr></thead>
-              <tbody>${ficha.facturas.map(f => `
-                <tr>
-                  <td><strong>${f.numero_factura}</strong> <span class="muted">${f.tipo_factura || ''}</span></td>
-                  <td data-label="Fecha">${Shell.fecha(f.fecha)}</td>
-                  <td data-label="Vence">${Shell.fecha(f.fecha_vencimiento)} ${num(f.saldo) > 0 ? textoAtraso(f.dias_atraso) : ''}</td>
-                  <td class="num" data-label="Total">${Shell.money(f.total)}</td>
-                  <td class="num" data-label="Cobrado">${Shell.money(f.cobrado)}${num(f.en_gestion) > 0 ? `<div class="muted" style="font-size:11px">+${Shell.money(f.en_gestion)} en gestión</div>` : ''}</td>
-                  <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
-                  <td data-label="Estado">${chipEstadoFactura(f.estado)}</td>
-                </tr>`).join('') || `<tr><td colspan="7">${Shell.vacio('Sin facturas', '')}</td></tr>`}
-              </tbody>
-            </table>
+      <div class="dscroll">
+        <div class="dpane active" id="dpane-estado">
+          <div class="ec-filtros">
+            <label class="field"><span>Facturas desde</span><input type="date" id="ecDesde"></label>
+            <label class="field"><span>Hasta</span><input type="date" id="ecHasta"></label>
+            <label class="ec-check"><input type="checkbox" id="ecSoloPend"> Solo pendientes de cobro</label>
+            <div class="ec-acciones">
+              <button type="button" class="b b-ghost b-sm" id="ecLimpiar">Limpiar</button>
+              <button type="button" class="b b-ghost b-sm" id="ecCsv">CSV</button>
+              <button type="button" class="b b-primary b-sm" id="ecPdf">PDF</button>
+              <label class="ec-check" title="Si lo destildás, el PDF trae solo las facturas, sin los pagos de cada una">
+                <input type="checkbox" id="ecDetalle" checked> con detalle de pagos</label>
+            </div>
           </div>
+          <div id="ecResultado"><div class="muted" style="padding:16px">Cargando…</div></div>
         </div>
-      </div>
 
-      ${ficha.cheques_en_cartera.length ? `
-      <div class="panel">
-        <div class="panel-head">Cheques de este cliente todavía no acreditados <button type="button" class="ayuda" data-ayuda="en_cartera">?</button></div>
-        <div class="panel-body flush">
-          <div class="table-wrap">
-            <table class="t">
-              <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Monto</th><th>Se cobra</th><th>Estado</th></tr></thead>
-              <tbody>${ficha.cheques_en_cartera.map(c => `
-                <tr>
-                  <td><strong>${c.cheque_numero}</strong>${c.endosado ? ' ' + Shell.pill('EN_GESTION') : ''}</td>
-                  <td data-label="Banco">${c.cheque_banco || '—'}</td>
-                  <td class="num" data-label="Monto">${Shell.money(c.monto)}</td>
-                  <td data-label="Se cobra">${Shell.fecha(c.cheque_fecha_cobro)} ${textoAtraso(c.dias_para_cobro === null ? null : -c.dias_para_cobro)}</td>
-                  <td data-label="Estado">${Shell.pill(c.estado)}</td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
+        <div class="dpane" id="dpane-cc">
+          <div class="kpi-row">
+            <div class="kpi"><div class="kpi-k">Saldo</div><div class="kpi-v">${Shell.money(t.saldo)}</div></div>
+            <div class="kpi is-warning"><div class="kpi-k">Vencido</div><div class="kpi-v">${Shell.money(t.vencido)}</div>
+              <div class="kpi-sub">${t.dias_atraso_max > 0 ? 'hasta ' + t.dias_atraso_max + ' días' : 'al día'}</div></div>
+            <div class="kpi is-info"><div class="kpi-k">En gestión</div><div class="kpi-v">${Shell.money(t.en_gestion)}</div>
+              <div class="kpi-sub">${ficha.cheques_en_cartera.length} cheque(s)</div></div>
+            <div class="kpi is-success"><div class="kpi-k">A favor</div>
+              <div class="kpi-v">${Shell.money(num(t.saldo_a_favor) + num(t.exceso_cobrado))}</div>
+              ${num(t.exceso_cobrado) > 0
+                ? `<div class="kpi-sub">${Shell.money(t.exceso_cobrado)} cobrado de más</div>` : ''}</div>
           </div>
-        </div>
-      </div>` : ''}
 
-      <div class="panel">
-        <div class="panel-head">Cuenta corriente <button type="button" class="ayuda" data-ayuda="cuenta_corriente">?</button></div>
-        <div class="panel-body flush">
-          <div class="table-wrap">
-            <table class="t">
-              <thead><tr>
-                <th>Fecha</th><th>Movimiento</th><th>Comprobante</th>
-                <th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th>
-              </tr></thead>
-              <tbody>${cc.movimientos.map(m => {
-                const informativo = num(m.debe) === 0 && num(m.haber) === 0;
-                return `
-                <tr${informativo ? ' class="muted"' : ''}>
-                  <td>${Shell.fecha(m.fecha)}</td>
-                  <td data-label="Movimiento">${m.tipo.replace(/_/g, ' ')}${m.detalle ? `<div class="muted" style="font-size:11px">${m.detalle}</div>` : ''}</td>
-                  <td data-label="Comprobante">${m.comprobante}</td>
-                  <td class="num" data-label="Debe">${num(m.debe) ? Shell.money(m.debe) : (informativo ? `<span class="muted">(${Shell.money(m.monto)})</span>` : '—')}</td>
-                  <td class="num" data-label="Haber">${num(m.haber) ? Shell.money(m.haber) : '—'}</td>
-                  <td class="num" data-label="Saldo"><strong>${Shell.money(m.saldo_acumulado)}</strong></td>
-                </tr>`; }).join('') || `<tr><td colspan="6">${Shell.vacio('Sin movimientos', '')}</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="panel-body" style="padding-top:0">
-          <div class="muted" style="font-size:12px">
-            Las filas grises son informativas: un cheque no mueve el saldo hasta que se acredita.
+          ${ficha.cheques_en_cartera.length ? `
+          <div class="panel">
+            <div class="panel-head">Cheques de este cliente todavía no acreditados <button type="button" class="ayuda" data-ayuda="en_cartera">?</button></div>
+            <div class="panel-body flush">
+              <div class="table-wrap">
+                <table class="t">
+                  <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Monto</th><th>Se cobra</th><th>Estado</th></tr></thead>
+                  <tbody>${ficha.cheques_en_cartera.map(c => `
+                    <tr>
+                      <td><strong>${esc(c.cheque_numero)}</strong>${c.endosado ? ' ' + Shell.pill('EN_GESTION') : ''}</td>
+                      <td data-label="Banco">${esc(c.cheque_banco) || '—'}</td>
+                      <td class="num" data-label="Monto">${Shell.money(c.monto)}</td>
+                      <td data-label="Se cobra">${Shell.fecha(c.cheque_fecha_cobro)} ${textoAtraso(c.dias_para_cobro === null ? null : -c.dias_para_cobro)}</td>
+                      <td data-label="Estado">${Shell.pill(c.estado)}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>` : ''}
+
+          <div class="panel">
+            <div class="panel-head">Cuenta corriente <button type="button" class="ayuda" data-ayuda="cuenta_corriente">?</button></div>
+            <div class="panel-body flush">
+              <div class="table-wrap">
+                <table class="t">
+                  <thead><tr>
+                    <th>Fecha</th><th>Movimiento</th><th>Comprobante</th>
+                    <th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th>
+                  </tr></thead>
+                  <tbody>${cc.movimientos.map(m => {
+                    const informativo = num(m.debe) === 0 && num(m.haber) === 0;
+                    return `
+                    <tr${informativo ? ' class="muted"' : ''}>
+                      <td>${Shell.fecha(m.fecha)}</td>
+                      <td data-label="Movimiento">${esc(m.tipo.replace(/_/g, ' '))}${m.detalle ? `<div class="muted" style="font-size:11px">${esc(m.detalle)}</div>` : ''}</td>
+                      <td data-label="Comprobante">${esc(m.comprobante)}</td>
+                      <td class="num" data-label="Debe">${num(m.debe) ? Shell.money(m.debe) : (informativo ? `<span class="muted">(${Shell.money(m.monto)})</span>` : '—')}</td>
+                      <td class="num" data-label="Haber">${num(m.haber) ? Shell.money(m.haber) : '—'}</td>
+                      <td class="num" data-label="Saldo"><strong>${Shell.money(m.saldo_acumulado)}</strong></td>
+                    </tr>`; }).join('') || `<tr><td colspan="6">${Shell.vacio('Sin movimientos', '')}</td></tr>`}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel-body" style="padding-top:0">
+              <div class="muted" style="font-size:12px">
+                Las filas grises son informativas: un cheque no mueve el saldo hasta que se acredita.
+              </div>
+            </div>
           </div>
         </div>
       </div>`;
+
+    await cargarEstadoCuenta();
   } catch (err) {
     $('drawerTitulo').textContent = 'Error';
     Shell.error(err, 'No se pudo cargar la ficha del cliente');
     $('drawerCuerpo').innerHTML = `<div class="notice notice-err">No se pudo cargar la ficha de este cliente.</div>`;
   }
 }
+
+function paramsEstadoCuenta() {
+  const p = new URLSearchParams();
+  if ($('ecDesde').value) p.set('desde', $('ecDesde').value);
+  if ($('ecHasta').value) p.set('hasta', $('ecHasta').value);
+  if ($('ecSoloPend').checked) p.set('solo_pendientes', 'true');
+  return p;
+}
+
+async function cargarEstadoCuenta() {
+  const clienteId = ec.clienteId;
+  ec.abiertas = new Set();   // al cambiar el filtro las filas abiertas ya no son las mismas
+  try {
+    const datos = await apiFetch(`${API}/clientes/${clienteId}/estado-cuenta?${paramsEstadoCuenta()}`);
+    if (clienteId !== ec.clienteId) return;   // el usuario abrió otro cliente mientras tanto
+    ec.datos = datos;
+    pintarEstadoCuenta();
+  } catch (err) {
+    Shell.error(err, 'No se pudo cargar el estado de cuenta');
+    $('ecResultado').innerHTML = '<div class="notice notice-err">No se pudo cargar el estado de cuenta.</div>';
+  }
+}
+
+function pintarEstadoCuenta() {
+  const { resumen: r, facturas, a_cuenta } = ec.datos;
+  const hayExceso = facturas.some(f => f.estado === 'SOBRE_COBRADA');
+
+  $('ecResultado').innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-k">Facturado</div><div class="kpi-v">${Shell.money(r.facturado)}</div></div>
+      <div class="kpi is-success"><div class="kpi-k">Cobrado</div><div class="kpi-v">${Shell.money(r.cobrado)}</div>
+        ${num(r.en_gestion) > 0 ? `<div class="kpi-sub">+${Shell.money(r.en_gestion)} en gestión</div>` : ''}</div>
+      <div class="kpi"><div class="kpi-k">Por cobrar</div><div class="kpi-v">${Shell.money(r.por_cobrar)}</div></div>
+      <div class="kpi ${num(r.vencido) > 0 ? 'is-warning' : ''}"><div class="kpi-k">Vencido</div><div class="kpi-v">${Shell.money(r.vencido)}</div></div>
+    </div>
+
+    ${hayExceso ? `
+    <div class="notice notice-warn">
+      Hay factura(s) cobradas de más: se imputó más plata de la que facturaban. Revisá las marcadas
+      <strong>cobrada de más</strong> y deshacé la imputación sobrante desde el cobro correspondiente.
+    </div>` : ''}
+
+    <div class="panel">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t ec-tabla">
+            <thead><tr>
+              <th>Factura</th><th>Fecha</th><th>Vence</th>
+              <th class="num">Total</th><th class="num">Cobrado</th><th class="num">Saldo</th>
+              <th>Estado</th><th>Pagos</th>
+            </tr></thead>
+            <tbody id="ecCuerpo"></tbody>
+            ${facturas.length ? `
+            <tfoot><tr class="ec-total">
+              <td colspan="3">Totales</td>
+              <td class="num">${Shell.money(r.facturado)}</td>
+              <td class="num">${Shell.money(r.cobrado)}</td>
+              <td class="num">${Shell.money(r.por_cobrar)}</td>
+              <td colspan="2"></td>
+            </tr></tfoot>` : ''}
+          </table>
+        </div>
+      </div>
+    </div>
+
+    ${num(a_cuenta) > 0 ? `<div class="muted" style="font-size:13px">Cobros a cuenta sin imputar a ninguna factura: <strong>${Shell.money(a_cuenta)}</strong></div>` : ''}
+    <div class="muted" style="font-size:12px">
+      Ordenado por urgencia: primero lo vencido. Tocá "pagos" para ver qué cobro se aplicó a cada factura y por cuánto.
+    </div>`;
+
+  pintarFilasEstadoCuenta();
+}
+
+function pintarFilasEstadoCuenta() {
+  const { facturas } = ec.datos;
+  const cuerpo = $('ecCuerpo');
+  if (!facturas.length) {
+    cuerpo.innerHTML = `<tr><td colspan="8">${Shell.vacio('Sin facturas', 'No hay facturas para este filtro.')}</td></tr>`;
+    return;
+  }
+
+  cuerpo.innerHTML = facturas.map(f => {
+    const nPagos = f.pagos.length;
+    const nHijos = nPagos + f.notas_credito_detalle.length;
+    const abierta = ec.abiertas.has(f.id);
+    const gestion = num(f.en_gestion) > 0.005
+      ? `<div class="ec-gestion">+${Shell.money(f.en_gestion)} en gestión</div>` : '';
+
+    let html = `
+      <tr class="ec-fila${abierta ? ' abierta' : ''}">
+        <td><a href="#" class="ec-link" data-pdf="api/facturas/${f.id}/pdf" title="Ver el PDF de la factura"><strong>${esc(f.numero_factura)}</strong></a>
+            <span class="muted">${esc(f.tipo_factura || '')}</span></td>
+        <td data-label="Fecha">${Shell.fecha(f.fecha)}</td>
+        <td data-label="Vence">${Shell.fecha(f.fecha_vencimiento)} ${num(f.saldo) > 0.005 ? textoAtraso(f.dias_atraso) : ''}</td>
+        <td class="num" data-label="Total">${Shell.money(f.total)}</td>
+        <td class="num" data-label="Cobrado">${Shell.money(f.cobrado)}${gestion}</td>
+        <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
+        <td data-label="Estado">${Shell.pill(f.estado)}</td>
+        <td data-label="Pagos">${nHijos
+          ? `<button type="button" class="ec-toggle" data-ec-toggle="${f.id}" aria-expanded="${abierta}">
+               <span class="ec-flecha">${abierta ? '▼' : '▶'}</span> ${nPagos ? nPagos + (nPagos === 1 ? ' pago' : ' pagos') : 'NC'}${nPagos && nHijos > nPagos ? ' + NC' : ''}</button>`
+          : '<span class="muted">—</span>'}</td>
+      </tr>`;
+
+    if (abierta) {
+      f.pagos.forEach(p => {
+        const forma = [p.numero_recibo ? 'Recibo ' + esc(p.numero_recibo) : null, esc(p.formas)].filter(Boolean).join(' · ');
+        html += `
+      <tr class="ec-hijo">
+        <td><a href="#" class="ec-link" data-pdf="api/cobros/${p.pago_id}/pdf" title="Ver el recibo del cobro">Cobro #${p.pago_id}</a></td>
+        <td data-label="Fecha">${Shell.fecha(p.fecha_recepcion)}</td>
+        <td colspan="2" class="muted">${forma}</td>
+        <td class="num" data-label="Aplicado">${Shell.money(p.monto_aplicado)}</td>
+        <td></td>
+        <td data-label="Estado">${Shell.pill(p.estado_forma)}</td>
+        <td></td>
+      </tr>`;
+      });
+      f.notas_credito_detalle.forEach(n => {
+        html += `
+      <tr class="ec-hijo">
+        <td>NC ${esc(n.numero_nota)}</td>
+        <td data-label="Fecha">${Shell.fecha(n.fecha)}</td>
+        <td class="muted">Nota de crédito</td>
+        <td class="num" data-label="Monto">−${Shell.money(n.total)}</td>
+        <td colspan="4"></td>
+      </tr>`;
+      });
+    }
+    return html;
+  }).join('');
+}
+
+function exportarEstadoCuentaCSV() {
+  if (!ec.datos || !ec.datos.facturas.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const filas = [['Factura', 'Fecha', 'Vence', 'Total', 'Cobrado', 'En gestión', 'Saldo', 'Estado',
+    'Cobro', 'Fecha cobro', 'Monto aplicado', 'Forma de pago']];
+
+  ec.datos.facturas.forEach(f => {
+    const base = [q(f.numero_factura), f.fecha, f.fecha_vencimiento, f.total, f.cobrado, f.en_gestion, f.saldo, f.estado];
+    if (!f.pagos.length) filas.push([...base, '', '', '', '']);
+    f.pagos.forEach(p => filas.push([...base, `#${p.pago_id}`, p.fecha_recepcion, p.monto_aplicado,
+      q([p.formas, p.estado_forma].filter(Boolean).join(' · '))]));
+  });
+
+  const csv = 'data:text/csv;charset=utf-8,' + filas.map(f => f.join(',')).join('\n');
+  const link = document.createElement('a');
+  link.href = encodeURI(csv);
+  link.download = `estado-cuenta-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  Shell.toast('ok', 'Estado de cuenta exportado');
+}
+
+async function verEstadoCuentaPdf() {
+  try {
+    const p = paramsEstadoCuenta();
+    if (!$('ecDetalle').checked) p.set('detalle', 'false');
+    await verArchivoProtegido(`api/cobros/clientes/${ec.clienteId}/estado-cuenta/pdf?${p}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
+  }
+}
+
+// Un solo manejador para todo lo que se pinta dentro del panel lateral.
+function clicEnDrawer(e) {
+  const tab = e.target.closest('[data-dtab]');
+  if (tab) {
+    document.querySelectorAll('#drawerCuerpo .dtab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('#drawerCuerpo .dpane').forEach(p =>
+      p.classList.toggle('active', p.id === 'dpane-' + tab.dataset.dtab));
+    return;
+  }
+  const toggle = e.target.closest('[data-ec-toggle]');
+  if (toggle) {
+    const id = Number(toggle.dataset.ecToggle);
+    if (ec.abiertas.has(id)) ec.abiertas.delete(id); else ec.abiertas.add(id);
+    pintarFilasEstadoCuenta();
+    return;
+  }
+  const pdf = e.target.closest('[data-pdf]');
+  if (pdf) {
+    e.preventDefault();
+    verArchivoProtegido(pdf.dataset.pdf).catch(err => Shell.error(err, 'No se pudo abrir el PDF'));
+    return;
+  }
+  if (e.target.closest('#ecCsv')) return exportarEstadoCuentaCSV();
+  if (e.target.closest('#ecPdf')) return verEstadoCuentaPdf();
+  if (e.target.closest('#ecLimpiar')) {
+    $('ecDesde').value = ''; $('ecHasta').value = ''; $('ecSoloPend').checked = false;
+    cargarEstadoCuenta();
+  }
+}
+
 
 function chipEstadoFactura(e) {
   return Shell.pill(e);

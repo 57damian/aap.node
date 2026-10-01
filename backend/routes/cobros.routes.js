@@ -21,8 +21,9 @@ const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const {
   CTE_FACTURAS, CTE_A_FAVOR, EXCESO_COBRADO, ESTADO_FACTURA,
-  resumenCliente, cuentaCorriente
+  resumenCliente, cuentaCorriente, estadoCuenta
 } = require('../services/cuenta-cliente');
+const { generarPdfEstadoCuenta } = require('../services/pdf-estado-cuenta');
 const { anularCobro } = require('../services/anulaciones');
 const { generarPdfCobro } = require('../services/pdf-cobro');
 const { nombreArchivo, fecha: fmtFecha, money } = require('../services/pdf-base');
@@ -233,6 +234,54 @@ router.get('/clientes/:id/cuenta-corriente', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error en cuenta corriente:', err);
     fallar(res, 500, err.message);
+  }
+});
+
+/* Estado de cuenta: una fila por factura con los pagos aplicados a cada una.
+ * Filtros: desde/hasta (fecha de factura), solo_pendientes=true. */
+router.get('/clientes/:id/estado-cuenta', soloAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const cli = await pool.query('SELECT id, nombre, cuit FROM clientes WHERE id = $1', [id]);
+    if (!cli.rows.length) return fallar(res, 404, 'Cliente no encontrado');
+
+    const datos = await estadoCuenta(pool, id, {
+      desde: req.query.desde, hasta: req.query.hasta,
+      soloPendientes: req.query.solo_pendientes === 'true'
+    });
+    res.json({ cliente: cli.rows[0], ...datos });
+  } catch (err) {
+    console.error('Error en estado de cuenta:', err);
+    fallar(res, 500, err.message);
+  }
+});
+
+/* PDF del estado de cuenta (mismos filtros). `detalle=false` deja solo el
+ * resumen y las facturas, sin los pagos de cada una. */
+router.get('/clientes/:id/estado-cuenta/pdf', soloAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { desde, hasta } = req.query;
+  try {
+    const cli = await pool.query('SELECT id, nombre, cuit FROM clientes WHERE id = $1', [id]);
+    if (!cli.rows.length) return fallar(res, 404, 'Cliente no encontrado');
+
+    const soloPendientes = req.query.solo_pendientes === 'true';
+    const datos = await estadoCuenta(pool, id, { desde, hasta, soloPendientes });
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Facturas del ${desde ? fmtFecha(desde) : 'inicio'} al ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+    if (soloPendientes) filtros.push('Solo pendientes de cobro');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `inline; filename="estado-cuenta-${nombreArchivo(cli.rows[0].nombre, 'cliente')}.pdf"`);
+    generarPdfEstadoCuenta({ cliente: cli.rows[0], ...datos }, {
+      filtrosTexto: filtros.join(' · ') || undefined,
+      detalle: req.query.detalle !== 'false'
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de estado de cuenta:', err);
+    if (!res.headersSent) fallar(res, 500, err.message);
   }
 });
 

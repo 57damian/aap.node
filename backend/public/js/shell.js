@@ -441,9 +441,10 @@
       var clase = 'pill-neutral';
       if (/^(PAGADA|COBRADA|ACREDITADO|DEBITADO|IMPUTADO|ENTRADA)$/.test(e)) clase = 'pill-ok';
       else if (/^(PARCIAL|EN_GESTION|EN_CARTERA|PAGADA_EN_VALORES|A_CUENTA|AJUSTE)$/.test(e)) clase = 'pill-warn';
-      else if (/^(VENCIDA|RECHAZADO|SOBRE_PAGADA|SOBRE_COBRADA|SALIDA|MERMA)$/.test(e)) clase = 'pill-danger';
+      else if (/^(VENCIDA|RECHAZADO|SOBRE_PAGADA|SALIDA|MERMA)$/.test(e)) clase = 'pill-danger';
+      else if (e === 'SOBRE_COBRADA') clase = 'pill-review';
       else if (/^(PENDIENTE|DEPOSITADO|ENTREGADO)$/.test(e)) clase = 'pill-info';
-      return '<span class="pill ' + clase + '">' + e.replace(/_/g, ' ') + '</span>';
+      return '<span class="pill ' + clase + '">' + (e === 'SOBRE_COBRADA' ? 'COBRADA DE MÁS' : e.replace(/_/g, ' ')) + '</span>';
     },
     /** Estado vacío que dice qué hacer, no solo que no hay nada. */
     vacio: function (titulo, texto, accion) {

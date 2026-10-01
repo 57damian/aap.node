@@ -193,6 +193,109 @@ async function cuentaCorriente(pool, clienteId, { desde, hasta } = {}) {
   });
 }
 
+/** Orden de urgencia del estado de cuenta: lo que hay que cobrar primero,
+ * después lo que hay que revisar (SOBRE_COBRADA es un problema de
+ * imputación, no de cobranza) y al final lo cerrado. */
+const ORDEN_ESTADO = {
+  VENCIDA: 0, PARCIAL: 1, EN_GESTION: 1, PENDIENTE: 2, SOBRE_COBRADA: 3, COBRADA: 4
+};
+
+const num = (v) => parseFloat(v) || 0;
+const r2 = (v) => Math.round(v * 100) / 100;
+
+/**
+ * Estado de cuenta de un cliente: una fila por factura (vigente) con los
+ * pagos aplicados a ella y las notas de crédito. Lo usan la pantalla de
+ * Cobros y el PDF, así que los dos muestran exactamente lo mismo.
+ * `soloPendientes` deja las facturas con saldo > 0 (incluye las EN_GESTION:
+ * un cheque en cartera todavía no es plata cobrada).
+ */
+async function estadoCuenta(pool, clienteId, { desde, hasta, soloPendientes } = {}) {
+  const params = [clienteId];
+  let filtro = '';
+  if (desde) { params.push(desde); filtro += ` AND fs.fecha >= $${params.length}`; }
+  if (hasta) { params.push(hasta); filtro += ` AND fs.fecha <= $${params.length}`; }
+  if (soloPendientes) filtro += ' AND fs.saldo > 0.005';
+
+  const { rows: facturas } = await pool.query(`
+    WITH ${CTE_FACTURAS}
+    SELECT fs.*, ${ESTADO_FACTURA} AS estado
+    FROM facturas_saldo fs
+    WHERE fs.cliente_id = $1 ${filtro}
+  `, params);
+
+  facturas.sort((a, b) =>
+    (ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]) ||
+    (new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)) ||
+    (a.id - b.id));
+
+  const ids = facturas.map(f => f.id);
+  const pagosPorFactura = new Map();
+  const ncPorFactura = new Map();
+
+  if (ids.length) {
+    // Un renglón por (factura, cobro): si el cobro tiene varias formas de
+    // pago imputadas a la misma factura, se suman acá.
+    const { rows: pagos } = await pool.query(`
+      SELECT ap.factura_id, p.id AS pago_id, r.numero_recibo, p.fecha_recepcion,
+             ROUND(SUM(ap.monto_aplicado), 2) AS monto_aplicado,
+             string_agg(DISTINCT pi.tipo || COALESCE(' ' || pi.cheque_numero, ''), ' + ') AS formas,
+             CASE
+               WHEN bool_or(pi.estado = 'RECHAZADO')                       THEN 'RECHAZADO'
+               WHEN bool_or(pi.estado IN ('EN_CARTERA','DEPOSITADO'))      THEN 'EN_CARTERA'
+               WHEN bool_or(pi.estado = 'ACREDITADO')                      THEN 'ACREDITADO'
+               ELSE 'ANULADO'
+             END AS estado_forma
+      FROM aplicacion_pagos ap
+      JOIN pago_items pi ON pi.id = ap.pago_item_id
+      JOIN pagos p       ON p.id = pi.pago_id
+      LEFT JOIN recibos r ON r.id = p.recibo_id
+      WHERE ap.factura_id = ANY($1::int[]) AND p.anulado = false
+      GROUP BY ap.factura_id, p.id, r.numero_recibo, p.fecha_recepcion
+      ORDER BY p.fecha_recepcion ASC, p.id ASC
+    `, [ids]);
+    pagos.forEach(p => {
+      if (!pagosPorFactura.has(p.factura_id)) pagosPorFactura.set(p.factura_id, []);
+      pagosPorFactura.get(p.factura_id).push(p);
+    });
+
+    const { rows: ncs } = await pool.query(`
+      SELECT factura_id, id, numero_nota, fecha, ROUND(total, 2) AS total
+      FROM notas_credito
+      WHERE factura_id = ANY($1::int[])
+      ORDER BY fecha ASC, id ASC
+    `, [ids]);
+    ncs.forEach(n => {
+      if (!ncPorFactura.has(n.factura_id)) ncPorFactura.set(n.factura_id, []);
+      ncPorFactura.get(n.factura_id).push(n);
+    });
+  }
+
+  facturas.forEach(f => {
+    f.pagos = pagosPorFactura.get(f.id) || [];
+    f.notas_credito_detalle = ncPorFactura.get(f.id) || [];
+  });
+
+  // Los totales salen de las mismas filas que se ven (respetan el filtro).
+  const positivas = facturas.filter(f => num(f.saldo) > 0.005);
+  const resumen = {
+    facturado: r2(facturas.reduce((s, f) => s + num(f.total), 0)),
+    notas_credito: r2(facturas.reduce((s, f) => s + num(f.notas_credito), 0)),
+    cobrado: r2(facturas.reduce((s, f) => s + num(f.cobrado), 0)),
+    en_gestion: r2(facturas.reduce((s, f) => s + num(f.en_gestion), 0)),
+    por_cobrar: r2(positivas.reduce((s, f) => s + num(f.saldo), 0)),
+    vencido: r2(positivas.filter(f => num(f.dias_atraso) > 0).reduce((s, f) => s + num(f.saldo), 0)),
+    exceso_cobrado: r2(facturas.filter(f => num(f.saldo) < -0.005).reduce((s, f) => s - num(f.saldo), 0))
+  };
+
+  const { rows: af } = await pool.query(`
+    WITH ${CTE_A_FAVOR}
+    SELECT ROUND(GREATEST(COALESCE((SELECT saldo_a_favor FROM a_favor WHERE cliente_id = $1), 0), 0), 2) AS saldo_a_favor
+  `, [clienteId]);
+
+  return { resumen, facturas, a_cuenta: num(af[0].saldo_a_favor) };
+}
+
 /** Saldo pendiente de una factura puntual (lo usa Notas de Crédito). */
 async function saldoFactura(clientOrPool, facturaId) {
   const { rows } = await clientOrPool.query(`
@@ -209,5 +312,6 @@ module.exports = {
   ESTADO_FACTURA,
   resumenCliente,
   cuentaCorriente,
+  estadoCuenta,
   saldoFactura
 };
