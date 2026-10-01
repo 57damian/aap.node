@@ -152,7 +152,7 @@ function exportarReporte() {
 
   let csvContent = 'data:text/csv;charset=utf-8,';
   const headers = ['Factura', 'Proveedor', 'Email', 'Teléfono', 'Fecha vencimiento',
-    'Días restantes', 'Estado', 'Total', 'Saldo pendiente'];
+    'Días restantes', 'Estado', 'Total', 'Saldo'];
   csvContent += headers.join(',') + '\n';
 
   alertasData.forEach(a => {

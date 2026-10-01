@@ -12,12 +12,12 @@ const {
 
 const COLS_FORMAS = [
   { campo: 'forma', titulo: 'Forma de cobro', x: 0, ancho: 340 },
-  { campo: 'monto', titulo: 'Monto', x: 340, ancho: ANCHO_UTIL - 340, align: 'right' }
+  { campo: 'monto', titulo: 'Importe', x: 340, ancho: ANCHO_UTIL - 340, align: 'right' }
 ];
 
 const COLS_FACTURAS = [
   { campo: 'factura', titulo: 'Factura', x: 0, ancho: 340 },
-  { campo: 'monto', titulo: 'Monto imputado', x: 340, ancho: ANCHO_UTIL - 340, align: 'right' }
+  { campo: 'monto', titulo: 'Importe imputado', x: 340, ancho: ANCHO_UTIL - 340, align: 'right' }
 ];
 
 function descripcionForma(item) {

@@ -23,7 +23,7 @@ const ETIQUETA_FORMA = {
 const COLS = [
   { campo: 'factura', titulo: 'Factura', x: 0, ancho: 95 },
   { campo: 'fecha', titulo: 'Fecha', x: 95, ancho: 62 },
-  { campo: 'vence', titulo: 'Vence', x: 157, ancho: 62 },
+  { campo: 'vence', titulo: 'Vencim.', x: 157, ancho: 62 },
   { campo: 'total', titulo: 'Total', x: 219, ancho: 80, align: 'right' },
   { campo: 'cobrado', titulo: 'Cobrado', x: 299, ancho: 80, align: 'right' },
   { campo: 'gestion', titulo: 'En gestión', x: 379, ancho: 80, align: 'right' },

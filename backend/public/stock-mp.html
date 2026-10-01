@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Materiales — Transformadores ERP</title>
+  <title>Materias primas — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
@@ -12,11 +12,11 @@
 
   <div class="page-head">
     <div>
-      <h1>Materiales</h1>
+      <h1>Catálogo de materias primas</h1>
       <p>El catálogo de materias primas: alta, datos y precio de referencia</p>
     </div>
     <div class="page-head-actions">
-      <button class="b b-primary" onclick="abrirModalCrear()">Nuevo material</button>
+      <button class="b b-primary" onclick="abrirModalCrear()">Nueva materia prima</button>
     </div>
   </div>
 
@@ -60,7 +60,7 @@
        body y solo conserva lo que está acá dentro. -->
 
   <dialog id="materiaPrimaModal" class="panel">
-    <div class="panel-head"><h2 id="modalTitle">Nuevo material</h2></div>
+    <div class="panel-head"><h2 id="modalTitle">Nueva materia prima</h2></div>
     <div class="panel-body">
       <form id="materiaPrimaForm" method="dialog">
         <input type="hidden" id="materia_prima_id">
@@ -123,7 +123,7 @@
         </div>
 
         <label class="check" style="margin-top:12px">
-          <input type="checkbox" id="activo" checked><span>Material activo</span>
+          <input type="checkbox" id="activo" checked><span>Materia prima activa</span>
         </label>
 
         <div class="page-head-actions">
@@ -165,7 +165,7 @@
 <script src="js/shell.js"></script>
 <script src="js/api.js"></script>
 <script>
-  Shell.montar({ titulo: 'Materiales', sub: 'Catálogo de materias primas' });
+  Shell.montar({ titulo: 'Materias primas', sub: 'Catálogo' });
 </script>
 <script src="js/auth.js"></script>
 <script src="js/roleGuard.js"></script>

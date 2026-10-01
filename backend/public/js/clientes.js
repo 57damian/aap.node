@@ -130,7 +130,7 @@ async function verDetalles(id) {
             <div class="kpi"><div class="kpi-k">Total facturado</div><div class="kpi-v">${Shell.money(estado.total_facturado)}</div></div>
             <div class="kpi is-success"><div class="kpi-k">Total pagado</div><div class="kpi-v">${Shell.money(estado.total_pagado)}</div></div>
             <div class="kpi ${estado.saldo > 0 ? 'is-danger' : 'is-success'}">
-              <div class="kpi-k">Saldo pendiente <button type="button" class="ayuda" data-ayuda="saldo">?</button></div>
+              <div class="kpi-k">Por cobrar <button type="button" class="ayuda" data-ayuda="saldo">?</button></div>
               <div class="kpi-v">${Shell.money(estado.saldo)}</div>
             </div>
           </div>`;

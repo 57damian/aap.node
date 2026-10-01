@@ -12,8 +12,8 @@
 
   <div class="page-head">
     <div>
-      <h1>Cobros y deuda de clientes</h1>
-      <p>Quién nos debe, qué está vencido y qué cheques hay en cartera</p>
+      <h1>Cobros y cuentas por cobrar</h1>
+      <p>Qué hay por cobrar, qué está vencido y qué cheques hay en cartera</p>
     </div>
     <div class="page-head-actions">
       <button class="b b-primary" data-tab-ir="cobrar">Registrar cobro</button>
@@ -25,7 +25,7 @@
   <div class="aging" id="aging"></div>
 
   <div class="tabs" role="tablist">
-    <button class="tab active" data-tab="deuda">Quién nos debe</button>
+    <button class="tab active" data-tab="deuda">Por cobrar</button>
     <button class="tab" data-tab="cobrar">Registrar cobro</button>
     <button class="tab" data-tab="cheques">Cheques</button>
     <button class="tab" data-tab="historial">Cobros y recibos</button>
@@ -42,13 +42,13 @@
         <label for="ordenDeuda">Ordenar por</label>
         <select class="select" id="ordenDeuda">
           <option value="vencido">Vencido</option>
-          <option value="saldo">Saldo total</option>
+          <option value="saldo">Por cobrar</option>
           <option value="atraso">Días de atraso</option>
           <option value="nombre">Nombre</option>
         </select>
       </div>
       <div class="filters-actions">
-        <label class="check"><input type="checkbox" id="soloVencido"><span>Solo con deuda vencida</span></label>
+        <label class="check"><input type="checkbox" id="soloVencido"><span>Solo con saldo vencido</span></label>
         <button class="b b-ghost b-sm" id="btnActualizarDeuda">Actualizar</button>
       </div>
     </div>
@@ -189,8 +189,8 @@
                 <th>Cheque</th>
                 <th>Banco</th>
                 <th>Cliente</th>
-                <th class="num">Monto</th>
-                <th>Se cobra</th>
+                <th class="num">Importe</th>
+                <th>Fecha de cobro</th>
                 <th>Imputado a</th>
                 <th>Estado</th>
                 <th>Acciones</th>
@@ -245,7 +245,7 @@
                 <th>Fecha</th>
                 <th>Cliente</th>
                 <th>Formas</th>
-                <th class="num">Monto</th>
+                <th class="num">Importe</th>
                 <th class="num">Imputado</th>
                 <th class="num">Sin imputar</th>
                 <th>Recibo <button type="button" class="ayuda" data-ayuda="recibo">?</button></th>
@@ -281,7 +281,7 @@
 <script src="js/ayuda.js"></script>
 <script src="js/shell.js"></script>
 <script src="js/api.js"></script>
-<script>Shell.montar({ titulo: 'Cobros', sub: 'Deuda de clientes' });</script>
+<script>Shell.montar({ titulo: 'Cobros', sub: 'Cuentas por cobrar' });</script>
 <script src="js/roleGuard.js"></script>
 <script src="js/cobros.js"></script>
 <script>verificarRolPagina(['admin']);</script>

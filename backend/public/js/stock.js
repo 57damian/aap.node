@@ -149,8 +149,8 @@ function renderizarTablaStock(stock) {
 
     if (!stock || stock.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
-            'No hay materiales para este filtro',
-            'Probá limpiar los filtros o cargá materiales nuevos.',
+            'No hay materias primas para este filtro',
+            'Probá limpiar los filtros o cargá materias primas nuevas.',
             { txt: 'Administrar materiales', url: 'stock-mp.html' })}</td></tr>`;
         return;
     }
@@ -224,7 +224,7 @@ function renderizarMovimientos(movimientos) {
             <td data-label="Tipo">${Shell.pill(m.tipo_movimiento)}</td>
             <td class="num" data-label="Cantidad">${m.cantidad ?? 0} ${m.unidad || ''}</td>
             <td data-label="Proveedor">${m.proveedor_nombre || '—'}</td>
-            <td class="solo-escritorio" data-label="N° Factura">${m.numero_factura ? (m.numero_factura + (m.factura_fecha ? ' (' + Shell.fecha(m.factura_fecha) + ')' : '')) : '—'}</td>
+            <td class="solo-escritorio" data-label="N° de factura">${m.numero_factura ? (m.numero_factura + (m.factura_fecha ? ' (' + Shell.fecha(m.factura_fecha) + ')' : '')) : '—'}</td>
             <td class="solo-escritorio" data-label="Observación">${m.observacion || '—'}</td>
             <td class="num solo-escritorio" data-label="Quedó en">${m.stock_nuevo ?? '—'}</td>
         </tr>
@@ -250,7 +250,7 @@ function exportarMovimientosCSV() {
 
     let csvContent = 'data:text/csv;charset=utf-8,';
     const headers = ['Fecha', 'Material', 'Código', 'Tipo', 'Cantidad', 'Unidad',
-        'Precio unitario', 'Proveedor', 'N° Factura', 'Observaciones', 'Usuario'];
+        'Precio unitario', 'Proveedor', 'N° de factura', 'Observaciones', 'Usuario'];
     csvContent += headers.join(',') + '\n';
 
     movimientosCache.forEach(m => {
@@ -335,7 +335,7 @@ function renderizarEvolucionPrecios(precios) {
             <td class="num" data-label="Precio anterior">${p.precio_anterior != null ? formatearMoneda(p.precio_anterior) : '—'}</td>
             <td class="num" data-label="Precio nuevo">${formatearMoneda(p.precio_nuevo)}</td>
             <td class="num ${claseVar}" data-label="Variación">${variacion != null ? (variacion > 0 ? '+' : '') + Number(variacion).toFixed(1) + '%' : '—'}</td>
-            <td class="solo-escritorio" data-label="N° Factura">${p.factura_numero || '—'}</td>
+            <td class="solo-escritorio" data-label="N° de factura">${p.factura_numero || '—'}</td>
         </tr>`;
     }).join('');
 }
@@ -355,7 +355,7 @@ function exportarPreciosCSV() {
     }
 
     let csvContent = 'data:text/csv;charset=utf-8,';
-    const headers = ['Fecha', 'Material', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° Factura'];
+    const headers = ['Fecha', 'Material', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° de factura'];
     csvContent += headers.join(',') + '\n';
 
     preciosCompraCache.forEach(p => {

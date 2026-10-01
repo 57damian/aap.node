@@ -117,6 +117,25 @@ Mismo patrón que "Pedidos a proveedores" (abajo): PDF membretado generado en el
 - Un documento anulado se puede seguir descargando como registro (banner "ANULADO/A" con el motivo).
 - Frontend: botón/link "PDF" o "Descargar PDF" con `descargarArchivoProtegido` en `venta_detalle.html`, `oc_detalle.js` (junto a cada factura y cada remito), `cobros.js` (historial) y `ficha.html`/`ficha.js`.
 
+## Glosario de la interfaz (01/10/2026)
+
+Una sola palabra por concepto en todo lo que se ve (pantallas, mensajes, ayudas, CSV y PDF). No cambia nombres de columnas, rutas de la API ni identificadores del código. Al agregar texto nuevo, usar estos términos:
+
+| Concepto | Se dice | No se dice |
+|---|---|---|
+| Plata que nos deben los clientes / que debemos a proveedores | **Por cobrar** / **Por pagar** (cuentas por cobrar / por pagar) | Deuda, "Quién nos debe", "Nos deben", "Debemos" |
+| Lo que falta de UNA factura (o de un cliente en una fila) | **Saldo** | "Saldo pendiente" |
+| Valor de un cobro, pago o renglón | **Importe** (suma: **Total**, **Subtotal**) | Monto |
+| Cobro cuya plata ya entró / pago ya hecho | **Cobrado** / **Pagado**; lo asignado a una factura: **Imputado** | Aplicado |
+| Fechas de cheque | **Fecha de cobro** (de clientes), **Fecha de débito** (propios); **Vencimiento** | "Se cobra", "Se debita", "Vence" |
+| Materia prima | **Materia prima** | Material(es) |
+| Orden que manda el cliente / lo que pedimos nosotros | **Orden de compra (OC)** / **Pedido a proveedor** | "Pedido de cliente" |
+| Renglón de un documento | **Ítem** (con tilde) | Item |
+| Número de documento | **N° de factura** (siempre "N° de …") | N° Factura, Numero |
+| Dar de baja un documento / un registro / una línea | **Anular** (documentos, deja registro) / **Eliminar** (registros) / **Quitar** (línea de un formulario) | Borrar |
+
+Capitalización de oración ("Órdenes de compra", no "Ordenes de Compra"), con tildes. "Debe/Haber" se mantiene solo en la cuenta corriente.
+
 ## Estado de cuenta por cliente (01/10/2026)
 
 Ficha del cliente en Cobros (drawer), solapa **Estado de cuenta** (la otra solapa es la cuenta corriente de siempre): una línea por factura con total, cobrado, saldo, estado y, al expandir "N pagos", los cobros aplicados con el monto de cada uno (`aplicacion_pagos` agrupado por factura + cobro) y las notas de crédito. Orden por urgencia: VENCIDA → PARCIAL/EN_GESTION → PENDIENTE → SOBRE_COBRADA → COBRADA. "Solo pendientes" incluye EN_GESTION (el saldo no se redefine: un cheque en cartera no cobra). SOBRE_COBRADA tiene pill propio (`pill-review`, "COBRADA DE MÁS").

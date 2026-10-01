@@ -223,7 +223,7 @@ async function verDetalleFactura(facturaId) {
                     ${retenciones ? `<div><span>Retenciones</span><strong class="neg">-${formatearMoneda(retenciones)}</strong></div>` : ''}
                     <div><span>Total factura</span><strong>${formatearMoneda(total)}</strong></div>
                     <div><span>Pagado</span><strong>${formatearMoneda(pagado)}</strong></div>
-                    <div><span>Saldo pendiente</span><strong class="${saldo > 0 ? 'neg' : 'pos'}">${formatearMoneda(saldo)}</strong></div>
+                    <div><span>Saldo</span><strong class="${saldo > 0 ? 'neg' : 'pos'}">${formatearMoneda(saldo)}</strong></div>
                 </div>
             </div></div>
         `;

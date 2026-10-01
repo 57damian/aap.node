@@ -23,12 +23,12 @@
 
   <div class="kpi-row">
     <div class="kpi is-danger">
-      <div class="kpi-k">Nos deben <button type="button" class="ayuda" data-ayuda="saldo">?</button></div>
+      <div class="kpi-k">Por cobrar <button type="button" class="ayuda" data-ayuda="saldo">?</button></div>
       <div class="kpi-v" id="kDeudaCli">—</div>
       <div class="kpi-sub" id="kDeudaCliSub">—</div>
     </div>
     <div class="kpi is-warning">
-      <div class="kpi-k">Debemos</div>
+      <div class="kpi-k">Por pagar</div>
       <div class="kpi-v" id="kDeudaProv">—</div>
       <div class="kpi-sub" id="kDeudaProvSub">—</div>
     </div>
@@ -58,8 +58,8 @@
             <tr>
               <th>Proveedor</th>
               <th>Comprobante</th>
-              <th>Vence</th>
-              <th class="num">Monto</th>
+              <th>Vencimiento</th>
+              <th class="num">Importe</th>
               <th>Estado</th>
             </tr>
           </thead>
@@ -78,7 +78,7 @@
         <table class="t">
           <thead>
             <tr>
-              <th>Proveedor</th><th>Cheque</th><th>Banco</th><th>Se debita</th><th class="num">Monto</th>
+              <th>Proveedor</th><th>Cheque</th><th>Banco</th><th>Fecha de débito</th><th class="num">Importe</th>
             </tr>
           </thead>
           <tbody id="tbCheques"></tbody>

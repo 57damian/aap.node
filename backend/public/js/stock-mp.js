@@ -36,7 +36,7 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
     if (!materiasPrimas || materiasPrimas.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
             'Todavía no hay materiales',
-            'Cargá el primero con el botón "Nuevo material".')}</td></tr>`;
+            'Cargá el primero con el botón "Nueva materia prima".')}</td></tr>`;
         return;
     }
 
@@ -64,7 +64,7 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
 
 // Abrir modal para crear nueva materia prima
 function abrirModalCrear() {
-    document.getElementById('modalTitle').textContent = 'Nuevo material';
+    document.getElementById('modalTitle').textContent = 'Nueva materia prima';
     document.getElementById('materia_prima_id').value = '';
     document.getElementById('codigo').value = '';
     document.getElementById('nombre').value = '';
@@ -166,7 +166,7 @@ async function guardarMateriaPrima() {
             body: JSON.stringify(payload)
         });
         
-        Shell.toast('ok', id ? 'Material actualizado' : 'Material creado');
+        Shell.toast('ok', id ? 'Materia prima actualizada' : 'Materia prima creada');
         document.getElementById('materiaPrimaModal').close();
         cargarMateriasPrimas();
         
@@ -187,7 +187,7 @@ async function eliminarMateriaPrima(id) {
             method: 'DELETE'
         });
         
-        Shell.toast('ok', 'Material desactivado');
+        Shell.toast('ok', 'Materia prima desactivada');
         cargarMateriasPrimas();
     } catch (err) {
         console.error('Error eliminando materia prima:', err);
@@ -251,7 +251,7 @@ async function verHistorialPreciosModal() {
     const materiaPrimaId = document.getElementById('materia_prima_id').value;
     
     if (!materiaPrimaId) {
-        Shell.toast('err', 'Guardá el material antes de ver su historial');
+        Shell.toast('err', 'Guardá la materia prima antes de ver su historial');
         return;
     }
     

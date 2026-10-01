@@ -107,7 +107,7 @@
     if (pedidoEnviando) return;
     var items = recolectarItems();
     if (!items.length) {
-      Shell.toast('warn', 'Agregá al menos un ítem con material seleccionado');
+      Shell.toast('warn', 'Agregá al menos un ítem con materia prima seleccionada');
       return;
     }
     var body = {
@@ -239,11 +239,11 @@
     if (!pedidoActual) return;
     try {
       await apiFetch('/api/pedidos-proveedor/' + pedidoActual.id, { method: 'DELETE' });
-      Shell.toast('ok', 'Pedido borrado');
+      Shell.toast('ok', 'Pedido eliminado');
       $('verPedidoModal').close();
       cargarPedidos();
     } catch (err) {
-      mostrarVpError(errorTexto(err, 'No se pudo borrar el pedido.'));
+      mostrarVpError(errorTexto(err, 'No se pudo eliminar el pedido.'));
     }
   });
 

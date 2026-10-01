@@ -41,7 +41,7 @@ const COLS_PDF_PAGOS_PROVEEDORES = [
   { campo: 'proveedor', titulo: 'Proveedor', x: 60, ancho: 140 },
   { campo: 'formas', titulo: 'Formas', x: 200, ancho: 80 },
   { campo: 'referencia', titulo: 'Referencia', x: 280, ancho: 90 },
-  { campo: 'monto', titulo: 'Monto', x: 370, ancho: 65, align: 'right' },
+  { campo: 'monto', titulo: 'Importe', x: 370, ancho: 65, align: 'right' },
   { campo: 'imputado', titulo: 'Imputado', x: 435, ancho: 65, align: 'right' },
   { campo: 'disponible', titulo: 'Sin imputar', x: 500, ancho: 70, align: 'right' },
   { campo: 'estado', titulo: 'Estado', x: 570, ancho: ANCHO_UTIL_REPORTE - 570 }
@@ -1167,7 +1167,7 @@ router.post('/:id/anular', soloAdmin, async (req, res) => {
 
     await client.query('COMMIT');
     res.json({
-      message: 'Pago anulado. La deuda de las facturas imputadas volvió a quedar abierta.',
+      message: 'Pago anulado. El saldo de las facturas imputadas volvió a quedar abierto.',
       cheques_devueltos_a_cartera: endosados.rows.length
     });
   } catch (err) {

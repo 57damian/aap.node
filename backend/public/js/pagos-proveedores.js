@@ -92,7 +92,7 @@ async function cargarResumen() {
 
     $('kpis').innerHTML = `
       <div class="kpi is-danger">
-        <div class="kpi-k">Deuda total</div>
+        <div class="kpi-k">Total por pagar</div>
         <div class="kpi-v">${Shell.money(d.deuda_total)}</div>
         <div class="kpi-sub">${d.facturas_con_saldo} factura(s) · ${d.proveedores_con_deuda} proveedor(es)</div>
       </div>
@@ -140,7 +140,7 @@ async function cargarDeuda() {
 
     if (!filas.length) {
       tbody.innerHTML = '<tr><td colspan="8">' + Shell.vacio(
-        'No hay deuda con proveedores',
+        'No hay cuentas por pagar',
         'Va a aparecer acá en cuanto cargues una factura de compra.',
         { txt: 'Ver facturas de compra', url: 'facturas-compra.html' }
       ) + '</td></tr>';
@@ -163,7 +163,7 @@ async function cargarDeuda() {
           ${Shell.money(num(p.saldo_a_favor) + num(p.exceso_pagado))}</td>
       </tr>`).join('');
   } catch (err) {
-    Shell.error(err, 'No se pudo cargar la deuda con proveedores');
+    Shell.error(err, 'No se pudieron cargar las cuentas por pagar');
     tbody.innerHTML = '<tr><td colspan="8">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
   }
 }
@@ -228,13 +228,13 @@ async function verProveedor(id) {
         <div class="panel-head">Cheques entregados sin debitar</div>
         <div class="panel-body flush"><div class="table-wrap">
           <table class="t">
-            <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Monto</th><th>Se debita</th></tr></thead>
+            <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Importe</th><th>Fecha de débito</th></tr></thead>
             <tbody>${ficha.cheques_a_debitar.map(c => `
               <tr>
                 <td><strong>${esc(c.cheque_numero || 's/n')}</strong> ${c.tipo === 'CHEQUE_ENDOSADO' ? Shell.pill('ENTREGADO') : ''}</td>
                 <td data-label="Banco">${esc(c.cheque_banco || '—')}</td>
-                <td class="num" data-label="Monto">${Shell.money(c.monto)}</td>
-                <td data-label="Se debita">${Shell.fecha(c.cheque_fecha_cobro)}${c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
+                <td class="num" data-label="Importe">${Shell.money(c.monto)}</td>
+                <td data-label="Fecha de débito">${Shell.fecha(c.cheque_fecha_cobro)}${c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
               </tr>`).join('')}</tbody>
           </table>
         </div></div>
@@ -346,7 +346,7 @@ function agregarForma() {
       </select>
     </div>
     <div class="campo">
-      <span>Monto</span>
+      <span>Importe</span>
       <input class="input" type="number" step="0.01" min="0" id="monto-${id}" oninput="recalcular()">
     </div>
     <div class="detalle" id="detalle-${id}"></div>
@@ -376,7 +376,7 @@ async function cambiarTipoForma(id, tipo) {
       <div class="campo"><span>N° cheque *</span><input class="input" type="text" id="chq-num-${id}"></div>
       <div class="campo"><span>Banco *</span><input class="input" type="text" id="chq-banco-${id}"></div>
       <div class="campo"><span>Emisión</span><input class="input" type="date" id="chq-emi-${id}"></div>
-      <div class="campo"><span>Se debita *</span><input class="input" type="date" id="chq-cobro-${id}"></div>`;
+      <div class="campo"><span>Fecha de débito *</span><input class="input" type="date" id="chq-cobro-${id}"></div>`;
   } else if (tipo === 'CHEQUE_ENDOSADO') {
     montoInput.disabled = true;
     montoInput.value = '';
@@ -478,7 +478,7 @@ function cambiarImputacion(i, valor) {
 function imputarAutomatico() {
   if (!estado.facturas.length) { Shell.toast('warn', 'Elegí un proveedor primero.'); return; }
   let disponible = estado.formas.reduce((a, f) => a + montoDeForma(f), 0);
-  if (disponible <= 0) { Shell.toast('warn', 'Cargá primero el monto del pago.'); return; }
+  if (disponible <= 0) { Shell.toast('warn', 'Cargá primero el importe del pago.'); return; }
 
   // Las facturas ya vienen ordenadas por vencimiento más viejo primero.
   for (const f of estado.facturas) {
@@ -523,7 +523,7 @@ async function guardarPago() {
       item.pago_item_origen_id = parseInt(sel.value, 10);
     } else {
       item.monto = num($(`monto-${f.id}`).value);
-      if (item.monto <= 0) return Shell.toast('warn', 'Cada forma de pago necesita un monto mayor a cero.');
+      if (item.monto <= 0) return Shell.toast('warn', 'Cada forma de pago necesita un importe mayor a cero.');
     }
 
     if (f.tipo === 'CHEQUE') {
@@ -646,7 +646,7 @@ function abrirChequeAccion(accion) {
       btn.className = 'b b-primary';
     } else {
       $('chequeAccionTitulo').textContent = 'Rechazar cheque';
-      $('chequeAccionMsg').textContent = 'El proveedor devolvió el cheque. La deuda que cancelaba vuelve a quedar abierta.';
+      $('chequeAccionMsg').textContent = 'El proveedor devolvió el cheque. El saldo que cancelaba vuelve a quedar abierto.';
       motivoInput.value = 'Sin fondos';
       btn.textContent = 'Rechazar';
       btn.className = 'b b-danger';
@@ -746,8 +746,8 @@ async function cargarCheques() {
           <td data-label="Banco">${esc(c.cheque_banco || '—')}</td>
           <td data-label="Proveedor">${esc(c.proveedor_nombre)}</td>
           <td class="muted" data-label="Origen">${propio ? 'propio' : `endosado de ${esc(c.cliente_origen || 'cliente')}`}</td>
-          <td class="num" data-label="Monto"><strong>${Shell.money(c.monto)}</strong></td>
-          <td data-label="Se debita">${Shell.fecha(c.cheque_fecha_cobro)}${
+          <td class="num" data-label="Importe"><strong>${Shell.money(c.monto)}</strong></td>
+          <td data-label="Fecha de débito">${Shell.fecha(c.cheque_fecha_cobro)}${
             c.estado === 'ENTREGADO' && c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
           <td class="muted" data-label="Imputado a">${c.facturas || 'sin imputar'}</td>
           <td data-label="Estado">${Shell.pill(c.estado)}</td>
@@ -768,7 +768,7 @@ async function accionCheque(id, accion) {
     body = resultado;
   } else if (accion === 'anular') {
     const ok = await confirmar('Anular cheque',
-      '¿Anular este cheque? La deuda que cancelaba vuelve a quedar abierta.');
+      '¿Anular este cheque? El saldo que cancelaba vuelve a quedar abierto.');
     if (!ok) return;
   }
 
@@ -812,7 +812,7 @@ async function cargarHistorial() {
         <td data-label="Proveedor">${esc(p.proveedor_nombre || '—')}</td>
         <td class="muted" data-label="Formas">${esc((p.formas || '').replace(/_/g, ' '))}</td>
         <td data-label="Referencia">${esc(p.referencia || '—')}</td>
-        <td class="num" data-label="Monto"><strong>${Shell.money(p.monto)}</strong></td>
+        <td class="num" data-label="Importe"><strong>${Shell.money(p.monto)}</strong></td>
         <td class="num" data-label="Imputado">${Shell.money(p.imputado)}</td>
         <td class="num ${num(p.disponible) > 0 ? 'pos' : 'muted'}" data-label="Sin imputar">${Shell.money(p.disponible)}</td>
         <td data-label="Estado">${Shell.pill(p.estado)}${p.tiene_rechazo ? ' ' + Shell.pill('RECHAZADO') : ''}</td>
@@ -835,7 +835,7 @@ function exportarHistorialCSV() {
   }
 
   let csvContent = 'data:text/csv;charset=utf-8,';
-  const headers = ['Fecha', 'Proveedor', 'Formas', 'Referencia', 'Monto', 'Imputado', 'Sin imputar', 'Estado'];
+  const headers = ['Fecha', 'Proveedor', 'Formas', 'Referencia', 'Importe', 'Imputado', 'Sin imputar', 'Estado'];
   csvContent += headers.join(',') + '\n';
 
   estado.historial.forEach(p => {
@@ -897,12 +897,12 @@ async function verPago(id) {
         <div class="panel-head">Formas de pago</div>
         <div class="panel-body flush"><div class="table-wrap">
           <table class="t">
-            <thead><tr><th>Tipo</th><th>Detalle</th><th class="num">Monto</th><th class="num">Imputado</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Detalle</th><th class="num">Importe</th><th class="num">Imputado</th><th>Estado</th></tr></thead>
             <tbody>${p.items.map(i => `
               <tr>
                 <td><strong>${esc(i.tipo.replace(/_/g, ' '))}</strong></td>
                 <td class="muted" data-label="Detalle">${detalleItem(i)}</td>
-                <td class="num" data-label="Monto">${Shell.money(i.monto)}</td>
+                <td class="num" data-label="Importe">${Shell.money(i.monto)}</td>
                 <td class="num" data-label="Imputado">${Shell.money(i.imputado)}</td>
                 <td data-label="Estado">${Shell.pill(i.estado_efectivo)}</td>
               </tr>`).join('')}</tbody>
@@ -914,13 +914,13 @@ async function verPago(id) {
         <div class="panel-head">Imputaciones <button type="button" class="ayuda" data-ayuda="imputar">?</button></div>
         <div class="panel-body flush"><div class="table-wrap">
           <table class="t">
-            <thead><tr><th>Factura</th><th>Emisión</th><th>Forma</th><th class="num">Monto</th><th></th></tr></thead>
+            <thead><tr><th>Factura</th><th>Emisión</th><th>Forma</th><th class="num">Importe</th><th></th></tr></thead>
             <tbody>${p.imputaciones.length ? p.imputaciones.map(a => `
               <tr>
                 <td><strong>${esc(a.numero_factura)}</strong></td>
                 <td data-label="Emisión">${Shell.fecha(a.fecha_emision)}</td>
                 <td class="muted" data-label="Forma">${esc(a.forma_pago.replace(/_/g, ' '))}${a.cheque_numero ? ' ' + esc(a.cheque_numero) : ''}</td>
-                <td class="num" data-label="Monto">${Shell.money(a.monto_aplicado)}</td>
+                <td class="num" data-label="Importe">${Shell.money(a.monto_aplicado)}</td>
                 <td data-label="">${p.anulado ? '' : `<button class="b b-ghost b-sm" onclick="deshacerImputacion(${a.id}, ${p.id})">Deshacer</button>`}</td>
               </tr>`).join('') : `<tr><td colspan="5">${Shell.vacio('Pago a cuenta, sin imputar', '')}</td></tr>`}</tbody>
           </table>

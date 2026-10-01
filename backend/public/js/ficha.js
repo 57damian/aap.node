@@ -479,7 +479,7 @@ function actualizarEtiquetasUI(ficha) {
       <span>${escHtml(e.nombre_original) || ('Etiqueta ' + (i + 1))}</span>
       <span>
         <button type="button" class="b b-ghost b-sm" onclick="verEtiqueta(${e.id})">Ver</button>
-        <button type="button" class="b b-danger b-sm" onclick="borrarEtiqueta(${e.id})">Quitar</button>
+        <button type="button" class="b b-danger b-sm" onclick="borrarEtiqueta(${e.id})">Eliminar</button>
       </span>
     </li>
   `).join('');

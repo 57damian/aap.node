@@ -481,7 +481,7 @@ async function cargarMateriaPrima() {
 
     if (!materiales.length) {
       tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
-        'No hay materiales que coincidan',
+        'No hay materias primas que coincidan',
         'Probá con otro nombre o sacá el filtro.')}</td></tr>`;
       return;
     }

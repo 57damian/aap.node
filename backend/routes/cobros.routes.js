@@ -33,7 +33,7 @@ const COLS_PDF_COBROS = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
   { campo: 'cliente', titulo: 'Cliente', x: 60, ancho: 140 },
   { campo: 'formas', titulo: 'Formas', x: 200, ancho: 90 },
-  { campo: 'monto', titulo: 'Monto', x: 290, ancho: 70, align: 'right' },
+  { campo: 'monto', titulo: 'Importe', x: 290, ancho: 70, align: 'right' },
   { campo: 'imputado', titulo: 'Imputado', x: 360, ancho: 70, align: 'right' },
   { campo: 'disponible', titulo: 'Sin imputar', x: 430, ancho: 75, align: 'right' },
   { campo: 'recibo', titulo: 'Recibo', x: 505, ancho: 70 },
@@ -904,7 +904,7 @@ router.post('/cheques/:id/endosar', soloAdmin, async (req, res) => {
     res.json({
       message: `Cheque endosado a ${prov.rows[0].nombre}`,
       endoso: endoso.rows[0],
-      nota: 'El cheque sigue sin cancelar la deuda del cliente hasta que se acredite.'
+      nota: 'El cheque sigue sin cancelar el saldo del cliente hasta que se acredite.'
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1213,7 +1213,7 @@ router.post('/:id/anular', soloAdmin, async (req, res) => {
     await anularCobro(client, req.params.id, req.body.motivo);
 
     await client.query('COMMIT');
-    res.json({ message: 'Cobro anulado. La deuda de las facturas imputadas volvió a quedar abierta.' });
+    res.json({ message: 'Cobro anulado. El saldo de las facturas imputadas volvió a quedar abierto.' });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error anulando cobro:', err);

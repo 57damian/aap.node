@@ -26,17 +26,17 @@
     en_gestion: {
       t: 'En gestión de cobro',
       d: 'Plata que el cliente ya entregó pero que todavía no se hizo efectiva: cheques en cartera o depositados que aún no se acreditaron.',
-      n: 'No baja la deuda. Está separado justamente para que una factura con un cheque en camino no parezca deuda olvidada.'
+      n: 'No baja el saldo. Está separado justamente para que una factura con un cheque en camino no parezca un saldo olvidado.'
     },
     a_favor: {
       t: 'Saldo a favor',
       d: 'Plata cobrada al cliente que todavía no se imputó a ninguna factura. Son los cobros a cuenta o anticipos.',
-      n: 'No se descuenta de la deuda hasta que se imputa a una factura concreta.'
+      n: 'No se descuenta del saldo hasta que se imputa a una factura concreta.'
     },
     imputar: {
       t: 'Imputar',
       d: 'Decir a qué factura se aplica un cobro. Un cobro puede repartirse entre varias facturas, y una factura puede recibir varios cobros.',
-      n: 'La imputación se hace desde una forma de pago concreta (el cheque tal, la transferencia tal), no desde el cobro entero. Por eso si un cheque rebota, la deuda de esa factura vuelve sola.'
+      n: 'La imputación se hace desde una forma de pago concreta (el cheque tal, la transferencia tal), no desde el cobro entero. Por eso si un cheque rebota, el saldo de esa factura vuelve solo.'
     },
     a_cuenta: {
       t: 'Cobro a cuenta',
@@ -53,18 +53,18 @@
     },
     rechazado: {
       t: 'Rechazado',
-      d: 'El cheque rebotó. Sus imputaciones dejan de contar automáticamente y la deuda de esas facturas vuelve a quedar abierta.',
+      d: 'El cheque rebotó. Sus imputaciones dejan de contar automáticamente y el saldo de esas facturas vuelve a quedar abierto.',
       n: 'No hay que revertir nada a mano.'
     },
     endosar: {
       t: 'Endosar',
       d: 'Entregarle a un proveedor un cheque que nos dio un cliente, en vez de pagarle con plata nuestra.',
-      n: 'El cheque endosado sigue el destino del original: si al cliente se lo rechazan, la deuda con el proveedor vuelve automáticamente.'
+      n: 'El cheque endosado sigue el destino del original: si al cliente se lo rechazan, el saldo con el proveedor vuelve automáticamente.'
     },
     retencion: {
       t: 'Retención',
       d: 'Impuesto que el cliente retiene al pagarnos (IIBB, Ganancias, IVA, SUSS) y deposita al fisco en nuestro nombre.',
-      n: 'Cuenta como cobrado: cancela deuda igual que el efectivo.'
+      n: 'Cuenta como cobrado: cancela saldo igual que el efectivo.'
     },
     recibo: {
       t: 'Recibo',
@@ -85,7 +85,7 @@
     },
     debitado: {
       t: 'Debitado',
-      d: 'El cheque salió efectivamente de la cuenta bancaria. No cambia la deuda (ya estaba cancelada): saca el monto del compromiso de caja pendiente.'
+      d: 'El cheque salió efectivamente de la cuenta bancaria. No cambia el saldo (ya estaba cancelado): saca el importe del compromiso de caja pendiente.'
     },
     exceso_pagado: {
       t: 'Exceso pagado',
@@ -101,7 +101,7 @@
     cuenta_corriente: {
       t: 'Cuenta corriente',
       d: 'El detalle movimiento por movimiento, con saldo acumulado: qué se facturó, qué se cobró o pagó, y cómo quedó el saldo después de cada uno.',
-      n: 'El panel de deuda muestra solo los saldos positivos; la cuenta corriente muestra todos los movimientos. Por eso pueden no dar igual si hay algo pagado de más.'
+      n: 'El panel de cuentas por cobrar y por pagar muestra solo los saldos positivos; la cuenta corriente muestra todos los movimientos. Por eso pueden no dar igual si hay algo pagado de más.'
     },
     vencido: {
       t: 'Vencido',
@@ -116,12 +116,12 @@
     /* ---------- Stock y precios ---------- */
     stock_bajo: {
       t: 'Stock bajo',
-      d: 'El material tiene existencia, pero igual o por debajo del mínimo configurado para ese material.'
+      d: 'La materia prima tiene existencia, pero igual o por debajo del mínimo configurado.'
     },
     variacion_precio: {
       t: 'Variación de precio',
-      d: 'Cuánto cambió el precio de este material respecto de la última compra al MISMO proveedor.',
-      n: 'Se calcula en dólares, no en pesos, para que una devaluación no se lea como un aumento del material.'
+      d: 'Cuánto cambió el precio de esta materia prima respecto de la última compra al MISMO proveedor.',
+      n: 'Se calcula en dólares, no en pesos, para que una devaluación no se lea como un aumento de la materia prima.'
     },
     dolar_banco: {
       t: 'Dólar Banco Nación',
@@ -130,7 +130,7 @@
     },
     precio_referencia: {
       t: 'Precio de referencia',
-      d: 'Lo último que se pagó por este material, sin importar a qué proveedor. Sirve para valorizar el stock de un vistazo.'
+      d: 'Lo último que se pagó por esta materia prima, sin importar a qué proveedor. Sirve para valorizar el stock de un vistazo.'
     },
 
     /* ---------- Calculadora de transformadores ---------- */

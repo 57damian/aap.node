@@ -235,7 +235,7 @@
   var VISTAS = {
     factura: function (p) {
       var f = p.factura;
-      var li = ['La factura queda <strong>ANULADA</strong> y deja de sumar en la deuda del cliente.'];
+      var li = ['La factura queda <strong>ANULADA</strong> y deja de sumar en lo que el cliente tiene por cobrar.'];
       li.push(p.remitos.length
         ? 'Estos remitos vuelven a quedar <strong>pendientes de facturar</strong>: ' +
           lista(p.remitos, function (r) { return esc(r.remito_numero || ('venta #' + r.venta_id)) + ' (' + r.unidades + ' u.)'; }) + '.'

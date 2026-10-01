@@ -12,7 +12,7 @@
  *   <link rel="stylesheet" href="css/app.css">
  *   <script src="js/shell.js"></script>
  *   ...
- *   <script>Shell.montar({ titulo: 'Cobros', sub: 'Deuda de clientes' });</script>
+ *   <script>Shell.montar({ titulo: 'Cobros', sub: 'Cuentas por cobrar' });</script>
  *
  * Shell.montar() arma <div class="app"> con sidebar + topbar y mete
  * adentro lo que la página ya tenía en <main data-content>.
@@ -69,7 +69,7 @@
     { grupo: 'Comercial', items: [
       { id: 'clientes', txt: 'Clientes',           url: 'clientes.html', icon: 'clientes', roles: ['admin'] },
       { id: 'oc',       txt: 'Órdenes de compra',  url: 'oc.html',       icon: 'oc',       roles: ['admin'], alias: 'oc pedidos' },
-      { id: 'ventas',   txt: 'Ventas y entregas',  url: 'ventas.html',   icon: 'ventas',   roles: ['admin'], alias: 'remito entrega facturar' },
+      { id: 'ventas',   txt: 'Ventas',  url: 'ventas.html',   icon: 'ventas',   roles: ['admin'], alias: 'remito entrega facturar' },
       { id: 'cobros',   txt: 'Cobros',             url: 'cobros.html',   icon: 'cobros',   roles: ['admin'], alias: 'deuda clientes cheques recibos quien me debe' }
     ]},
     { grupo: 'Compras', items: [

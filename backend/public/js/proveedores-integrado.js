@@ -486,8 +486,8 @@ async function verDetalleProveedor(id) {
             </div>
             <div class="card-body">
               <p><strong>Total compras:</strong> ${resumen.total_compras || proveedor.total_compras || 0}</p>
-              <p><strong>Monto total compras:</strong> ${formatearMoneda(resumen.monto_total_compras || 0)}</p>
-              <p><strong>Deuda actual:</strong> <span class="text-danger fw-bold">${formatearMoneda(deuda)}</span></p>
+              <p><strong>Total de compras:</strong> ${formatearMoneda(resumen.monto_total_compras || 0)}</p>
+              <p><strong>Por pagar:</strong> <span class="text-danger fw-bold">${formatearMoneda(deuda)}</span></p>
             </div>
           </div>
         </div>

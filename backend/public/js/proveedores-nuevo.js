@@ -71,7 +71,7 @@ function renderTabla(proveedores) {
       <td><strong>${escapeHtml(p.nombre)}</strong><div class="muted">${p.cuit || 'Sin CUIT'}</div></td>
       <td data-label="Contacto">${p.telefono || '—'}${p.email ? '<div class="muted">' + escapeHtml(p.email) + '</div>' : ''}</td>
       <td class="num" data-label="Compras">${p.total_compras || 0}</td>
-      <td class="num ${p.deuda_pendiente > 0 ? 'neg' : ''}" data-label="Deuda">${Shell.money(p.deuda_pendiente || 0)}</td>
+      <td class="num ${p.deuda_pendiente > 0 ? 'neg' : ''}" data-label="Por pagar">${Shell.money(p.deuda_pendiente || 0)}</td>
       <td data-label="Estado"><span class="pill ${p.activo ? 'pill-ok' : 'pill-neutral'}">${p.activo ? 'Activo' : 'Inactivo'}</span></td>
       <td data-label="Acciones">
         <button class="b b-ghost b-sm" onclick="abrirDrawerVer(${p.id})">Ver</button>
@@ -97,7 +97,7 @@ function renderKpis(proveedores) {
       <div class="kpi-v">${activos}</div>
     </div>
     <div class="kpi ${deudaTotal > 0 ? 'is-danger' : ''}">
-      <div class="kpi-k">Deuda total</div>
+      <div class="kpi-k">Total por pagar</div>
       <div class="kpi-v">${Shell.money(deudaTotal)}</div>
     </div>
     <div class="kpi is-info">
@@ -277,7 +277,7 @@ async function abrirDrawerVer(id) {
     let html = `
       <div class="kpi-row">
         <div class="kpi ${r.deuda_pendiente > 0 ? 'is-danger' : ''}">
-          <div class="kpi-k">Deuda pendiente</div>
+          <div class="kpi-k">Por pagar</div>
           <div class="kpi-v">${Shell.money(r.deuda_pendiente)}</div>
         </div>
         <div class="kpi ${r.deuda_vencida > 0 ? 'is-warning' : ''}">
@@ -329,7 +329,7 @@ async function abrirDrawerVer(id) {
       return;
     }
     cont.innerHTML = `<div class="table-wrap"><table class="t">
-      <thead><tr><th>Comprobante</th><th>Vence</th><th class="num">Saldo</th><th>Estado</th></tr></thead>
+      <thead><tr><th>Comprobante</th><th>Vencimiento</th><th class="num">Saldo</th><th>Estado</th></tr></thead>
       <tbody>${facturas.map(f => `
         <tr>
           <td data-label="Comprobante">${f.tipo_factura || ''} ${f.punto_venta ? String(f.punto_venta).padStart(4, '0') : ''}-${f.numero_factura}</td>
