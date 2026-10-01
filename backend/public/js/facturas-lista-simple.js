@@ -235,7 +235,7 @@ async function verDetalleFactura(facturaId) {
                     <div class="panel-body flush"><div class="table-wrap">
                         <table class="t">
                             <thead><tr>
-                                <th>Código</th><th>Material</th>
+                                <th>Código</th><th>Materia prima</th>
                                 <th class="num">Cantidad</th><th>Unidad</th>
                                 <th class="num">Precio unit.</th><th class="num">IVA %</th>
                                 <th class="num">Subtotal</th><th class="num">IVA</th><th class="num">Total</th>
@@ -244,7 +244,7 @@ async function verDetalleFactura(facturaId) {
                                 ${factura.items.map(item => `
                                     <tr>
                                         <td data-label="Código">${esc(item.codigo || item.materia_codigo || '—')}</td>
-                                        <td data-label="Material">${esc(item.nombre || item.materia_nombre || item.descripcion || '—')}</td>
+                                        <td data-label="Materia prima">${esc(item.nombre || item.materia_nombre || item.descripcion || '—')}</td>
                                         <td class="num" data-label="Cantidad">${Number(item.cantidad || 0).toLocaleString('es-AR')}</td>
                                         <td data-label="Unidad">${esc(item.unidad_medida || '—')}</td>
                                         <td class="num" data-label="Precio unit.">${formatearMoneda(item.precio_unitario)}</td>

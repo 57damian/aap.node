@@ -220,7 +220,7 @@ function renderizarMovimientos(movimientos) {
     tbody.innerHTML = movimientos.map(m => `
         <tr>
             <td data-label="Fecha">${Shell.fecha(m.fecha)}</td>
-            <td data-label="Material"><strong>${m.articulo_nombre || '-'}</strong>${m.articulo_codigo ? ' <span class="muted">' + m.articulo_codigo + '</span>' : ''}</td>
+            <td data-label="Materia prima"><strong>${m.articulo_nombre || '-'}</strong>${m.articulo_codigo ? ' <span class="muted">' + m.articulo_codigo + '</span>' : ''}</td>
             <td data-label="Tipo">${Shell.pill(m.tipo_movimiento)}</td>
             <td class="num" data-label="Cantidad">${m.cantidad ?? 0} ${m.unidad || ''}</td>
             <td data-label="Proveedor">${m.proveedor_nombre || '—'}</td>
@@ -249,7 +249,7 @@ function exportarMovimientosCSV() {
     }
 
     let csvContent = 'data:text/csv;charset=utf-8,';
-    const headers = ['Fecha', 'Material', 'Código', 'Tipo', 'Cantidad', 'Unidad',
+    const headers = ['Fecha', 'Materia prima', 'Código', 'Tipo', 'Cantidad', 'Unidad',
         'Precio unitario', 'Proveedor', 'N° de factura', 'Observaciones', 'Usuario'];
     csvContent += headers.join(',') + '\n';
 
@@ -330,7 +330,7 @@ function renderizarEvolucionPrecios(precios) {
         return `
         <tr>
             <td data-label="Fecha">${Shell.fecha(p.fecha_cambio)}</td>
-            <td data-label="Material"><strong>${p.material_nombre || '-'}</strong>${p.material_codigo ? ' <span class="muted">' + p.material_codigo + '</span>' : ''}</td>
+            <td data-label="Materia prima"><strong>${p.material_nombre || '-'}</strong>${p.material_codigo ? ' <span class="muted">' + p.material_codigo + '</span>' : ''}</td>
             <td data-label="Proveedor">${p.proveedor_nombre || '—'}</td>
             <td class="num" data-label="Precio anterior">${p.precio_anterior != null ? formatearMoneda(p.precio_anterior) : '—'}</td>
             <td class="num" data-label="Precio nuevo">${formatearMoneda(p.precio_nuevo)}</td>
@@ -355,7 +355,7 @@ function exportarPreciosCSV() {
     }
 
     let csvContent = 'data:text/csv;charset=utf-8,';
-    const headers = ['Fecha', 'Material', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° de factura'];
+    const headers = ['Fecha', 'Materia prima', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° de factura'];
     csvContent += headers.join(',') + '\n';
 
     preciosCompraCache.forEach(p => {
