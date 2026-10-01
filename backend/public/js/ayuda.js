@@ -131,6 +131,258 @@
     precio_referencia: {
       t: 'Precio de referencia',
       d: 'Lo último que se pagó por este material, sin importar a qué proveedor. Sirve para valorizar el stock de un vistazo.'
+    },
+
+    /* ---------- Calculadora de transformadores ---------- */
+    calc_vin: {
+      t: 'Tensión de entrada',
+      d: 'Tensión de la red a la que se conecta el primario.',
+      n: 'Cómo se mide: con tester en alterna sobre el enchufe. En Argentina, 220 V.'
+    },
+    calc_familia: {
+      t: 'Familia de carretel',
+      d: 'Serie de núcleo EI a la que pertenece el carretel (EI 25, EI 37, EI 62…). Todos los de una familia comparten la chapa.',
+      n: 'Se lee en la descripción del carretel o en el catálogo. Sin BA_ref cargado, el flujo se estima y la confianza es baja.'
+    },
+    calc_pines: {
+      t: 'Pines',
+      d: 'Filtra los carreteles con o sin pines (patitas) para soldar a plaqueta.',
+      n: 'Se ve a simple vista en el carretel.'
+    },
+    calc_sep: {
+      t: 'Separador',
+      d: 'Carretel de 2 cámaras: una pared divide el bobinado en dos zonas. Sirve para aislar primario de secundario.',
+      n: 'Se ve a simple vista. Las medidas de cada cámara salen del catálogo (Y1 e Y2).'
+    },
+    calc_carretel: {
+      t: 'Carretel',
+      d: 'El soporte del bobinado. Define N, A, I, la cantidad de cámaras y la profundidad donde cabe el cobre.',
+      n: 'El código está en el catálogo (ej. 004080). Si "a revisar", mirá el aviso: hay una medida dudosa.'
+    },
+    calc_modo: {
+      t: 'Condición de la tensión de salida',
+      d: 'En vacío: la tensión pedida es la que mide el secundario sin carga. Con carga: es la que debe quedar con la corriente indicada, y la calculadora suma espiras para compensar la caída.',
+      n: 'Cómo se mide: con tester en el secundario, sin carga (vacío) o con la carga conectada.'
+    },
+    calc_salida_v: {
+      t: 'V de la salida',
+      d: 'Tensión de cada sección del secundario.',
+      n: 'Con toma central (14+14) se carga 14, no 28.'
+    },
+    calc_salida_i: {
+      t: 'I de la salida',
+      d: 'Corriente que debe entregar cada sección. Define el grosor del alambre.',
+      n: 'Cómo se mide: tester en serie (amperímetro) con la carga, o se calcula como potencia / tensión.'
+    },
+    calc_secciones: {
+      t: 'Secciones',
+      d: '1 = bobinado simple. 2 = con toma central: dos secciones iguales, con V e I dados por sección.',
+      n: 'Se ve al contar los cables del secundario: 3 salidas = 2 secciones.'
+    },
+    calc_alambre: {
+      t: 'Alambre',
+      d: 'Automático elige el más fino del stock que cumple la densidad de corriente máxima. También se puede forzar uno.',
+      n: 'El diámetro real se mide con micrómetro en el alambre del taller y se carga en "Alambres del taller".'
+    },
+    calc_hebras: {
+      t: 'Hebras',
+      d: 'Cantidad de alambres en paralelo (bifilar = 2). Reparte la corriente y baja la resistencia.',
+      n: 'Se cuenta al desarmar el bobinado. Automático prueba 1, 2 y 3.'
+    },
+    calc_pared_medida: {
+      t: 'Pared del carretel',
+      d: 'Espesor de la pared del tubo y de la brida que resta espacio al cobre. Estimado: 0,6 mm.',
+      n: 'Cómo se mide: calibre o micrómetro sobre la pared del carretel.'
+    },
+    calc_prof_util_medida: {
+      t: 'Profundidad útil medida',
+      d: 'Altura real disponible para el bobinado, desde el tubo hasta el borde de la chapa. Reemplaza a la máxima estimada.',
+      n: 'Cómo se mide: calibre desde la superficie del tubo hasta el borde de la ventana de la chapa ya montada.'
+    },
+    calc_codigo: {
+      t: 'Código de carretel',
+      d: 'Carretel del trafo que querés analizar. Completa N, A, I y las cámaras desde la tabla.',
+      n: 'Está en el catálogo. Sin código, cargá N, A e I a mano.'
+    },
+    calc_nai: {
+      t: 'N, A e I del núcleo',
+      d: 'N = ancho del tubo (pierna central). A = pila: alto del paquete de chapas. I = largo bobinable.',
+      n: 'Cómo se miden (mm, con calibre): N y A en el tubo del carretel por dentro; I es el largo del tubo entre las bridas.'
+    },
+    calc_vp: {
+      t: 'Vp',
+      d: 'Tensión a la que trabaja el primario.',
+      n: 'Con tester en alterna sobre la entrada, o la que dice la placa.'
+    },
+    calc_vs: {
+      t: 'Vs',
+      d: 'Tensión del secundario, por sección.',
+      n: 'Con tester en alterna sobre el secundario, con el primario conectado a Vp.'
+    },
+    calc_is_ps: {
+      t: 'Is o Ps',
+      d: 'Corriente (A) o potencia (VA) que entrega el secundario. Con ella se calculan alambres y ventana; sin ella solo se obtienen espiras y flujo.',
+      n: 'Is: amperímetro en serie con la carga. Ps = Vs × Is.'
+    },
+    calc_cond: {
+      t: 'Vs en vacío o con carga',
+      d: 'Si se midió con carga, Vs queda por debajo de la de vacío por la caída en el cobre. La calculadora lo corrige para no subestimar las espiras por volt.',
+      n: 'Anotá en qué condición medís: sin nada conectado es vacío.'
+    },
+    calc_np: {
+      t: 'Np medido',
+      d: 'Vueltas reales del primario. Con este dato las espiras por volt salen de una medición y la confianza pasa a alta.',
+      n: 'Cómo se mide: contando al desarmar, o con un contador de espiras. Alternativa: una vuelta de prueba y relación de tensiones.'
+    },
+    calc_ns: {
+      t: 'Ns medido',
+      d: 'Vueltas reales del secundario (por sección). Da las espiras por volt como Ns / Vs.',
+      n: 'Cómo se mide: contando al desarmar. Vale solo si Vs está medida en vacío (o indicá que fue con carga).'
+    },
+    calc_dp: {
+      t: 'Ø medido',
+      d: 'Diámetro del alambre. Se acopla al calibre más cercano del catálogo. Desnudo = solo el cobre; con esmalte = cobre más barniz.',
+      n: 'Cómo se mide: micrómetro sobre un tramo sin esmalte raspado (desnudo) o tal cual (con esmalte).'
+    },
+    calc_rp_rs: {
+      t: 'Rp / Rs',
+      d: 'Resistencia en continua del bobinado. Se compara con la calculada para detectar vueltas o calibres mal estimados.',
+      n: 'Cómo se mide: óhmetro en los extremos del bobinado, trafo frío (~20 °C) y sin nada conectado.'
+    },
+    calc_alias: {
+      t: 'Alias',
+      d: 'Cómo le dice el taller al alambre (ej. "0.08").',
+      n: 'Es solo un nombre para reconocerlo.'
+    },
+    calc_alambre_cat: {
+      t: 'Alambre (catálogo)',
+      d: 'Calibre del catálogo São Marco al que corresponde. De acá salen el diámetro del cobre y los ohm por metro.',
+      n: 'Elegí el AWG o diámetro más cercano al que medís con micrómetro.'
+    },
+    calc_grado: {
+      t: 'Grado',
+      d: 'Espesor del esmalte. G1 = fino, G2 = grueso (más diámetro exterior).',
+      n: 'Viene indicado en el carrete del proveedor. CORALSOLDA HA es G1.'
+    },
+    calc_d_medido: {
+      t: 'Diámetro medido',
+      d: 'Diámetro exterior real, con esmalte. Si lo cargás, reemplaza al del catálogo en el cálculo de capas.',
+      n: 'Cómo se mide: micrómetro sobre el alambre tal cual, sin raspar el esmalte.'
+    },
+    calc_p_f: {
+      t: 'Frecuencia',
+      d: 'Frecuencia de la red. Entra en la fórmula de espiras por volt.',
+      n: 'En Argentina, 50 Hz.'
+    },
+    calc_p_B_taller: {
+      t: 'Inducción de taller',
+      d: 'Densidad de flujo supuesta cuando la familia no tiene un trafo real de referencia. Los trafos del taller trabajan a 1,50–1,66 T.',
+      n: 'Cómo se obtiene: B = flujo / sección del núcleo, de un trafo real armado y probado.'
+    },
+    calc_p_k_flujo: {
+      t: 'k_flujo',
+      d: 'Multiplicador del flujo respecto del trafo de referencia. 1 = igual; menos de 1 = más espiras y menos calentamiento.',
+      n: 'Con 0,93 se reproduce el trafo de 380 V del taller.'
+    },
+    calc_p_J_prim_max: {
+      t: 'J máx. primario',
+      d: 'Densidad de corriente máxima en el cobre del primario. Define el alambre más fino permitido.',
+      n: 'Se calibra con la temperatura de trafos reales: 2,5–3 A/mm² es lo habitual.'
+    },
+    calc_p_J_sec_max: {
+      t: 'J máx. secundario',
+      d: 'Densidad de corriente máxima en el cobre del secundario.',
+      n: 'Igual que el primario; el secundario suele trabajar más holgado.'
+    },
+    calc_p_eta: {
+      t: 'Rendimiento',
+      d: 'Cociente entre potencia de salida y de entrada. Sirve para estimar la corriente del primario.',
+      n: 'Cómo se mide: potencia de salida / potencia de entrada con carga nominal. 0,80 es típico en trafos chicos.'
+    },
+    calc_p_margen_brida: {
+      t: 'Margen de brida',
+      d: 'Espacio sin bobinar a cada lado de la cámara, contra la brida.',
+      n: 'Cómo se mide: calibre entre la brida y la primera espira. Unos 0,4 mm.'
+    },
+    calc_p_factor_capa: {
+      t: 'Factor de capa',
+      d: 'Aumento de altura por el desorden entre capas (las espiras no apilan perfectas).',
+      n: 'Se calibra comparando la altura calculada con la real de trafos armados. 1,05 = 5 %.'
+    },
+    calc_p_papel_cada: {
+      t: 'Papel cada',
+      d: 'Cada cuántas capas de alambre se pone una vuelta de papel aislante.',
+      n: 'Es la costumbre del bobinado del taller.'
+    },
+    calc_p_papel_mm: {
+      t: 'Espesor del papel',
+      d: 'Grosor del papel aislante entre capas.',
+      n: 'Cómo se mide: micrómetro sobre el papel.'
+    },
+    calc_p_aislacion_entre: {
+      t: 'Aislación entre bobinados',
+      d: 'Espesor del aislante entre primario y secundario cuando comparten cámara.',
+      n: 'Cómo se mide: calibre sobre la cinta o el papel usado.'
+    },
+    calc_p_cierre: {
+      t: 'Cierre',
+      d: 'Altura de la vuelta final de cinta que cierra el bobinado.',
+      n: 'Cómo se mide: calibre sobre la cinta.'
+    },
+    calc_p_pared: {
+      t: 'Pared por defecto',
+      d: 'Espesor de pared que se usa en los carreteles que no tienen una medida propia.',
+      n: 'Cómo se mide: calibre en la pared del carretel. Se puede cargar uno por carretel.'
+    },
+    calc_p_T_cobre: {
+      t: 'T cobre',
+      d: 'Temperatura a la que se calculan las resistencias. En diseño, 60 °C (cobre caliente).',
+      n: 'Cómo se mide: termómetro o variación de resistencia en funcionamiento.'
+    },
+    calc_p_alfa_cu: {
+      t: 'α del cobre',
+      d: 'Cuánto sube la resistencia del cobre por cada grado de temperatura.',
+      n: 'Constante física: 0,00393 por °C.'
+    },
+    calc_ba_ref: {
+      t: 'BA_ref',
+      d: 'Flujo de referencia de la familia: inducción × sección del núcleo. Da las espiras por volt: 1e4 / (4,44 · f · BA_ref).',
+      n: 'Cómo se obtiene: de un trafo real: BA = V · 1e4 / (4,44 · f · Np), con Np contado.'
+    },
+    calc_a_ref: {
+      t: 'A_ref',
+      d: 'Pila (cota A) del trafo con el que se calibró BA_ref. Otro carretel de la familia escala el flujo con A / A_ref.',
+      n: 'Es la cota A del carretel del trafo de referencia.'
+    },
+    calc_pierna: {
+      t: 'Pierna',
+      d: 'Ancho de la pierna central de la chapa. Con él se calcula B real y la profundidad útil.',
+      n: 'Cómo se mide: calibre sobre la pierna central de una chapa suelta.'
+    },
+    calc_ventana_ancho: {
+      t: 'Ancho de ventana',
+      d: 'Ancho del hueco de la chapa por donde pasa el bobinado. Con la pierna da la profundidad útil.',
+      n: 'Cómo se mide: calibre en la ventana de una chapa suelta (o del catálogo de la chapa).'
+    },
+    calc_ventana_alto: {
+      t: 'Alto de ventana',
+      d: 'Alto del hueco de la chapa.',
+      n: 'Cómo se mide: calibre en la ventana de una chapa suelta.'
+    },
+    calc_apilado: {
+      t: 'Apilado',
+      d: 'Fracción de la pila que es hierro (el resto es aire y barniz entre chapas). Típico 0,92.',
+      n: 'Se calibra comparando la sección medida con la geométrica.'
+    },
+    calc_J: {
+      t: 'J (A/mm²)',
+      d: 'Densidad de corriente: amperes por mm² de cobre. Más alta calienta más.',
+      n: 'Cálculo: corriente / (área del cobre × hebras). Pasar del máximo marca ⚠.'
+    },
+    calc_v_carga: {
+      t: 'V con carga',
+      d: 'Tensión que queda a la corriente indicada: la de vacío menos la caída en las resistencias del cobre.',
+      n: 'Cómo se mide: tester en el secundario con la carga conectada.'
     }
   };
 

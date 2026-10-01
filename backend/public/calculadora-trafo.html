@@ -23,15 +23,15 @@
       <form id="calcForm">
         <div class="form-grid">
           <div class="field">
-            <label for="c_vin">Tensión de entrada (V)</label>
+            <label for="c_vin">Tensión de entrada (V) <button class="ayuda" data-ayuda="calc_vin">?</button></label>
             <input class="input" type="number" id="c_vin" value="220" min="1" step="any" required>
           </div>
           <div class="field">
-            <label for="c_familia">Familia</label>
+            <label for="c_familia">Familia <button class="ayuda" data-ayuda="calc_familia">?</button></label>
             <select class="select" id="c_familia"></select>
           </div>
           <div class="field">
-            <label for="c_pines">Pines</label>
+            <label for="c_pines">Pines <button class="ayuda" data-ayuda="calc_pines">?</button></label>
             <select class="select" id="c_pines">
               <option value="">Con o sin pines</option>
               <option value="con">Con pines</option>
@@ -39,7 +39,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="c_sep">Separador</label>
+            <label for="c_sep">Separador <button class="ayuda" data-ayuda="calc_sep">?</button></label>
             <select class="select" id="c_sep">
               <option value="">Con o sin separador</option>
               <option value="con">Con separador (2 cámaras)</option>
@@ -47,11 +47,11 @@
             </select>
           </div>
           <div class="field ancho-total">
-            <label for="c_carretel">Carretel</label>
+            <label for="c_carretel">Carretel <button class="ayuda" data-ayuda="calc_carretel">?</button></label>
             <select class="select" id="c_carretel"></select>
           </div>
           <div class="field">
-            <label for="c_modo">La tensión de cada salida es…</label>
+            <label for="c_modo">La tensión de cada salida es… <button class="ayuda" data-ayuda="calc_modo">?</button></label>
             <select class="select" id="c_modo">
               <option value="vacio">En vacío</option>
               <option value="carga">Con la corriente indicada (ajusta espiras)</option>
@@ -68,11 +68,11 @@
             <thead>
               <tr>
                 <th>Salida</th>
-                <th>V (por sección)</th>
-                <th>I (A, por sección)</th>
-                <th title="2 = toma central, como 14+14">Secciones</th>
-                <th>Alambre</th>
-                <th title="Vacío = elegir automático">Hebras</th>
+                <th>V (por sección) <button class="ayuda" data-ayuda="calc_salida_v">?</button></th>
+                <th>I (A, por sección) <button class="ayuda" data-ayuda="calc_salida_i">?</button></th>
+                <th>Secciones <button class="ayuda" data-ayuda="calc_secciones">?</button></th>
+                <th>Alambre <button class="ayuda" data-ayuda="calc_alambre">?</button></th>
+                <th title="Vacío = elegir automático">Hebras <button class="ayuda" data-ayuda="calc_hebras">?</button></th>
                 <th></th>
               </tr>
             </thead>
@@ -92,13 +92,57 @@
 
   <div id="c_resultado"></div>
 
+
+  <div class="panel" style="margin-top:var(--space-3)">
+    <div class="panel-head"><h2>Reingeniería: a partir de datos parciales</h2></div>
+    <div class="panel-body">
+      <p class="muted">Cargá lo que puedas medir del trafo (todo es opcional). Con vueltas medidas la confianza es <strong>alta</strong>; con BA_ref de un trafo real de la familia, <strong>media</strong>; solo con el carretel, <strong>baja</strong>; sin Vp o sin núcleo, <strong>insuficiente</strong>.</p>
+      <form id="reForm">
+        <div class="form-grid">
+          <div class="field"><label for="r_carretel">Código de carretel <button class="ayuda" data-ayuda="calc_codigo">?</button></label>
+            <input class="input" id="r_carretel" list="r_codigos" placeholder="Ej. 004080" autocomplete="off">
+            <datalist id="r_codigos"></datalist></div>
+          <div class="field"><label>…o medidas del núcleo (mm): N, A, I <button class="ayuda" data-ayuda="calc_nai">?</button></label>
+            <div style="display:flex;gap:var(--space-2)">
+              <input class="input" id="r_N" type="number" step="any" min="0" placeholder="N">
+              <input class="input" id="r_A" type="number" step="any" min="0" placeholder="A">
+              <input class="input" id="r_I" type="number" step="any" min="0" placeholder="I">
+            </div></div>
+          <div class="field"><label for="r_vp">Vp (V) <button class="ayuda" data-ayuda="calc_vp">?</button></label><input class="input" id="r_vp" type="number" step="any" min="0" value="220"></div>
+          <div class="field"><label for="r_vs">Vs (V, por sección) <button class="ayuda" data-ayuda="calc_vs">?</button></label><input class="input" id="r_vs" type="number" step="any" min="0"></div>
+          <div class="field"><label for="r_is">Is (A) o Ps (VA) <button class="ayuda" data-ayuda="calc_is_ps">?</button></label>
+            <div style="display:flex;gap:var(--space-2)">
+              <input class="input" id="r_is" type="number" step="any" min="0" placeholder="Is (A)">
+              <input class="input" id="r_ps" type="number" step="any" min="0" placeholder="Ps (VA)">
+            </div></div>
+          <div class="field"><label for="r_sec">Secciones del secundario <button class="ayuda" data-ayuda="calc_secciones">?</button></label>
+            <select class="select" id="r_sec"><option value="1">1</option><option value="2">2 (toma central)</option></select></div>
+          <div class="field"><label for="r_cond">Vs es… <button class="ayuda" data-ayuda="calc_cond">?</button></label>
+            <select class="select" id="r_cond"><option value="vacio">En vacío</option><option value="carga">Con carga (la corriente indicada)</option></select></div>
+          <div class="field"><label for="r_np">Np medido <button class="ayuda" data-ayuda="calc_np">?</button></label><input class="input" id="r_np" type="number" step="1" min="0"></div>
+          <div class="field"><label for="r_ns">Ns medido (por sección) <button class="ayuda" data-ayuda="calc_ns">?</button></label><input class="input" id="r_ns" type="number" step="1" min="0"></div>
+          <div class="field"><label for="r_dp">Øp medido (mm) <button class="ayuda" data-ayuda="calc_dp">?</button></label>
+            <div style="display:flex;gap:var(--space-2)"><input class="input" id="r_dp" type="number" step="any" min="0"><select class="select" id="r_dpe"><option value="">desnudo</option><option value="1">con esmalte</option></select></div></div>
+          <div class="field"><label for="r_ds">Øs medido (mm) <button class="ayuda" data-ayuda="calc_dp">?</button></label>
+            <div style="display:flex;gap:var(--space-2)"><input class="input" id="r_ds" type="number" step="any" min="0"><select class="select" id="r_dse"><option value="">desnudo</option><option value="1">con esmalte</option></select></div></div>
+          <div class="field"><label for="r_rp">Rp medida (Ω, a ~20 °C) <button class="ayuda" data-ayuda="calc_rp_rs">?</button></label><input class="input" id="r_rp" type="number" step="any" min="0"></div>
+          <div class="field"><label for="r_rs">Rs medida (Ω, a ~20 °C) <button class="ayuda" data-ayuda="calc_rp_rs">?</button></label><input class="input" id="r_rs" type="number" step="any" min="0"></div>
+        </div>
+        <div class="ancho-total" style="margin-top:var(--space-3)">
+          <button type="submit" class="b b-primary">Calcular con estos datos</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="r_resultado"></div>
+
   <details class="panel" style="margin-top:var(--space-3)">
     <summary class="panel-head" style="cursor:pointer"><h2 style="display:inline">Alambres del taller</h2></summary>
     <div class="panel-body">
       <p class="muted">Alias = cómo lo llama el taller. Si cargás el diámetro medido (con esmalte), reemplaza al del catálogo. Se guarda en este navegador.</p>
       <div class="table-wrap">
         <table class="t">
-          <thead><tr><th>Alias</th><th>Alambre (catálogo)</th><th>Grado</th><th>d medido (mm)</th><th></th></tr></thead>
+          <thead><tr><th>Alias <button class="ayuda" data-ayuda="calc_alias">?</button></th><th>Alambre (catálogo) <button class="ayuda" data-ayuda="calc_alambre_cat">?</button></th><th>Grado <button class="ayuda" data-ayuda="calc_grado">?</button></th><th>d medido (mm) <button class="ayuda" data-ayuda="calc_d_medido">?</button></th><th></th></tr></thead>
           <tbody id="c_stock"></tbody>
         </table>
       </div>
@@ -113,10 +157,10 @@
     <div class="panel-body">
       <div class="form-grid" id="c_params"></div>
       <h3 style="margin-top:var(--space-4)">Laminaciones por familia</h3>
-      <p class="muted">Una familia solo aparece en la calculadora si tiene BA_ref. El BA de cada carretel es BA_ref · A / A_ref (A_ref = pila del trafo real con el que se calibró). Con pierna y ancho de ventana (de SOMA) se calcula la profundidad útil y reemplaza a la máxima estimada.</p>
+      <p class="muted">Con BA_ref el flujo sale de un trafo real; sin él se estima con Se × B de taller (confianza baja). El BA de cada carretel es BA_ref · A / A_ref (A_ref = pila del trafo real con el que se calibró). Con pierna y ancho de ventana (de SOMA) se calcula la profundidad útil y reemplaza a la máxima estimada.</p>
       <div class="table-wrap">
         <table class="t">
-          <thead><tr><th>Familia</th><th>BA_ref (T·cm²)</th><th>A_ref (mm)</th><th>Pierna (mm)</th><th>Ventana ancho (mm)</th><th>Ventana alto (mm)</th><th>Apilado</th><th>Origen</th></tr></thead>
+          <thead><tr><th>Familia</th><th>BA_ref (T·cm²) <button class="ayuda" data-ayuda="calc_ba_ref">?</button></th><th>A_ref (mm) <button class="ayuda" data-ayuda="calc_a_ref">?</button></th><th>Pierna (mm) <button class="ayuda" data-ayuda="calc_pierna">?</button></th><th>Ventana ancho (mm) <button class="ayuda" data-ayuda="calc_ventana_ancho">?</button></th><th>Ventana alto (mm) <button class="ayuda" data-ayuda="calc_ventana_alto">?</button></th><th>Apilado <button class="ayuda" data-ayuda="calc_apilado">?</button></th><th>Origen</th></tr></thead>
           <tbody id="c_lams"></tbody>
         </table>
       </div>

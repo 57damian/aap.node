@@ -96,9 +96,54 @@ d = datosPorDefecto();
 cerca('004080 espiras/V', calcular({ vin: 220, carretel: '004080', salidas: [{ v: 20, i: 0.1 }] }, d).nv, 22.65, 0.01);
 cerca('012180 espiras/V', calcular({ vin: 220, carretel: '012180', salidas: [{ v: 14, i: 0.1 }] }, d).nv, 18.18, 0.01);
 cerca('015080 (EI 37x20) primario', calcular({ vin: 220, carretel: '015080', salidas: [{ v: 20, i: 0.1 }] }, d).Np, 3240, 2);
-let falla = false;
-try { calcular({ vin: 220, carretel: '127010', salidas: [{ v: 12, i: 0.1 }] }, d); } catch (e) { falla = /BA_ref/.test(e.message); }
-igual('familia sin BA_ref no calcula', falla, true);
+// Familia sin BA_ref: respaldo Se = N·A·0,92 con B de taller 1,55 T (EI 62x16: Se = 2,55 cm²).
+const sinRef = calcular({ vin: 220, carretel: '127010', salidas: [{ v: 12, i: 0.1 }] }, d);
+cerca('EI 62 sin BA_ref: espiras/V', sinRef.nv, 11.40, 0.02);
+igual('EI 62 sin BA_ref: confianza', sinRef.confianza, 'baja');
+cerca('EI 62 sin BA_ref: B real', sinRef.B_tesla, 1.55, 0.001);
+igual('EI 37 con BA_ref: confianza', calcular({ vin: 220, carretel: '004080', salidas: [{ v: 20, i: 0.1 }] }, d).confianza, 'media');
+
+// B real de los trafos del taller sobre el agujero del carretel (1,66 / 1,55 / 1,50 T).
+cerca('T1 B real', calcular({ vin: 220, carretel: '004080', salidas: [{ v: 20, i: 0.1 }] }, d).B_tesla, 1.66, 0.02);
+cerca('T3 B real', calcular({ vin: 220, carretel: '012180', salidas: [{ v: 14, i: 0.1 }] }, d).B_tesla, 1.50, 0.02);
+d.params.k_flujo = 0.932;
+cerca('T2 B real', calcular({ vin: 380, carretel: '004Z80', salidas: [{ v: 13.5, i: 0.1 }] }, d).B_tesla, 1.55, 0.02);
+
+
+// --- Reingeniería (datos parciales) ---
+d = datosPorDefecto();
+const rein = (e) => CT.reingenieria(e, d);
+let q = rein({ vp: 220, salidas: [{ v: 20, i: 0.1 }] });
+igual('sin núcleo: insuficiente', q.confianza, 'insuficiente');
+q = rein({ salidas: [{ v: 20, i: 0.1 }], carretel: '004080' });
+igual('sin Vp: insuficiente', q.confianza, 'insuficiente');
+q = rein({ vp: 220, carretel: '004080', salidas: [{ v: 20, i: 0.1 }] });
+igual('solo carretel: confianza', q.confianza, 'media'); // EI 37 tiene BA_ref de trafo real
+q = rein({ vp: 220, carretel: '127010', salidas: [{ v: 12, i: 0.1 }] });
+igual('familia sin BA_ref: confianza', q.confianza, 'baja');
+q = rein({ vp: 220, carretel: '004080', Np: 4983, salidas: [{ v: 20, i: 0.1 }] });
+igual('Np medido: confianza', q.confianza, 'alta');
+cerca('Np medido: N/V', q.nv, 22.65, 0.01);
+igual('Np medido: Np usado', q.Np, 4983);
+igual('Np medido: Ns', q.salidas[0].Ns, 453);
+q = rein({ vp: 220, carretel: '004080', Ns: 453, salidas: [{ v: 20, i: 0.1, Ns: 453 }] });
+cerca('Ns medido en vacío: N/V', q.nv, 22.65, 0.01);
+q = rein({ vp: 220, carretel: '004080', condicion: 'carga', salidas: [{ v: 18.18, i: 0.1, Ns: 453 }] });
+cerca('Ns medido con carga: N/V corregido', q.nv, 22.65, 0.15);
+// Resistencias medidas a ~20 °C: Rp = 1190 Ω a 60 °C → ~1029 Ω a 20 °C no debe avisar.
+q = rein({ vp: 220, carretel: '004080', Np: 4983, Rp: 1029, dp: { valor: 0.08, esmalte: false }, salidas: [{ v: 20, i: 0.1 }] });
+igual('Rp coherente: sin avisos de resistencia', q.avisos.filter((x) => /Rp/.test(x.texto)).length, 0);
+q = rein({ vp: 220, carretel: '004080', Np: 4983, Rp: 600, dp: { valor: 0.08, esmalte: false }, salidas: [{ v: 20, i: 0.1 }] });
+igual('Rp incoherente: avisa', q.avisos.some((x) => /Rp/.test(x.texto)), true);
+// 18 V / 300 mA en el 004080: no entra (rojo) y sugiere un carretel más grande que sí.
+q = rein({ vp: 220, carretel: '004080', salidas: [{ v: 18, i: 0.3 }] });
+igual('18 V / 300 mA en 004080: no entra', q.camaras.some((k) => k.semaforo === 'rojo'), true);
+igual('18 V / 300 mA: hay sugerencias', q.sugerencias.length > 0, true);
+igual('sugerencias sin carretel actual', q.sugerencias.every((x) => x.codigo !== '004080'), true);
+q = rein({ vp: 220, N: 10, A: 13, I: 17.3, salidas: [{ v: 20, i: 0.1 }] });
+igual('núcleo con medidas manuales calcula', q.Np > 0, true);
+q = rein({ vp: 220, carretel: '004080', salidas: [{ v: 20 }] });
+igual('sin corriente: lo marca', q.sin_corriente, true);
 
 if (fallas) { console.error('\n' + fallas + ' comprobaciones fallaron.'); process.exit(1); }
 console.log('\nTodo ok.');

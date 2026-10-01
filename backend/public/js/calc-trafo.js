@@ -187,6 +187,7 @@
 
   var PARAMS = {
     f: 50,               // Hz
+    B_taller: 1.55,      // T, inducción de taller para familias sin BA_ref (trafos reales: 1,50 a 1,66)
     k_flujo: 1.00,       // 1 = mismo flujo que el trafo de referencia
     J_prim_max: 3.0,     // A/mm²
     J_sec_max: 3.0,      // A/mm²
@@ -317,21 +318,27 @@
     if (!carr) throw new Error('Carretel inexistente: ' + entrada.carretel);
     if (carr.estado === 'excluido') throw new Error('El carretel ' + carr.codigo + ' está excluido: ' + carr.avisos.join('; '));
     var lam = porId(datos.laminaciones, 'familia', carr.familia);
-    if (!lam || !lam.BA_ref) throw new Error('La familia ' + carr.familia + ' no tiene BA_ref: cargalo en Laminaciones.');
     var geo = geometria(carr, lam, p, (datos.medidas || {})[carr.codigo]);
     var carrCalc = { camaras: carr.camaras, perimetro_tubo: geo.perimetro_tubo };
-    // El flujo escala con la pila: BA del carretel = BA_ref · A / A_ref.
-    var BA = lam.BA_ref * (lam.A_ref ? carr.A / lam.A_ref : 1);
+    // Un solo método de flujo, en este orden:
+    //  1) familia con BA_ref (trafo real): BA = BA_ref · A / A_ref (escala con la pila);
+    //  2) si no, sección del carretel Se = N · A · 0,92 con la inducción de taller (1,55 T).
+    var Se = carr.N * carr.A * ((lam && lam.apilado) || 0.92) / 100; // cm²
+    var conRef = !!(lam && lam.BA_ref);
+    var medido = !!entrada.nv_fijo;
+    var BA = conRef ? lam.BA_ref * (lam.A_ref ? carr.A / lam.A_ref : 1) : p.B_taller * Se;
     var hilos = datos.stock.map(function (s) { return resolverHilo(s, datos.alambres); }).filter(Boolean);
     if (!hilos.length) throw new Error('No hay alambres en el stock.');
     var vin = entrada.vin;
 
-    var nv = 1e4 / (4.44 * p.f * BA * p.k_flujo);
-    var Np = Math.round(vin * nv);
+    // Reingeniería: N/V y Np pueden venir medidos (nv_fijo, Np_fijo) en vez de salir del flujo.
+    var nv = entrada.nv_fijo || 1e4 / (4.44 * p.f * BA * p.k_flujo);
+    if (entrada.nv_fijo) BA = 1e4 / (4.44 * p.f * nv * p.k_flujo);
+    var Np = entrada.Np_fijo || Math.round(vin * nv);
 
     var salidas = entrada.salidas.map(function (s, k) {
       var sec = s.secciones || 1;
-      var Ns = Math.round(s.v * nv) + (ajustes[k] || 0);
+      var Ns = s.Ns_fijo ? s.Ns_fijo : Math.round(s.v * nv) + (ajustes[k] || 0);
       return { v: s.v, i: s.i, secciones: sec, Ns: Ns, hilo_forzado: s.hilo || null };
     });
 
@@ -387,11 +394,15 @@
     var flujo_rel = (vin * 1e4 / (4.44 * p.f * Np)) / BA;
     if (flujo_rel > 1.005) alertas.push({ nivel: 'err', texto: 'Flujo ' + (flujo_rel * 100).toFixed(0) + '% del de referencia: por encima de 100%.' });
     if (flujo_rel * 1.1 > 1.005) alertas.push({ nivel: 'warn', texto: 'A Vin + 10 % el flujo llega a ' + (flujo_rel * 110).toFixed(0) + '% del de referencia.' });
-    var B = lam.pierna_mm ? (vin * 1e4 / (4.44 * p.f * Np)) / (lam.pierna_mm * carr.A * lam.apilado / 100) : null;
+    // B real: sobre la pierna central si se conoce, si no sobre el agujero del carretel (Se).
+    var secB = lam && lam.pierna_mm ? lam.pierna_mm * carr.A * lam.apilado / 100 : Se;
+    var B = (vin * 1e4 / (4.44 * p.f * Np)) / secB;
+    if (B > 1.75) alertas.push({ nivel: 'err', texto: 'Saturación probable: B = ' + B.toFixed(2) + ' T (más de 1,75 T).' });
+    else if (B < 1.1) alertas.push({ nivel: 'warn', texto: 'Núcleo sobredimensionado: B = ' + B.toFixed(2) + ' T (menos de 1,1 T).' });
 
     return {
       nv: nv, Np: Np, Ip: Ip, Ip_real: Ip_real, Rp: Rp, flujo_rel: flujo_rel, B_tesla: B,
-      familia: carr.familia, BA: BA, geometria: geo, avisos_carretel: carr.estado === 'revisar' ? carr.avisos : [], carretel: carr.codigo, devanados: devanados, salidas: salidasRes,
+      familia: carr.familia, BA: BA, metodo_flujo: medido ? 'vueltas medidas' : (conRef ? 'BA_ref de trafo real' : 'Se × ' + p.B_taller + ' T'), confianza: medido ? 'alta' : (conRef ? 'media' : 'baja'), Se: Se, geometria: geo, avisos_carretel: carr.estado === 'revisar' ? carr.avisos : [], carretel: carr.codigo, devanados: devanados, salidas: salidasRes,
       camaras: camaras, alertas: alertas
     };
   }
@@ -418,6 +429,172 @@
     return res;
   }
 
+  // --- Reingeniería: calcular con datos parciales ---
+  // Todos los datos son opcionales. Se mide lo que se puede (Np, Ns, Ø, Rp, Rs,
+  // medidas del núcleo) y el resto se estima, con una confianza explícita:
+  //   alta         = hay Np o Ns medido (el N/V sale de una medición);
+  //   media        = BA_ref de un trafo real de la misma familia;
+  //   baja         = solo Se × inducción de taller;
+  //   insuficiente = falta Vp o el núcleo.
+  function calibreMedido(valor, esmalte, alambres) {
+    var campo = esmalte ? 'd_ext_g1' : 'd_cu', mejor = null;
+    alambres.forEach(function (a) {
+      var dif = Math.abs(a[campo] - valor);
+      if (!mejor || dif < mejor.dif) mejor = { a: a, dif: dif };
+    });
+    return mejor;
+  }
+
+  function reingenieria(entrada, datos) {
+    var p = Object.assign({}, datos.params);
+    if (entrada.J > 0) { p.J_prim_max = entrada.J; p.J_sec_max = entrada.J; }
+    if (entrada.B_taller > 0) p.B_taller = entrada.B_taller;
+    p.T_cobre = 20; // las resistencias de banco se miden a ~20 °C: no se corrigen
+    var d2 = {
+      params: p, alambres: datos.alambres, stock: datos.stock.slice(), carreteles: datos.carreteles.slice(),
+      laminaciones: datos.laminaciones, medidas: datos.medidas
+    };
+    var faltantes = [], avisos = [], vp = entrada.vp;
+    var sal = (entrada.salidas || []).filter(function (s) { return s && s.v > 0; });
+
+    var cod = entrada.carretel;
+    if (!cod && entrada.N > 0 && entrada.A > 0 && entrada.I > 0) {
+      cod = '__manual__';
+      d2.carreteles.push({
+        codigo: cod, familia: '(medidas manuales)', descripcion: 'medidas manuales', N: entrada.N, A: entrada.A,
+        I: entrada.I, U: null, pines: null, n_camaras: 1, camaras: [entrada.I], pared: p.pared, estado: 'ok', avisos: []
+      });
+    }
+    if (!(vp > 0)) faltantes.push('Tensión primaria (Vp)');
+    if (!cod) faltantes.push('Código de carretel o medidas N, A e I del núcleo');
+    if (!sal.length) faltantes.push('Tensión secundaria (Vs)');
+    if (!(vp > 0) || !cod) return { insuficiente: true, confianza: 'insuficiente', faltantes: faltantes, avisos: [], coherencia: [], sugerencias: [] };
+
+    var sinCorriente = false;
+    sal.forEach(function (s) {
+      s.secciones = s.secciones || 1;
+      s.i = s.i > 0 ? s.i : (s.ps > 0 ? s.ps / (s.v * s.secciones) : 0);
+      if (!(s.i > 0)) { sinCorriente = true; s.i = 0.001; }
+    });
+    if (sinCorriente) {
+      faltantes.push('Corriente (Is) o potencia (Ps) del secundario: sin ella no se calculan alambres ni ventana');
+    }
+    if (!sal.length) { sal = [{ v: 1, i: 0.001, secciones: 1 }]; sinCorriente = true; }
+
+    var cond = entrada.condicion === 'carga' ? 'carga' : 'vacio';
+    var s1 = sal[0], Ns1 = s1.Ns > 0 ? s1.Ns : null, Np = entrada.Np > 0 ? entrada.Np : null;
+
+    // Ø medidos → se buscan en el catálogo y se fuerzan como hilo de ese devanado.
+    function forzar(medido, nombre) {
+      if (!medido || !(medido.valor > 0)) return null;
+      var c = calibreMedido(medido.valor, medido.esmalte, d2.alambres);
+      if (c.dif > 0.02) avisos.push({ nivel: 'warn', texto: 'Ø ' + nombre + ' medido (' + medido.valor + ' mm) no coincide con un calibre del catálogo; se usa ' + c.a.id + '.' });
+      var alias = 'Ø' + nombre + ' medido ' + medido.valor;
+      d2.stock.push({ alias: alias, alambre_id: c.a.id, grado: 1, d_medido: medido.esmalte ? medido.valor : null });
+      return { alias: alias, hebras: medido.hebras || null };
+    }
+    var hiloP = forzar(entrada.dp, 'p'), hiloS = forzar(entrada.ds, 's');
+
+    function armar(nv) {
+      var e = {
+        vin: vp, carretel: cod, modo_tension: cond === 'carga' && !Ns1 ? 'carga' : 'vacio',
+        salidas: sal.map(function (s, k) {
+          return { v: s.v, i: s.i, secciones: s.secciones, Ns_fijo: k === 0 ? Ns1 : null, hilo: k === 0 && hiloS ? hiloS : null };
+        })
+      };
+      if (hiloP) e.primario_hilo = hiloP;
+      if (Np) e.Np_fijo = Np;
+      if (nv) e.nv_fijo = nv;
+      return e;
+    }
+    function nvMedido(dropS) {
+      var xs = [], fuentes = [];
+      if (Np) { xs.push(Np / vp); fuentes.push('Np / Vp'); }
+      if (Ns1) { xs.push(Ns1 / (s1.v + (dropS || 0))); fuentes.push('Ns / Vs' + (cond === 'carga' ? ' (corregido por la caída)' : ' (en vacío)')); }
+      return xs.length ? { nv: xs.reduce(function (a, b) { return a + b; }, 0) / xs.length, fuentes: fuentes } : null;
+    }
+
+    var med = nvMedido(0), r;
+    if (med) {
+      r = calcular(armar(med.nv), d2);
+      // Ns medido con carga: la tensión leída es menor que la de vacío; se suma la caída calculada.
+      if (Ns1 && cond === 'carga') {
+        for (var it = 0; it < 6; it++) {
+          med = nvMedido(r.salidas[0].V0 - r.salidas[0].Vcarga);
+          r = calcular(armar(med.nv), d2);
+        }
+      }
+    } else {
+      r = calcular(armar(null), d2);
+    }
+    if (Np && Ns1 && med) {
+      var a = Np / vp, b = Ns1 / s1.v;
+      if (Math.abs(a - b) / Math.max(a, b) > 0.05) {
+        avisos.push({ nivel: 'warn', texto: 'Np/Vp (' + a.toFixed(2) + ') y Ns/Vs (' + b.toFixed(2) + ') difieren más de 5 %: ¿Vs medida con carga o vueltas mal contadas?' });
+      }
+    }
+    if (Ns1 && cond === 'carga' && !Np) {
+      avisos.push({ nivel: 'warn', texto: 'Vs medida con carga: el N/V se corrigió sumando la caída calculada con las resistencias estimadas.' });
+    }
+
+    // Coherencia con las resistencias medidas (a ~20 °C).
+    var coherencia = [];
+    function ohm(id) { return porId(d2.alambres, 'id', id).ohm_m; }
+    function comparar(nombre, medida, dev, calc) {
+      if (!(medida > 0) || !dev) return;
+      var dR = (calc - medida) / medida;
+      var mltReal = medida * 1000 * dev.hebras / (dev.N * ohm(dev.alambre));
+      var dM = (dev.mlt - mltReal) / mltReal;
+      coherencia.push({ nombre: nombre, medida: medida, calculada: calc, dif_R: dR, mlt_real: mltReal, mlt_calc: dev.mlt, dif_mlt: dM });
+      if (Math.abs(dR) > 0.2) avisos.push({ nivel: 'warn', texto: nombre + ': la resistencia calculada (' + calc.toFixed(1) + ' Ω) difiere ' + (Math.abs(dR) * 100).toFixed(0) + ' % de la medida (' + medida + ' Ω).' });
+      if (Math.abs(dM) > 0.15) avisos.push({ nivel: 'warn', texto: nombre + ': el largo medio de espira implícito en la medición (' + mltReal.toFixed(0) + ' mm) difiere ' + (Math.abs(dM) * 100).toFixed(0) + ' % del del carretel (' + dev.mlt.toFixed(0) + ' mm).' });
+    }
+    if (!sinCorriente) {
+      comparar('Rp', entrada.Rp, r.devanados[0], r.Rp);
+      comparar('Rs', entrada.Rs, r.devanados[1], r.salidas[0].Rs);
+    }
+
+    // Carretel más chico que entra. Al pasar a otra familia se recalcula el N/V con el
+    // flujo de esa familia (no se arrastran las vueltas medidas).
+    var sugerencias = [];
+    if (!sinCorriente) {
+      var actual = porId(d2.carreteles, 'codigo', cod), vistos = [];
+      d2.carreteles.forEach(function (c) {
+        if (c.estado === 'excluido' || c.codigo === cod || c.codigo === '__manual__') return;
+        if (actual && c.n_camaras !== actual.n_camaras) return;
+        try {
+          var e = armar(null);
+          delete e.Np_fijo; e.carretel = c.codigo; e.modo_tension = cond === 'carga' ? 'carga' : 'vacio';
+          e.salidas.forEach(function (s) { s.Ns_fijo = null; });
+          var rr = calcular(e, d2), peor = 0;
+          rr.camaras.forEach(function (k) { if (k.pct != null && k.pct > peor) peor = k.pct; });
+          if (rr.geometria.limite == null || peor > 0.85 || rr.alertas.some(function (x) { return x.nivel === 'err'; })) return;
+          vistos.push({ codigo: c.codigo, descripcion: c.descripcion, familia: c.familia, Np: rr.Np, ocupacion: peor, Se: rr.Se, estado: c.estado });
+        } catch (err) { /* este carretel no se puede calcular */ }
+      });
+      vistos.sort(function (x, y) { return x.Se - y.Se; });
+      sugerencias = vistos.slice(0, 3);
+    }
+
+    // Lo que falta medir para ganar confianza.
+    if (!Np && !Ns1) faltantes.push('Medir Np (o Ns) del original: con eso la confianza pasa a alta');
+    if (!entrada.dp) faltantes.push('Medir Øp');
+    if (!entrada.ds) faltantes.push('Medir Øs');
+    if (!(entrada.Rp > 0)) faltantes.push('Medir Rp');
+    if (!(entrada.Rs > 0)) faltantes.push('Medir Rs');
+    var lam = porId(d2.laminaciones, 'familia', porId(d2.carreteles, 'codigo', cod).familia);
+    if (!lam || !lam.pierna_mm || !lam.ventana_ancho_mm) faltantes.push('Pierna y ancho de ventana de la laminación (SOMA), para la profundidad útil');
+
+    r.confianza = med ? 'alta' : r.confianza;
+    r.fuentes_nv = med ? med.fuentes : [];
+    r.faltantes = faltantes;
+    r.avisos = avisos;
+    r.coherencia = coherencia;
+    r.sugerencias = sugerencias;
+    r.sin_corriente = sinCorriente;
+    return r;
+  }
+
   function datosPorDefecto() {
     return {
       params: copiar(PARAMS), alambres: copiar(ALAMBRES), stock: copiar(STOCK_INICIAL),
@@ -426,7 +603,7 @@
   }
 
   var api = {
-    calcular: calcular, datosPorDefecto: datosPorDefecto, PARAMS: PARAMS,
+    calcular: calcular, reingenieria: reingenieria, datosPorDefecto: datosPorDefecto, PARAMS: PARAMS,
     importarCarreteles: importarCarreteles, completarLaminaciones: completarLaminaciones, geometria: geometria
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
