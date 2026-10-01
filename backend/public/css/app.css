@@ -778,3 +778,43 @@ textarea.input { height: auto; min-height: 72px; padding: var(--space-2); resize
 .cobro-linea .select { max-width: 100%; }
 .dialog-bloque { margin-bottom: var(--space-4); }
 .dialog-bloque > h3 { margin: 0 0 var(--space-2); font-size: 13px; }
+
+/* =====================================================================
+ * Ficha de cliente (cliente.html) — ciclo OC → remito → factura → cobro
+ * ===================================================================== */
+.breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); margin-bottom: var(--space-2); }
+.breadcrumb a { color: var(--primary-600); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+/* Tira del ciclo: cuatro pasos clickeables, cada uno lleva a su solapa. */
+.ciclo { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+.ciclo-paso {
+  position: relative; display: block; text-align: left; font: inherit; cursor: pointer;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color); border-left-width: 0;
+}
+.ciclo-paso:first-child { border-left-width: 1px; border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+.ciclo-paso:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+.ciclo-paso:hover { background: var(--gray-50); }
+.ciclo-paso.is-activo { background: var(--gray-50); box-shadow: inset 0 -3px 0 var(--primary-600); }
+.ciclo-paso .ciclo-n {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted);
+}
+.ciclo-paso .ciclo-v { font-size: 18px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1.25; }
+.ciclo-paso .ciclo-sub { font-size: 12px; color: var(--text-muted); }
+.ciclo-paso.is-alerta .ciclo-v { color: var(--danger-600); }
+.ciclo-paso.is-pendiente .ciclo-v { color: var(--warning-600, #b45309); }
+@media (max-width: 760px) {
+  .ciclo { grid-template-columns: repeat(2, 1fr); }
+  .ciclo-paso { border-left-width: 1px; border-radius: 0; }
+}
+
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--gray-50); }
+.cliente-secciones > * + * { margin-top: var(--space-4); }
+.barra-progreso { height: 6px; background: var(--gray-200); border-radius: 3px; overflow: hidden; min-width: 80px; }
+.barra-progreso > span { display: block; height: 100%; background: var(--success-500); }
+.subtabs { display: inline-flex; gap: 2px; background: var(--gray-100); padding: 2px; border-radius: var(--radius-md); }
+.subtabs button { font: inherit; font-size: 12px; border: 0; background: none; padding: 4px 12px; border-radius: var(--radius-md); cursor: pointer; color: var(--text-secondary); }
+.subtabs button.active { background: var(--bg-primary); color: var(--primary-600); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }

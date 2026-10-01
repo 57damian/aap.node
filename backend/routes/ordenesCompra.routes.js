@@ -15,8 +15,27 @@ router.get(
   soloAdmin,
   async (req, res) => {
     try {
+      // ?cliente_id= filtra por cliente (lo usa la ficha del cliente). Además
+      // del detalle de remitos trae cuánto se pidió y cuánto se entregó, para
+      // ver el avance de cada OC sin entrar a su detalle.
+      const params = [];
+      let filtro = '';
+      if (req.query.cliente_id) {
+        const clienteId = Number.parseInt(req.query.cliente_id, 10);
+        if (Number.isNaN(clienteId)) {
+          return res.status(400).json({ error: 'cliente_id inválido' });
+        }
+        params.push(clienteId);
+        filtro = 'WHERE oc.cliente_id = $1';
+      }
+
       const result = await pool.query(
-        `SELECT oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, c.nombre AS cliente,
+        `SELECT oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, oc.cliente_id, c.nombre AS cliente,
+          COALESCE((SELECT SUM(oci.cantidad_pedida) FROM orden_compra_items oci
+                    WHERE oci.orden_compra_id = oc.id), 0)::int AS pedido,
+          COALESCE((SELECT SUM(vi.cantidad) FROM ventas v
+                    JOIN venta_items vi ON vi.venta_id = v.id
+                    WHERE v.orden_compra_id = oc.id AND v.anulada_en IS NULL), 0)::int AS entregado,
           (
             -- El número/fecha de la OC los pone cada cliente al hacer el
             -- pedido (no es un correlativo del sistema), así que no sirven
@@ -30,7 +49,9 @@ router.get(
           ) AS remitos
          FROM ordenes_compra oc
          JOIN clientes c ON c.id = oc.cliente_id
-         ORDER BY oc.id DESC`
+         ${filtro}
+         ORDER BY oc.id DESC`,
+        params
       );
 
       res.json(result.rows);

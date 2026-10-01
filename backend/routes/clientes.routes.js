@@ -161,6 +161,33 @@ router.delete('/:id', soloAdmin, async (req, res) => {
   }
 });
 
+/* REMITOS PENDIENTES DE FACTURAR, POR OC
+   Alimenta "Nueva factura" en la ficha del cliente: una factura agrupa
+   remitos de una sola OC, así que primero se elige la OC y después el
+   wizard (que trae el detalle de sus remitos). */
+router.get('/:id/pendiente-facturar', soloAdmin, asyncHandler(async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: 'ID de cliente inválido' });
+  }
+
+  const { rows } = await pool.query(
+    `SELECT oc.id AS oc_id, oc.numero_oc, oc.fecha_oc,
+            COUNT(DISTINCT v.id)::int AS remitos,
+            SUM(vi.cantidad)::int     AS unidades
+     FROM ordenes_compra oc
+     JOIN ventas v       ON v.orden_compra_id = oc.id AND v.anulada_en IS NULL
+     JOIN venta_items vi ON vi.venta_id = v.id
+     WHERE oc.cliente_id = $1
+       AND oc.anulada_en IS NULL
+       AND NOT EXISTS (SELECT 1 FROM factura_venta_items fvi WHERE fvi.venta_item_id = vi.id)
+     GROUP BY oc.id, oc.numero_oc, oc.fecha_oc
+     ORDER BY oc.id`,
+    [id]
+  );
+  res.json(rows);
+}));
+
 /* ESTADO FINANCIERO DEL CLIENTE
    Antes esta ruta sumaba solo los pagos con estado 'acreditado', un valor
    que el módulo de pagos nunca escribía: el total pagado daba siempre 0 y
