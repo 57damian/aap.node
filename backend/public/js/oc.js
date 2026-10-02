@@ -179,40 +179,85 @@ function contieneOC(oc, texto) {
   return campos.join(' ').toLowerCase().includes(texto.toLowerCase());
 }
 
+// Estado "de negocio" de una OC para el listado (02/10/2026). En la base
+// `estado` solo distingue abierta / cerrada / anulada; "completa" es lo que se
+// ve en la práctica: ya se entregó todo lo pedido (o se cerró a mano).
+// Mira solo las entregas, no la facturación ni el cobro.
+function estadoListaOC(oc) {
+  if (oc.estado === 'anulada') return 'ANULADA';
+  const pedido = Number(oc.pedido) || 0;
+  const entregado = Number(oc.entregado) || 0;
+  if (oc.estado === 'cerrada' || (pedido > 0 && entregado >= pedido)) return 'COMPLETA';
+  return entregado > 0 ? 'PARCIAL' : 'ABIERTA';
+}
+
+// numero_oc y cliente los tipea una persona: se escapan al pintarlos.
+function escOC(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function pintarOC() {
   if (!lista) return;
 
   const texto = document.getElementById('filtroOC')?.value.trim() || '';
-  const ocs = texto ? ocsCache.filter((oc) => contieneOC(oc, texto)) : ocsCache;
+  const verCompletas = !!document.getElementById('verCompletas')?.checked;
+  const verAnuladas = !!document.getElementById('verAnuladas')?.checked;
+  const aviso = document.getElementById('ocOcultas');
 
   if (!ocsCache.length) {
-    lista.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+    if (aviso) aviso.hidden = true;
+    lista.innerHTML = `<tr><td colspan="5">${Shell.vacio(
       'Todavía no hay órdenes de compra',
       'Creá la primera con el botón "Nueva orden".')}</td></tr>`;
     return;
   }
 
+  // Primero la búsqueda de texto y después los filtros de estado, así el
+  // aviso de "ocultas" cuenta solo lo que coincide con lo buscado.
+  const porTexto = texto ? ocsCache.filter((oc) => contieneOC(oc, texto)) : ocsCache;
+  let completasOcultas = 0;
+  let anuladasOcultas = 0;
+  const ocs = porTexto.filter((oc) => {
+    const estado = estadoListaOC(oc);
+    if (estado === 'ANULADA' && !verAnuladas) { anuladasOcultas++; return false; }
+    if (estado === 'COMPLETA' && !verCompletas) { completasOcultas++; return false; }
+    return true;
+  });
+
+  if (aviso) {
+    const partes = [];
+    if (completasOcultas) partes.push(`${completasOcultas} completa${completasOcultas === 1 ? '' : 's'}`);
+    if (anuladasOcultas) partes.push(`${anuladasOcultas} anulada${anuladasOcultas === 1 ? '' : 's'}`);
+    aviso.hidden = !partes.length;
+    aviso.textContent = partes.length
+      ? `Hay órdenes ocultas: ${partes.join(' y ')}. Tildá "Mostrar completas" o "Mostrar anuladas" para verlas.`
+      : '';
+  }
+
   if (!ocs.length) {
-    lista.innerHTML = `<tr><td colspan="6">${Shell.vacio(
-      'No hay resultados', 'Probá con otra búsqueda.')}</td></tr>`;
+    const hayOcultas = completasOcultas + anuladasOcultas > 0;
+    lista.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+      texto ? 'No hay resultados' : 'No hay órdenes en curso',
+      hayOcultas ? 'Las que coinciden están ocultas: tildá "Mostrar completas" o "Mostrar anuladas".'
+        : 'Probá con otra búsqueda.')}</td></tr>`;
     return;
   }
 
+  // La fila entera es clickeable (ver el listener delegado en INIT); el link
+  // de Remitos sigue yendo directo a la pestaña de facturas.
   lista.innerHTML = ocs.map((oc) => {
     const remitos = oc.remitos || [];
     const celdaRemitos = remitos.length
-      ? `<a href="oc_detalle.html?id=${oc.id}&tab=facturas">${remitos.join(', ')}</a>`
+      ? `<a href="oc_detalle.html?id=${oc.id}&tab=facturas">${remitos.map(escOC).join(', ')}</a>`
       : '<span class="muted">Sin entregas</span>';
     return `
-      <tr>
-        <td><strong>${oc.numero_oc}</strong></td>
-        <td data-label="Cliente">${oc.cliente || '—'}</td>
+      <tr class="clickable" data-id="${oc.id}" tabindex="0">
+        <td><strong>${escOC(oc.numero_oc)}</strong></td>
+        <td data-label="Cliente">${escOC(oc.cliente) || '—'}</td>
         <td class="muted solo-escritorio" data-label="Fecha">${Shell.fecha(oc.fecha_oc)}</td>
-        <td data-label="Estado">${Shell.pill(oc.estado || 'pendiente')}</td>
+        <td data-label="Estado">${Shell.pill(estadoListaOC(oc))}</td>
         <td data-label="Remitos">${celdaRemitos}</td>
-        <td class="num">
-          <button class="b b-ghost b-sm" onclick="verOC(${oc.id})">Ver</button>
-        </td>
       </tr>`;
   }).join('');
 }
@@ -220,14 +265,14 @@ function pintarOC() {
 async function cargarOC() {
   if (!lista) return;
 
-  lista.innerHTML = '<tr><td colspan="6" class="muted">Cargando…</td></tr>';
+  lista.innerHTML = '<tr><td colspan="5" class="muted">Cargando…</td></tr>';
 
   try {
     ocsCache = await apiFetch('/api/ordenes-compra');
     pintarOC();
   } catch (err) {
     Shell.error(err, 'No se pudieron cargar las órdenes de compra');
-    lista.innerHTML = `<tr><td colspan="6">${Shell.vacio(
+    lista.innerHTML = `<tr><td colspan="5">${Shell.vacio(
       'No se pudo cargar', 'Probá recargar la página.')}</td></tr>`;
   }
 }
@@ -257,6 +302,23 @@ if (form) {
 }
 document.getElementById('btnAgregarItemOC')?.addEventListener('click', agregarFilaItemOC);
 document.getElementById('filtroOC')?.addEventListener('input', pintarOC);
+document.getElementById('verCompletas')?.addEventListener('change', pintarOC);
+document.getElementById('verAnuladas')?.addEventListener('change', pintarOC);
+
+// Clic (o Enter/Espacio) en cualquier parte de la fila abre el detalle. Un
+// solo listener delegado: las filas se vuelven a pintar en cada filtro. Los
+// links propios de la fila (el de Remitos) siguen su camino.
+lista?.addEventListener('click', (e) => {
+  if (e.target.closest('a, button')) return;
+  const fila = e.target.closest('tr[data-id]');
+  if (fila) verOC(fila.dataset.id);
+});
+lista?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.target.closest('a, button')) return;
+  const fila = e.target.closest('tr[data-id]');
+  if (fila) { e.preventDefault(); verOC(fila.dataset.id); }
+});
 
 cargarClientesSelect();
 cargarFichasParaOC().then(resetFormOC);

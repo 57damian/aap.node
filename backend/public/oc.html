@@ -79,13 +79,21 @@
        de correcciones.html (un solo input, filtra en cada tecla sobre la
        lista ya cargada — no hace falta ir al servidor por esto). Busca por
        número de OC, cliente y también por número de remito, para poder
-       encontrar una OC a partir del remito que la entregó. -->
+       encontrar una OC a partir del remito que la entregó.
+       Las casillas son del mismo estilo: por defecto la lista muestra solo lo
+       que está en curso, y las OC anuladas y las completas (ya entregadas del
+       todo) se ven recién al tildarlas (02/10/2026). -->
   <div class="filters">
     <div class="field grow">
       <label for="filtroOC">Buscar</label>
       <input class="input" type="text" id="filtroOC" placeholder="Número de OC, cliente o remito">
     </div>
+    <div class="filters-actions">
+      <label class="check"><input type="checkbox" id="verCompletas"><span>Mostrar completas</span></label>
+      <label class="check"><input type="checkbox" id="verAnuladas"><span>Mostrar anuladas</span></label>
+    </div>
   </div>
+  <p class="muted" id="ocOcultas" style="margin:var(--space-2) 0 0" hidden></p>
 
   <div class="panel" style="margin-top:var(--space-4)"><div class="panel-body flush"><div class="table-wrap">
     <table class="t">
@@ -96,11 +104,10 @@
           <th class="solo-escritorio">Fecha</th>
           <th>Estado</th>
           <th>Remitos</th>
-          <th></th>
         </tr>
       </thead>
       <tbody id="listaOC">
-        <tr><td colspan="6" class="muted">Cargando…</td></tr>
+        <tr><td colspan="5" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>
