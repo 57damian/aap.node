@@ -15,14 +15,49 @@ function formatearMoneda(valor) {
 document.addEventListener('DOMContentLoaded', () => {
     verificarAuth();
     cargarMateriasPrimas();
+    cargarProveedoresMP();
+
+    // Búsqueda y filtros: todo en el cliente, sobre la lista ya cargada
+    document.getElementById('searchInput')?.addEventListener('input', buscarMateriasPrimas);
+    document.getElementById('filtroCategoriaMP')?.addEventListener('change', buscarMateriasPrimas);
+    document.getElementById('filtroProveedorMP')?.addEventListener('change', buscarMateriasPrimas);
 });
+
+// Nombres de las categorías (misma lista que config/categorias-stock.js).
+const NOMBRES_CATEGORIA = {
+    CARRETELES: 'Carreteles',
+    ALAMBRES_COBRE: 'Alambres de cobre',
+    OTROS: 'Otros'
+};
+
+// Lo tipeado por una persona (nombres, códigos, ubicaciones) se escapa al pintarlo.
+function escMP(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Proveedores para el desplegable "Proveedor asignado" del formulario y para
+// el filtro de la lista.
+async function cargarProveedoresMP() {
+    try {
+        const proveedores = await apiFetch('/api/proveedores');
+        const opciones = proveedores.map(p => `<option value="${p.id}">${escMP(p.nombre)}</option>`).join('');
+        document.getElementById('proveedor_id').innerHTML =
+            '<option value="">Sin proveedor asignado</option>' + opciones;
+        document.getElementById('filtroProveedorMP').innerHTML =
+            '<option value="">Todos</option><option value="SIN">Sin proveedor asignado</option>' + opciones;
+    } catch (err) {
+        console.error('Error cargando proveedores:', err);
+        Shell.error(err, 'No se pudieron cargar los proveedores');
+    }
+}
 
 // Cargar materias primas
 async function cargarMateriasPrimas() {
     try {
         const materiasPrimas = await apiFetch('/api/materias-primas');
         materiasPrimasCache = materiasPrimas;
-        renderizarTablaMateriasPrimas(materiasPrimas);
+        buscarMateriasPrimas();
     } catch (err) {
         console.error('Error cargando materias primas:', err);
         Shell.error(err, 'No se pudieron cargar los materiales');
@@ -34,9 +69,11 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
     const tbody = document.getElementById('materiasPrimasTableBody');
 
     if (!materiasPrimas || materiasPrimas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
-            'Todavía no hay materiales',
-            'Cargá el primero con el botón "Nueva materia prima".')}</td></tr>`;
+        tbody.innerHTML = materiasPrimasCache.length
+            ? `<tr><td colspan="9">${Shell.vacio('No hay resultados', 'Probá con otra búsqueda o limpiá los filtros.')}</td></tr>`
+            : `<tr><td colspan="9">${Shell.vacio(
+                'Todavía no hay materiales',
+                'Cargá el primero con el botón "Nueva materia prima".')}</td></tr>`;
         return;
     }
 
@@ -47,11 +84,13 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
 
         return `
             <tr>
-                <td><strong>${mp.nombre}</strong>${mp.codigo ? ' <span class="muted">' + mp.codigo + '</span>' : ''}</td>
+                <td><strong>${escMP(mp.nombre)}</strong>${mp.codigo ? ' <span class="muted">' + escMP(mp.codigo) + '</span>' : ''}</td>
+                <td class="muted solo-escritorio" data-label="Categoría">${NOMBRES_CATEGORIA[mp.categoria] || '—'}</td>
+                <td class="muted solo-escritorio" data-label="Proveedor">${escMP(mp.proveedor_asignado_nombre) || '—'}</td>
                 <td class="muted solo-escritorio" data-label="Unidad">${mp.unidad_medida || 'UNI'}</td>
                 <td class="num ${faltante ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
-                <td class="muted solo-escritorio" data-label="Ubicación">${mp.ubicacion || '—'}</td>
+                <td class="muted solo-escritorio" data-label="Ubicación">${escMP(mp.ubicacion) || '—'}</td>
                 <td data-label="Estado">${Shell.pill(mp.activo ? 'ACTIVO' : 'INACTIVO')}</td>
                 <td class="num">
                     <button class="b b-ghost b-sm" onclick="abrirModalEditar(${mp.id})">Editar</button>
@@ -71,6 +110,8 @@ function abrirModalCrear() {
     document.getElementById('descripcion').value = '';
     document.getElementById('unidad_medida').value = '';
     document.getElementById('ubicacion').value = '';
+    document.getElementById('categoria').value = 'OTROS';
+    document.getElementById('proveedor_id').value = '';
     document.getElementById('stock_minimo').value = '0';
     document.getElementById('precio_referencia').value = '';
     document.getElementById('activo').checked = true;
@@ -92,6 +133,8 @@ async function abrirModalEditar(id) {
         document.getElementById('descripcion').value = materiaPrima.descripcion || '';
         document.getElementById('unidad_medida').value = materiaPrima.unidad_medida || '';
         document.getElementById('ubicacion').value = materiaPrima.ubicacion || '';
+        document.getElementById('categoria').value = materiaPrima.categoria || 'OTROS';
+        document.getElementById('proveedor_id').value = materiaPrima.proveedor_id || '';
         document.getElementById('stock_minimo').value = materiaPrima.stock_minimo || 0;
         document.getElementById('precio_referencia').value = materiaPrima.precio_referencia || '';
         document.getElementById('activo').checked = materiaPrima.activo !== false;
@@ -107,8 +150,12 @@ async function abrirModalEditar(id) {
     }
 }
 
-// Guardar materia prima (crear o actualizar)
+// Guardar materia prima (crear o actualizar). Guarda contra el doble click:
+// flag mientras el POST/PUT está en curso (mismo patrón que oc.js).
+let materiaPrimaGuardando = false;
+
 async function guardarMateriaPrima() {
+    if (materiaPrimaGuardando) return;
     try {
         const id = document.getElementById('materia_prima_id').value;
         const codigo = document.getElementById('codigo').value.trim();
@@ -145,7 +192,10 @@ async function guardarMateriaPrima() {
             unidad_medida,
             ubicacion,
             stock_minimo,
-            activo
+            activo,
+            categoria: document.getElementById('categoria').value,
+            // null = sin proveedor asignado (en una edición, lo desasigna)
+            proveedor_id: document.getElementById('proveedor_id').value || null
         };
         
         // Si hay precio referencia, lo agregamos
@@ -161,18 +211,21 @@ async function guardarMateriaPrima() {
             method = 'PUT';
         }
         
+        materiaPrimaGuardando = true;
         await apiFetch(endpoint, {
             method: method,
             body: JSON.stringify(payload)
         });
-        
+
         Shell.toast('ok', id ? 'Materia prima actualizada' : 'Materia prima creada');
         document.getElementById('materiaPrimaModal').close();
         cargarMateriasPrimas();
-        
+
     } catch (err) {
         console.error('Error guardando materia prima:', err);
         Shell.error(err, 'No se pudo guardar el material');
+    } finally {
+        materiaPrimaGuardando = false;
     }
 }
 
@@ -289,20 +342,23 @@ async function verHistorialPreciosModal() {
 }
 
 // Buscar materias primas
+// Combina el buscador de texto con los filtros de categoría y de proveedor
+// asignado (02/10/2026). Antes el buscador no estaba conectado a ningún evento.
 function buscarMateriasPrimas() {
-    const searchTerm = document.getElementById('searchInput')?.value.toLowerCase();
-    
-    if (!searchTerm) {
-        renderizarTablaMateriasPrimas(materiasPrimasCache);
-        return;
-    }
-    
-    const filtradas = materiasPrimasCache.filter(mp => 
-        (mp.codigo && mp.codigo.toLowerCase().includes(searchTerm)) ||
-        (mp.nombre && mp.nombre.toLowerCase().includes(searchTerm)) ||
-        (mp.descripcion && mp.descripcion.toLowerCase().includes(searchTerm))
-    );
-    
+    const searchTerm = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
+    const categoria = document.getElementById('filtroCategoriaMP')?.value || '';
+    const proveedor = document.getElementById('filtroProveedorMP')?.value || '';
+
+    const filtradas = materiasPrimasCache.filter(mp => {
+        if (categoria && mp.categoria !== categoria) return false;
+        if (proveedor === 'SIN' && mp.proveedor_asignado_id) return false;
+        if (proveedor && proveedor !== 'SIN' && String(mp.proveedor_asignado_id) !== proveedor) return false;
+        if (!searchTerm) return true;
+        return (mp.codigo && mp.codigo.toLowerCase().includes(searchTerm)) ||
+            (mp.nombre && mp.nombre.toLowerCase().includes(searchTerm)) ||
+            (mp.descripcion && mp.descripcion.toLowerCase().includes(searchTerm));
+    });
+
     renderizarTablaMateriasPrimas(filtradas);
 }
 

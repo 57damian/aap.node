@@ -34,6 +34,22 @@
       <label for="searchInput">Buscar material</label>
       <input class="input" type="text" id="searchInput" placeholder="Código o nombre…">
     </div>
+    <div class="field">
+      <label for="filtroCategoriaMP">Categoría</label>
+      <select class="input" id="filtroCategoriaMP">
+        <option value="">Todas</option>
+        <option value="CARRETELES">Carreteles</option>
+        <option value="ALAMBRES_COBRE">Alambres de cobre</option>
+        <option value="OTROS">Otros</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="filtroProveedorMP">Proveedor asignado</label>
+      <select class="input" id="filtroProveedorMP">
+        <option value="">Todos</option>
+        <option value="SIN">Sin proveedor asignado</option>
+      </select>
+    </div>
   </div>
 
   <div class="panel"><div class="panel-body flush"><div class="table-wrap">
@@ -41,6 +57,8 @@
       <thead>
         <tr>
           <th>Materia prima</th>
+          <th class="solo-escritorio">Categoría</th>
+          <th class="solo-escritorio">Proveedor</th>
           <th class="solo-escritorio">Unidad</th>
           <th class="num">Stock</th>
           <th class="num solo-escritorio">Mínimo</th>
@@ -50,7 +68,7 @@
         </tr>
       </thead>
       <tbody id="materiasPrimasTableBody">
-        <tr><td colspan="7" class="muted">Cargando…</td></tr>
+        <tr><td colspan="9" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>
@@ -74,6 +92,23 @@
           <div class="field">
             <label for="nombre">Nombre</label>
             <input class="input" type="text" id="nombre" required>
+          </div>
+
+          <div class="field">
+            <label for="categoria">Categoría</label>
+            <select class="input" id="categoria" required>
+              <option value="OTROS">Otros</option>
+              <option value="CARRETELES">Carreteles</option>
+              <option value="ALAMBRES_COBRE">Alambres de cobre</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="proveedor_id">Proveedor asignado <span class="muted">(opcional)</span></label>
+            <select class="input" id="proveedor_id">
+              <option value="">Sin proveedor asignado</option>
+            </select>
+            <small class="muted">Solo de referencia: se le puede comprar a cualquier otro</small>
           </div>
 
           <div class="field">

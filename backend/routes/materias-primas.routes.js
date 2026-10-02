@@ -4,6 +4,38 @@ const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { fecha: fmtFecha, money } = require('../services/pdf-base');
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+const { CATEGORIA_POR_DEFECTO, esCategoriaValida } = require('../config/categorias-stock');
+
+// categoria y proveedor asignado del cuerpo del POST/PUT (02/10/2026).
+// Devuelve { categoria, proveedorId } con undefined si el campo no vino (en un
+// PUT, "no vino" = no tocar), o lanza un error 400 con un mensaje claro.
+// proveedor_id '' / null = dejar sin proveedor asignado.
+async function leerCategoriaYProveedor(client, body) {
+  let categoria;
+  if (body.categoria !== undefined && body.categoria !== null && body.categoria !== '') {
+    if (!esCategoriaValida(body.categoria)) {
+      throw Object.assign(new Error('Categoría inválida'), { status: 400 });
+    }
+    categoria = body.categoria;
+  }
+
+  let proveedorId;
+  if (body.proveedor_id !== undefined) {
+    if (body.proveedor_id === null || body.proveedor_id === '') {
+      proveedorId = null;
+    } else {
+      proveedorId = Number.parseInt(body.proveedor_id, 10);
+      if (!Number.isInteger(proveedorId) || proveedorId <= 0) {
+        throw Object.assign(new Error('Proveedor inválido'), { status: 400 });
+      }
+      const existe = await client.query('SELECT 1 FROM proveedores WHERE id = $1', [proveedorId]);
+      if (!existe.rows.length) {
+        throw Object.assign(new Error('El proveedor no existe'), { status: 400 });
+      }
+    }
+  }
+  return { categoria, proveedorId };
+}
 
 const COLS_PDF_HIST_PRECIOS_MP = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
@@ -29,18 +61,31 @@ router.use(verificarToken);
 // El operario consulta cantidades por GET /api/stock, que sale filtrado.
 router.get('/', soloAdmin, async (req, res) => {
   try {
-    const { search, activo = 'true', proveedor_id, con_stock } = req.query;
+    const { search, activo = 'true', proveedor_id, con_stock, categoria } = req.query;
+
+    if (categoria && !esCategoriaValida(categoria)) {
+      return res.status(400).json({ error: 'Categoría inválida' });
+    }
 
     let query = `
-      SELECT 
+      SELECT
         mp.id, mp.codigo, mp.nombre, mp.descripcion, mp.unidad_medida,
         mp.stock_actual, mp.stock_minimo, mp.ubicacion, mp.activo,
-        mp.precio_referencia as ultimo_precio
+        mp.precio_referencia as ultimo_precio,
+        mp.categoria, mp.proveedor_id as proveedor_asignado_id,
+        pa.nombre as proveedor_asignado_nombre
       FROM materias_primas mp
+      LEFT JOIN proveedores pa ON pa.id = mp.proveedor_id
       WHERE mp.activo = $1
     `;
     const params = [activo === 'true'];
     let paramIndex = 2;
+
+    if (categoria) {
+      query += ` AND mp.categoria = $${paramIndex}`;
+      params.push(categoria);
+      paramIndex++;
+    }
 
     if (search) {
       query += ` AND (mp.codigo ILIKE $${paramIndex} OR mp.nombre ILIKE $${paramIndex} OR mp.descripcion ILIKE $${paramIndex})`;
@@ -53,8 +98,10 @@ router.get('/', soloAdmin, async (req, res) => {
       // (stock_movimientos.proveedor_id, que es lo que factura-compra.routes.js
       // completa realmente en cada compra; compra_items/compras es un esquema
       // viejo ya sin uso, ver "Auditoría — Módulo Stock" en el doc del proyecto)
-      query += ` AND EXISTS (SELECT 1 FROM stock_movimientos sm
-                WHERE sm.materia_prima_id = mp.id AND sm.proveedor_id = $${paramIndex})`;
+      // Desde el 02/10/2026 también entran los materiales con ese proveedor
+      // asignado (aunque todavía no se le haya comprado nada).
+      query += ` AND (mp.proveedor_id = $${paramIndex} OR EXISTS (SELECT 1 FROM stock_movimientos sm
+                WHERE sm.materia_prima_id = mp.id AND sm.proveedor_id = $${paramIndex}))`;
       params.push(proveedor_id);
       paramIndex++;
     }
@@ -200,19 +247,24 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
         return res.status(400).json({ error: 'Nombre y unidad de medida son obligatorios' });
       }
 
+      const { categoria, proveedorId } = await leerCategoriaYProveedor(client, req.body);
+
       await client.query('BEGIN');
 
       const result = await client.query(`
-        INSERT INTO materias_primas 
-          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+        INSERT INTO materias_primas
+          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia,
+           categoria, proveedor_id, activo)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
         RETURNING *
-      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null, precio_referencia || null]);
+      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null,
+          precio_referencia || null, categoria || CATEGORIA_POR_DEFECTO, proveedorId ?? null]);
 
       await client.query('COMMIT');
       res.status(201).json(result.rows[0]);
     } catch (err) {
       await client.query('ROLLBACK');
+      if (err.status === 400) return res.status(400).json({ error: err.message });
       console.error('Error en POST /materias-primas:', err);
       res.status(500).json({ error: err.message });
     } finally {
@@ -236,8 +288,13 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
         return res.status(404).json({ error: 'Materia prima no encontrada' });
       }
 
+      const { categoria, proveedorId } = await leerCategoriaYProveedor(client, req.body);
+
       await client.query('BEGIN');
 
+      // proveedor_id es el único campo que se puede dejar en NULL a propósito
+      // ("sin proveedor asignado"), por eso no usa COALESCE: $10 dice si el
+      // campo vino en el cuerpo (si no vino, no se toca).
       const result = await client.query(`
         UPDATE materias_primas SET
           codigo = COALESCE($1, codigo),
@@ -248,15 +305,19 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
           ubicacion = COALESCE($6, ubicacion),
           precio_referencia = COALESCE($7, precio_referencia),
           activo = COALESCE($8, activo),
+          categoria = COALESCE($10, categoria),
+          proveedor_id = CASE WHEN $11::boolean THEN $12::integer ELSE proveedor_id END,
           actualizado_en = NOW()
         WHERE id = $9
         RETURNING *
-      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id]);
+      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id,
+          categoria ?? null, proveedorId !== undefined, proveedorId ?? null]);
 
       await client.query('COMMIT');
       res.json(result.rows[0]);
     } catch (err) {
       await client.query('ROLLBACK');
+      if (err.status === 400) return res.status(400).json({ error: err.message });
       console.error('Error en PUT /materias-primas/:id:', err);
       res.status(500).json({ error: err.message });
     } finally {

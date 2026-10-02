@@ -280,6 +280,21 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-categoria-proveedor-materias.sql (02/10): materias_primas.categoria
+  // y materias_primas.proveedor_id.
+  {
+    const tieneCategoria = await existeColumna('materias_primas', 'categoria');
+    const tieneProveedor = await existeColumna('materias_primas', 'proveedor_id');
+    const falta = [];
+    if (!tieneCategoria) falta.push('falta la columna materias_primas.categoria');
+    if (!tieneProveedor) falta.push('falta la columna materias_primas.proveedor_id');
+    resultados.push({
+      migracion: 'migracion-categoria-proveedor-materias.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

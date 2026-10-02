@@ -1,6 +1,6 @@
 # Módulo: Stock (materias primas)
 
-*Última actualización: 13/09/2026 — Ver `claude/00-resumen-y-metodologia.md` para contexto general del proyecto.*
+*Última actualización: 02/10/2026 — Ver `claude/00-resumen-y-metodologia.md` para contexto general del proyecto.*
 
 **Estado: auditado, diseño acordado e implementado, verificado en vivo.** Primer módulo trabajado en la reorganización (rama `reorganizacion`).
 
@@ -122,6 +122,17 @@ la rama `claude/gifted-mendel-jg5wim` con todos los commits de esta sesión
 ya está pusheada. Si vuelve a pasar, el mismo camino (o confirmar permiso de
 escritura de la app en `https://github.com/apps/claude/installations/select_target`)
 lo soluciona.
+
+## Categorías y proveedor asignado (02/10/2026)
+
+Pedido de Damian: filtrar el stock por tipo de material (carreteles, alambres de cobre, otros) y asignar cada material a un solo proveedor, aunque pueda pedirse a cualquiera.
+
+- Migración `migracion-categoria-proveedor-materias.sql`: `materias_primas.categoria` (`CARRETELES` | `ALAMBRES_COBRE` | `OTROS`, CHECK, default `OTROS`) y `materias_primas.proveedor_id` (FK opcional, `ON DELETE SET NULL`). Los materiales existentes se clasifican por nombre (`carretel`, `alambre`); el resto queda en Otros y se corrige a mano.
+- **Categorías: lista fija** (`config/categorias-stock.js`), no editable desde la app. Agregar una implica tocar el config, el CHECK y los desplegables de `stock.html`/`stock-mp.html`.
+- **Proveedor asignado: solo de referencia.** No restringe compras ni pedidos. Se muestra y se filtra en Stock y en el catálogo, y en Pedidos a proveedores los materiales asignados al proveedor elegido salen primero. `facturas-compra` no lo asigna solo.
+- En Stock, la columna Proveedor muestra el asignado; si no hay, el último al que se le compró (en gris, "última compra"). El filtro `proveedor_id` de `GET /api/stock` y de `GET /api/materias-primas` ahora matchea asignado **o** proveedor que ya vendió el material.
+- El operario ve la categoría pero no el proveedor (`proveedor_asignado_*` está en `CAMPOS_CONTABLES`).
+- Pendiente: aplicar la migración en local y en Neon (antes de deployar: sin ella falla `GET /api/stock`).
 
 ## Evolución de precios de compra + fix de bugs del modal de precios (29/09/2026)
 

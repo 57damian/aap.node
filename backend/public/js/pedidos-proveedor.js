@@ -44,12 +44,37 @@
     }
   }
 
+  function opcionMateriaPrima(mp) {
+    return '<option value="' + mp.id + '" data-unidad="' + esc(mp.unidad_medida || 'UNI') + '">' +
+      esc(mp.codigo ? mp.codigo + ' — ' + mp.nombre : mp.nombre) + '</option>';
+  }
+
+  // Con un proveedor elegido, los materiales que tienen asignado a ese
+  // proveedor salen primero, en su propio grupo (02/10/2026). Es solo una
+  // sugerencia: el resto de los materiales sigue disponible, porque se le
+  // puede pedir cualquier material a cualquier proveedor.
   function opcionesMateriaPrima() {
-    return '<option value="">Elegí un material…</option>' +
-      materiasPrimas.map(function (mp) {
-        return '<option value="' + mp.id + '" data-unidad="' + esc(mp.unidad_medida || 'UNI') + '">' +
-          esc(mp.codigo ? mp.codigo + ' — ' + mp.nombre : mp.nombre) + '</option>';
-      }).join('');
+    var proveedorId = $('pp_proveedor_id') ? $('pp_proveedor_id').value : '';
+    var asignados = proveedorId
+      ? materiasPrimas.filter(function (mp) { return String(mp.proveedor_asignado_id) === proveedorId; })
+      : [];
+    var vacio = '<option value="">Elegí un material…</option>';
+    if (!asignados.length) return vacio + materiasPrimas.map(opcionMateriaPrima).join('');
+    var resto = materiasPrimas.filter(function (mp) { return asignados.indexOf(mp) === -1; });
+    return vacio +
+      '<optgroup label="Asignados a este proveedor">' + asignados.map(opcionMateriaPrima).join('') + '</optgroup>' +
+      (resto.length ? '<optgroup label="Otros materiales">' + resto.map(opcionMateriaPrima).join('') + '</optgroup>' : '');
+  }
+
+  // Al cambiar de proveedor se rearman las opciones de las filas ya cargadas,
+  // sin perder lo que ya se eligió en cada una.
+  function refrescarOpcionesMateriaPrima() {
+    var filas = $('pp_itemsBody').querySelectorAll('[data-campo="materia_prima_id"]');
+    Array.prototype.forEach.call(filas, function (select) {
+      var elegido = select.value;
+      select.innerHTML = opcionesMateriaPrima();
+      select.value = elegido;
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -284,6 +309,7 @@
   /* ------------------------------------------------------------------ */
   $('pedidoForm').addEventListener('submit', handleSubmitPedido);
   $('btnAgregarItemPedido').addEventListener('click', agregarFilaItem);
+  $('pp_proveedor_id').addEventListener('change', refrescarOpcionesMateriaPrima);
 
   cargarProveedoresSelect();
   cargarMateriasPrimas().then(function () { resetFormPedido(); });

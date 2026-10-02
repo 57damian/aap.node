@@ -106,7 +106,9 @@ async function cargarStock() {
         const proveedor = document.getElementById('filtroProveedor')?.value;
         const estado = document.getElementById('filtroEstadoStock')?.value;
         const search = document.getElementById('searchInput')?.value;
-        
+        const categoria = document.getElementById('filtroCategoria')?.value;
+
+        if (categoria) params.append('categoria', categoria);
         if (proveedor) params.append('proveedor_id', proveedor);
         if (estado) params.append('estado', estado);
         if (search) params.append('search', search);
@@ -143,12 +145,33 @@ function renderizarVariacionPrecio(s) {
     return ` <span class="${clase}" title="Antes: ${antes}">${signo} ${Math.abs(valor).toFixed(1)}%</span>`;
 }
 
+// Nombres de las categorías (misma lista que config/categorias-stock.js).
+const NOMBRES_CATEGORIA = {
+    CARRETELES: 'Carreteles',
+    ALAMBRES_COBRE: 'Alambres de cobre',
+    OTROS: 'Otros'
+};
+
+function escStock(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Columna Proveedor: el proveedor asignado al material (02/10/2026). Si no
+// tiene asignado, se muestra el último al que se le compró, en gris y aclarado,
+// para que no se confunda con una asignación.
+function renderizarProveedorStock(s) {
+    if (s.proveedor_asignado_nombre) return escStock(s.proveedor_asignado_nombre);
+    if (s.proveedor_nombre) return `<span title="Último proveedor al que se le compró (no hay uno asignado)">${escStock(s.proveedor_nombre)} <small>(última compra)</small></span>`;
+    return '—';
+}
+
 // Renderizar tabla de stock
 function renderizarTablaStock(stock) {
     const tbody = document.getElementById('stockTableBody');
 
     if (!stock || stock.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
             'No hay materias primas para este filtro',
             'Probá limpiar los filtros o cargá materias primas nuevas.',
             { txt: 'Administrar materiales', url: 'stock-mp.html' })}</td></tr>`;
@@ -165,10 +188,11 @@ function renderizarTablaStock(stock) {
         return `
             <tr>
                 <td><strong>${s.nombre || '—'}</strong>${s.codigo ? ' <span class="muted">' + s.codigo + '</span>' : ''}</td>
+                <td class="muted solo-escritorio" data-label="Categoría">${NOMBRES_CATEGORIA[s.categoria] || '—'}</td>
                 <td class="num ${actual === 0 ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')} ${unidad}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
                 <td class="num" data-label="Último precio">${formatearMoneda(s.ultimo_precio || 0)}${renderizarVariacionPrecio(s)}</td>
-                <td class="muted solo-escritorio" data-label="Proveedor">${s.proveedor_nombre || '—'}</td>
+                <td class="muted solo-escritorio" data-label="Proveedor">${renderizarProveedorStock(s)}</td>
                 <td data-label="Estado">${Shell.pill(estado)}</td>
                 <td class="num">
                     <button class="b b-ghost b-sm" onclick="abrirModalAjuste(${s.articulo_id}, '${nombreSeguro}', ${actual})">Ajustar</button>
@@ -534,6 +558,7 @@ async function verPrecios(articuloId) {
 
 // Limpiar filtros
 function limpiarFiltros() {
+    document.getElementById('filtroCategoria').value = '';
     document.getElementById('filtroProveedor').value = '';
     document.getElementById('filtroEstadoStock').value = '';
     document.getElementById('searchInput').value = '';
@@ -571,6 +596,9 @@ document.addEventListener('DOMContentLoaded', () => {
       cargarStock();
     });
   });
+
+  // La categoría se aplica al elegirla, sin tener que ir hasta "Aplicar"
+  document.getElementById('filtroCategoria')?.addEventListener('change', () => cargarStock());
 
   // Buscar con Enter, sin tener que ir hasta el botón
   document.getElementById('searchInput')?.addEventListener('keydown', e => {

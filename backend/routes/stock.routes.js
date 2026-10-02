@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin, adminYOperario } = require('../middlewares/auth');
 const { segunRol } = require('../services/vista-operario');
+const { esCategoriaValida } = require('../config/categorias-stock');
 
 router.use(verificarToken);
 
@@ -29,13 +30,20 @@ const LECTURA = adminYOperario;
  */
 router.get('/', LECTURA, async (req, res) => {
   try {
-    const { proveedor_id, estado, search } = req.query;
+    const { proveedor_id, estado, search, categoria } = req.query;
+
+    if (categoria && !esCategoriaValida(categoria)) {
+      return res.status(400).json({ error: 'Categoría inválida' });
+    }
 
     let query = `
       SELECT
         mp.id as articulo_id,
         mp.codigo,
         mp.nombre,
+        mp.categoria,
+        mp.proveedor_id as proveedor_asignado_id,
+        pa.nombre as proveedor_asignado_nombre,
         mp.stock_actual,
         mp.stock_minimo,
         mp.ubicacion,
@@ -47,6 +55,7 @@ router.get('/', LECTURA, async (req, res) => {
         ultima_variacion.precio_anterior as variacion_precio_anterior,
         ultima_variacion.fecha_cambio as variacion_fecha
       FROM materias_primas mp
+      LEFT JOIN proveedores pa ON pa.id = mp.proveedor_id
       LEFT JOIN LATERAL (
         SELECT p.nombre as proveedor_nombre
         FROM stock_movimientos sm
@@ -71,11 +80,19 @@ router.get('/', LECTURA, async (req, res) => {
     const params = [];
     let paramIndex = 1;
 
+    if (categoria) {
+      query += ` AND mp.categoria = $${paramIndex}`;
+      params.push(categoria);
+      paramIndex++;
+    }
+
     if (proveedor_id) {
-      query += ` AND EXISTS (
+      // Proveedor asignado al material, o proveedor al que ya se le compró
+      // (02/10/2026: antes solo valía lo segundo).
+      query += ` AND (mp.proveedor_id = $${paramIndex} OR EXISTS (
         SELECT 1 FROM stock_movimientos sm2
         WHERE sm2.materia_prima_id = mp.id AND sm2.proveedor_id = $${paramIndex}
-      )`;
+      ))`;
       params.push(proveedor_id);
       paramIndex++;
     }

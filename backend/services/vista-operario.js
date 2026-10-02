@@ -22,6 +22,7 @@ const CAMPOS_CONTABLES = [
   'valor_total', 'valor_stock', 'valorizado',
   'subtotal', 'total', 'importe', 'monto',
   'proveedor_id', 'proveedor_nombre', 'proveedor',
+  'proveedor_asignado_id', 'proveedor_asignado_nombre',
   'fecha_ultima_compra', 'dolar', 'cotizacion'
 ];
 

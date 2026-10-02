@@ -63,6 +63,17 @@
         <label for="searchInput">Buscar</label>
         <input class="input" type="text" id="searchInput" placeholder="Código o nombre…">
       </div>
+      <!-- Lista fija: la misma que config/categorias-stock.js y stock-mp.html.
+           Se aplica al elegir, sin apretar "Aplicar". -->
+      <div class="field">
+        <label for="filtroCategoria">Categoría</label>
+        <select class="input" id="filtroCategoria">
+          <option value="">Todas</option>
+          <option value="CARRETELES">Carreteles</option>
+          <option value="ALAMBRES_COBRE">Alambres de cobre</option>
+          <option value="OTROS">Otros</option>
+        </select>
+      </div>
       <div class="field">
         <label for="filtroProveedor">Proveedor</label>
         <select class="input" id="filtroProveedor">
@@ -89,6 +100,7 @@
         <thead>
           <tr>
             <th>Materia prima</th>
+            <th class="solo-escritorio">Categoría</th>
             <th class="num">Stock</th>
             <th class="num solo-escritorio">Mínimo</th>
             <th class="num">Último precio
@@ -100,7 +112,7 @@
           </tr>
         </thead>
         <tbody id="stockTableBody">
-          <tr><td colspan="7" class="muted">Cargando…</td></tr>
+          <tr><td colspan="8" class="muted">Cargando…</td></tr>
         </tbody>
       </table>
     </div></div></div>
