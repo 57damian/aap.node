@@ -56,6 +56,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnVerHistorialPdf').addEventListener('click', verHistorialPdf);
   $('btnCerrarDrawer').addEventListener('click', cerrarDrawer);
   $('drawerBg').addEventListener('click', cerrarDrawer);
+  $('drawerCuerpo').addEventListener('click', clicEnDrawer);
+  $('drawerCuerpo').addEventListener('change', (e) => {
+    if (e.target.matches('#ecDesde, #ecHasta, #ecSoloPend')) cargarEstadoCuenta();
+  });
 
   await cargarProveedores();
   await cargarTodo();
@@ -170,14 +174,35 @@ async function cargarDeuda() {
 
 /* ---------------------------------------------------------------------
  * Ficha del proveedor (panel lateral)
+ * Dos solapas, igual que la ficha del cliente en Cobros: "Estado de cuenta"
+ * (una línea por factura, con los pagos imputados al expandir) y "Cuenta
+ * corriente" (movimientos cronológicos). Nunca dos tablas de facturas a la vez.
  * ------------------------------------------------------------------- */
+const ec = {
+  proveedorId: null,
+  datos: null,
+  abiertas: new Set()   // ids de factura con los pagos desplegados
+};
+
+function textoAtraso(dias) {
+  if (dias === null || dias === undefined) return '—';
+  const d = Number(dias);
+  if (d > 0) return `<span class="neg">${d} d</span>`;
+  if (d === 0) return '<span class="neg">vence hoy</span>';
+  return `<span class="muted">en ${Math.abs(d)} d</span>`;
+}
+
 async function verProveedor(id) {
-  abrirDrawer('Cargando...', '', '');
+  abrirDrawer('Cargando...', '', '', { fijo: true });
+  ec.proveedorId = id;
+  ec.abiertas = new Set();
+
   try {
     const [ficha, cc] = await Promise.all([
-      apiFetch(`${API}/proveedores/${id}?solo_pendientes=false`),
+      apiFetch(`${API}/proveedores/${id}`),
       apiFetch(`${API}/proveedores/${id}/cuenta-corriente`)
     ]);
+    if (id !== ec.proveedorId) return;   // el usuario abrió otro proveedor mientras tanto
     const t = ficha.totales;
 
     const avisoExceso = num(t.exceso_pagado) > 0 ? `
@@ -195,77 +220,285 @@ async function verProveedor(id) {
     abrirDrawer(ficha.proveedor.nombre,
       `${esc(ficha.proveedor.cuit || 'sin CUIT')} · ${ficha.proveedor.dias_credito || 0} días de crédito`,
       `
-      ${avisoExceso}${avisoValores}
-      <div class="kpi-row">
-        <div class="kpi"><div class="kpi-k">Saldo</div><div class="kpi-v">${Shell.money(t.saldo)}</div></div>
-        <div class="kpi is-warning"><div class="kpi-k">Vencido</div><div class="kpi-v">${Shell.money(t.vencido)}</div></div>
-        <div class="kpi is-info"><div class="kpi-k">En valores</div><div class="kpi-v">${Shell.money(t.en_valores)}</div></div>
-        <div class="kpi is-success"><div class="kpi-k">A favor</div><div class="kpi-v">${Shell.money(t.saldo_a_favor)}</div></div>
+      <div class="dtabs-bar">
+        <div class="tabs" role="tablist">
+          <button type="button" class="dtab active" data-dtab="estado">Estado de cuenta</button>
+          <button type="button" class="dtab" data-dtab="cc">Cuenta corriente</button>
+        </div>
+        <button class="b b-primary b-sm" onclick="pagarA(${id})">Registrar un pago</button>
       </div>
 
-      <div class="panel">
-        <div class="panel-head">Facturas</div>
-        <div class="panel-body flush"><div class="table-wrap">
-          <table class="t">
-            <thead><tr><th>Factura</th><th>Emisión</th><th>Vencimiento</th>
-              <th class="num">Total</th><th class="num">Pagado</th><th class="num">Saldo</th><th>Estado</th></tr></thead>
-            <tbody>${ficha.facturas.length ? ficha.facturas.map(f => `
-              <tr>
-                <td><strong>${esc(f.numero_factura)}</strong></td>
-                <td data-label="Emisión">${Shell.fecha(f.fecha)}</td>
-                <td data-label="Vencimiento">${Shell.fecha(f.fecha_vencimiento)}${f.dias_atraso > 0 ? ` <span class="neg">(${f.dias_atraso} d)</span>` : ''}</td>
-                <td class="num" data-label="Total">${Shell.money(f.total)}</td>
-                <td class="num" data-label="Pagado">${Shell.money(f.pagado)}</td>
-                <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
-                <td data-label="Estado">${Shell.pill(f.estado)}</td>
-              </tr>`).join('') : `<tr><td colspan="7">${Shell.vacio('Sin facturas', '')}</td></tr>`}</tbody>
-          </table>
-        </div></div>
-      </div>
+      <div class="dscroll">
+        <div class="dpane active" id="dpane-estado">
+          <div class="ec-filtros">
+            <label class="field"><span>Facturas desde</span><input type="date" id="ecDesde"></label>
+            <label class="field"><span>Hasta</span><input type="date" id="ecHasta"></label>
+            <label class="ec-check"><input type="checkbox" id="ecSoloPend"> Solo pendientes de pago</label>
+            <div class="ec-acciones">
+              <button type="button" class="b b-ghost b-sm" id="ecLimpiar">Limpiar</button>
+              <button type="button" class="b b-ghost b-sm" id="ecCsv">Exportar CSV</button>
+              <button type="button" class="b b-primary b-sm" id="ecPdf">PDF</button>
+              <label class="ec-check" title="Si lo destildás, el PDF trae solo las facturas, sin los pagos de cada una">
+                <input type="checkbox" id="ecDetalle" checked> con detalle de pagos</label>
+            </div>
+          </div>
+          <div id="ecResultado"><div class="muted" style="padding:16px">Cargando…</div></div>
+        </div>
 
-      ${ficha.cheques_a_debitar.length ? `
-      <div class="panel">
-        <div class="panel-head">Cheques entregados sin debitar</div>
-        <div class="panel-body flush"><div class="table-wrap">
-          <table class="t">
-            <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Importe</th><th>Fecha de débito</th></tr></thead>
-            <tbody>${ficha.cheques_a_debitar.map(c => `
-              <tr>
-                <td><strong>${esc(c.cheque_numero || 's/n')}</strong> ${c.tipo === 'CHEQUE_ENDOSADO' ? Shell.pill('ENTREGADO') : ''}</td>
-                <td data-label="Banco">${esc(c.cheque_banco || '—')}</td>
-                <td class="num" data-label="Importe">${Shell.money(c.monto)}</td>
-                <td data-label="Fecha de débito">${Shell.fecha(c.cheque_fecha_cobro)}${c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
-              </tr>`).join('')}</tbody>
-          </table>
-        </div></div>
-      </div>` : ''}
+        <div class="dpane" id="dpane-cc">
+          ${avisoExceso}${avisoValores}
+          <div class="kpi-row">
+            <div class="kpi"><div class="kpi-k">Saldo</div><div class="kpi-v">${Shell.money(t.saldo)}</div></div>
+            <div class="kpi is-warning"><div class="kpi-k">Vencido</div><div class="kpi-v">${Shell.money(t.vencido)}</div></div>
+            <div class="kpi is-info"><div class="kpi-k">En valores</div><div class="kpi-v">${Shell.money(t.en_valores)}</div></div>
+            <div class="kpi is-success"><div class="kpi-k">A favor</div><div class="kpi-v">${Shell.money(t.saldo_a_favor)}</div></div>
+          </div>
 
-      <div class="panel">
-        <div class="panel-head">Cuenta corriente <button type="button" class="ayuda" data-ayuda="cuenta_corriente">?</button></div>
-        <div class="panel-body flush"><div class="table-wrap">
-          <table class="t">
-            <thead><tr><th>Fecha</th><th>Movimiento</th><th>Comprobante</th><th>Detalle</th>
-              <th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
-            <tbody>${cc.movimientos.length ? cc.movimientos.map(m => `
-              <tr>
-                <td>${Shell.fecha(m.fecha)}</td>
-                <td data-label="Movimiento">${Shell.pill(m.tipo)}</td>
-                <td data-label="Comprobante">${esc(m.comprobante)}</td>
-                <td class="muted" data-label="Detalle">${esc(m.detalle || '')}</td>
-                <td class="num" data-label="Debe">${num(m.debe) ? Shell.money(m.debe) : '—'}</td>
-                <td class="num" data-label="Haber">${num(m.haber) ? Shell.money(m.haber) : '—'}</td>
-                <td class="num" data-label="Saldo"><strong>${Shell.money(m.saldo_acumulado)}</strong></td>
-              </tr>`).join('') : `<tr><td colspan="7">${Shell.vacio('Sin movimientos', '')}</td></tr>`}</tbody>
-          </table>
-        </div></div>
-      </div>`);
+          ${ficha.cheques_a_debitar.length ? `
+          <div class="panel">
+            <div class="panel-head">Cheques entregados sin debitar</div>
+            <div class="panel-body flush"><div class="table-wrap">
+              <table class="t">
+                <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Importe</th><th>Fecha de débito</th></tr></thead>
+                <tbody>${ficha.cheques_a_debitar.map(c => `
+                  <tr>
+                    <td><strong>${esc(c.cheque_numero || 's/n')}</strong> ${c.tipo === 'CHEQUE_ENDOSADO' ? Shell.pill('ENTREGADO') : ''}</td>
+                    <td data-label="Banco">${esc(c.cheque_banco || '—')}</td>
+                    <td class="num" data-label="Importe">${Shell.money(c.monto)}</td>
+                    <td data-label="Fecha de débito">${Shell.fecha(c.cheque_fecha_cobro)}${c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
+                  </tr>`).join('')}</tbody>
+              </table>
+            </div></div>
+          </div>` : ''}
+
+          <div class="panel">
+            <div class="panel-head">Cuenta corriente <button type="button" class="ayuda" data-ayuda="cuenta_corriente">?</button></div>
+            <div class="panel-body flush"><div class="table-wrap">
+              <table class="t">
+                <thead><tr><th>Fecha</th><th>Movimiento</th><th>Comprobante</th><th>Detalle</th>
+                  <th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
+                <tbody>${cc.movimientos.length ? cc.movimientos.map(m => `
+                  <tr>
+                    <td>${Shell.fecha(m.fecha)}</td>
+                    <td data-label="Movimiento">${Shell.pill(m.tipo)}</td>
+                    <td data-label="Comprobante">${esc(m.comprobante)}</td>
+                    <td class="muted" data-label="Detalle">${esc(m.detalle || '')}</td>
+                    <td class="num" data-label="Debe">${num(m.debe) ? Shell.money(m.debe) : '—'}</td>
+                    <td class="num" data-label="Haber">${num(m.haber) ? Shell.money(m.haber) : '—'}</td>
+                    <td class="num" data-label="Saldo"><strong>${Shell.money(m.saldo_acumulado)}</strong></td>
+                  </tr>`).join('') : `<tr><td colspan="7">${Shell.vacio('Sin movimientos', '')}</td></tr>`}</tbody>
+              </table>
+            </div></div>
+          </div>
+        </div>
+      </div>`, { fijo: true });
+
+    await cargarEstadoCuenta();
   } catch (err) {
     abrirDrawer('Error', '', `<div class="notice notice-err">No se pudo cargar la ficha de este proveedor.</div>`);
     Shell.error(err, 'No se pudo cargar la ficha del proveedor');
   }
 }
 
-function abrirDrawer(titulo, meta, cuerpo) {
+function paramsEstadoCuenta() {
+  const p = new URLSearchParams();
+  if ($('ecDesde').value) p.set('desde', $('ecDesde').value);
+  if ($('ecHasta').value) p.set('hasta', $('ecHasta').value);
+  if ($('ecSoloPend').checked) p.set('solo_pendientes', 'true');
+  return p;
+}
+
+async function cargarEstadoCuenta() {
+  const proveedorId = ec.proveedorId;
+  ec.abiertas = new Set();   // al cambiar el filtro las filas abiertas ya no son las mismas
+  try {
+    const datos = await apiFetch(`${API}/proveedores/${proveedorId}/estado-cuenta?${paramsEstadoCuenta()}`);
+    if (proveedorId !== ec.proveedorId) return;   // el usuario abrió otro proveedor mientras tanto
+    ec.datos = datos;
+    pintarEstadoCuenta();
+  } catch (err) {
+    Shell.error(err, 'No se pudo cargar el estado de cuenta');
+    $('ecResultado').innerHTML = '<div class="notice notice-err">No se pudo cargar el estado de cuenta.</div>';
+  }
+}
+
+function pintarEstadoCuenta() {
+  const { resumen: r, facturas, a_cuenta } = ec.datos;
+  const hayExceso = facturas.some(f => f.estado === 'SOBRE_PAGADA');
+
+  $('ecResultado').innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-k">Facturado</div><div class="kpi-v">${Shell.money(r.facturado)}</div></div>
+      <div class="kpi is-success"><div class="kpi-k">Pagado</div><div class="kpi-v">${Shell.money(r.pagado)}</div>
+        ${num(r.en_valores) > 0 ? `<div class="kpi-sub">${Shell.money(r.en_valores)} en cheques sin debitar</div>` : ''}</div>
+      <div class="kpi"><div class="kpi-k">Por pagar</div><div class="kpi-v">${Shell.money(r.por_pagar)}</div></div>
+      <div class="kpi ${num(r.vencido) > 0 ? 'is-warning' : ''}"><div class="kpi-k">Vencido</div><div class="kpi-v">${Shell.money(r.vencido)}</div></div>
+    </div>
+
+    ${hayExceso ? `
+    <div class="notice notice-warn">
+      Hay factura(s) pagadas de más: se imputó más plata de la que facturaban. Revisá las marcadas
+      <strong>pagada de más</strong> y deshacé la imputación sobrante desde el pago correspondiente.
+    </div>` : ''}
+
+    <div class="panel">
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t ec-tabla">
+            <thead><tr>
+              <th>Factura</th><th>Fecha</th><th>Vencimiento</th>
+              <th class="num">Total</th><th class="num">Pagado</th><th class="num">Saldo</th>
+              <th>Estado</th><th>Pagos</th>
+            </tr></thead>
+            <tbody id="ecCuerpo"></tbody>
+            ${facturas.length ? `
+            <tfoot><tr class="ec-total">
+              <td colspan="3">Totales</td>
+              <td class="num">${Shell.money(r.facturado)}</td>
+              <td class="num">${Shell.money(r.pagado)}</td>
+              <td class="num">${Shell.money(r.por_pagar)}</td>
+              <td colspan="2"></td>
+            </tr></tfoot>` : ''}
+          </table>
+        </div>
+      </div>
+    </div>
+
+    ${num(a_cuenta) > 0 ? `<div class="muted" style="font-size:13px">Pagos a cuenta sin imputar a ninguna factura: <strong>${Shell.money(a_cuenta)}</strong></div>` : ''}
+    <div class="muted" style="font-size:12px">
+      Ordenado por urgencia: primero lo vencido. Tocá "pagos" para ver qué pago se imputó a cada factura y por cuánto.
+    </div>`;
+
+  pintarFilasEstadoCuenta();
+}
+
+function pintarFilasEstadoCuenta() {
+  const { facturas } = ec.datos;
+  const cuerpo = $('ecCuerpo');
+  if (!facturas.length) {
+    cuerpo.innerHTML = `<tr><td colspan="8">${Shell.vacio('Sin facturas', 'No hay facturas para este filtro.')}</td></tr>`;
+    return;
+  }
+
+  cuerpo.innerHTML = facturas.map(f => {
+    const nPagos = f.pagos.length;
+    const abierta = ec.abiertas.has(f.id);
+    const valores = num(f.en_valores) > 0.005
+      ? `<div class="ec-gestion">${Shell.money(f.en_valores)} en cheques sin debitar</div>` : '';
+
+    let html = `
+      <tr class="ec-fila${abierta ? ' abierta' : ''}">
+        <td><a href="#" class="ec-link" data-pdf="api/facturas-compra/${f.id}/pdf" title="Ver el PDF de la factura"><strong>${esc(f.numero_factura)}</strong></a>
+            <span class="muted">${esc(f.tipo_factura || '')}</span></td>
+        <td data-label="Fecha">${Shell.fecha(f.fecha)}</td>
+        <td data-label="Vencimiento">${Shell.fecha(f.fecha_vencimiento)} ${num(f.saldo) > 0.005 ? textoAtraso(f.dias_atraso) : ''}</td>
+        <td class="num" data-label="Total">${Shell.money(f.total)}</td>
+        <td class="num" data-label="Pagado">${Shell.money(f.pagado)}${valores}</td>
+        <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
+        <td data-label="Estado">${Shell.pill(f.estado)}</td>
+        <td data-label="Pagos">${nPagos
+          ? `<button type="button" class="ec-toggle" data-ec-toggle="${f.id}" aria-expanded="${abierta}">
+               <span class="ec-flecha">${abierta ? '▼' : '▶'}</span> ${nPagos}${nPagos === 1 ? ' pago' : ' pagos'}</button>`
+          : '<span class="muted">—</span>'}</td>
+      </tr>`;
+
+    if (abierta) {
+      f.pagos.forEach(p => {
+        const forma = [p.referencia ? esc(p.referencia) : null, esc((p.formas || '').replace(/_/g, ' '))].filter(Boolean).join(' · ');
+        html += `
+      <tr class="ec-hijo">
+        <td><a href="#" class="ec-link" data-pago="${p.pago_id}" title="Ver el detalle del pago">Pago #${p.pago_id}</a></td>
+        <td data-label="Fecha">${Shell.fecha(p.fecha)}</td>
+        <td colspan="2" class="muted">${forma}</td>
+        <td class="num" data-label="Imputado">${Shell.money(p.monto_aplicado)}</td>
+        <td></td>
+        <td data-label="Estado">${Shell.pill(p.estado_forma)}</td>
+        <td></td>
+      </tr>`;
+      });
+    }
+    return html;
+  }).join('');
+}
+
+function exportarEstadoCuentaCSV() {
+  if (!ec.datos || !ec.datos.facturas.length) {
+    Shell.toast('err', 'No hay datos para exportar');
+    return;
+  }
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const filas = [['Factura', 'Fecha', 'Vencimiento', 'Total', 'Pagado', 'En valores', 'Saldo', 'Estado',
+    'Pago', 'Fecha de pago', 'Importe imputado', 'Forma de pago']];
+
+  ec.datos.facturas.forEach(f => {
+    const base = [q(f.numero_factura), f.fecha, f.fecha_vencimiento, f.total, f.pagado, f.en_valores, f.saldo, f.estado];
+    if (!f.pagos.length) filas.push([...base, '', '', '', '']);
+    f.pagos.forEach(p => filas.push([...base, `#${p.pago_id}`, p.fecha, p.monto_aplicado,
+      q([p.formas, p.estado_forma].filter(Boolean).join(' · '))]));
+  });
+
+  const csv = 'data:text/csv;charset=utf-8,' + filas.map(f => f.join(',')).join('\n');
+  const link = document.createElement('a');
+  link.href = encodeURI(csv);
+  link.download = `estado-cuenta-proveedor-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  Shell.toast('ok', 'Estado de cuenta exportado');
+}
+
+async function verEstadoCuentaPdf() {
+  try {
+    const p = paramsEstadoCuenta();
+    if (!$('ecDetalle').checked) p.set('detalle', 'false');
+    await verArchivoProtegido(`api/pagos-proveedores/proveedores/${ec.proveedorId}/estado-cuenta/pdf?${p}`);
+  } catch (err) {
+    Shell.error(err, 'No se pudo abrir el PDF');
+  }
+}
+
+// Un solo manejador para todo lo que se pinta dentro del panel lateral.
+function clicEnDrawer(e) {
+  const tab = e.target.closest('[data-dtab]');
+  if (tab) {
+    document.querySelectorAll('#drawerCuerpo .dtab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('#drawerCuerpo .dpane').forEach(p =>
+      p.classList.toggle('active', p.id === 'dpane-' + tab.dataset.dtab));
+    return;
+  }
+  const toggle = e.target.closest('[data-ec-toggle]');
+  if (toggle) {
+    const id = Number(toggle.dataset.ecToggle);
+    if (ec.abiertas.has(id)) ec.abiertas.delete(id); else ec.abiertas.add(id);
+    pintarFilasEstadoCuenta();
+    return;
+  }
+  const pdf = e.target.closest('[data-pdf]');
+  if (pdf) {
+    e.preventDefault();
+    verArchivoProtegido(pdf.dataset.pdf).catch(err => Shell.error(err, 'No se pudo abrir el PDF'));
+    return;
+  }
+  const pago = e.target.closest('[data-pago]');
+  if (pago) {
+    e.preventDefault();
+    verPago(Number(pago.dataset.pago), ec.proveedorId);
+    return;
+  }
+  const volver = e.target.closest('[data-volver]');
+  if (volver) return verProveedor(Number(volver.dataset.volver));
+  if (e.target.closest('#ecCsv')) return exportarEstadoCuentaCSV();
+  if (e.target.closest('#ecPdf')) return verEstadoCuentaPdf();
+  if (e.target.closest('#ecLimpiar')) {
+    $('ecDesde').value = ''; $('ecHasta').value = ''; $('ecSoloPend').checked = false;
+    cargarEstadoCuenta();
+  }
+}
+
+/* `fijo`: la ficha del proveedor maneja su propio scroll (barra de solapas
+ * fija arriba); el detalle de un pago es una página corrida común. */
+function abrirDrawer(titulo, meta, cuerpo, { fijo = false } = {}) {
+  $('drawer').classList.toggle('drawer-fijo', fijo);
   $('drawerTitulo').textContent = titulo;
   $('drawerMeta').textContent = meta;
   $('drawerCuerpo').innerHTML = cuerpo;
@@ -276,6 +509,16 @@ function abrirDrawer(titulo, meta, cuerpo) {
 function cerrarDrawer() {
   $('drawer').classList.remove('open');
   $('drawerBg').classList.remove('open');
+}
+
+/* Desde la ficha: pasa a "Registrar pago" con el proveedor ya elegido. */
+function pagarA(proveedorId) {
+  cerrarDrawer();
+  const boton = document.querySelector('.tab[data-tab="pagar"]');
+  mostrarTab('pagar', boton);
+  $('pagoProveedor').value = proveedorId;
+  alCambiarProveedor();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /* ---------------------------------------------------------------------
@@ -876,7 +1119,9 @@ async function verHistorialPdf() {
   }
 }
 
-async function verPago(id) {
+/* `desdeProveedorId`: si se llegó desde el estado de cuenta de un proveedor,
+ * el detalle ofrece volver a él (si no, se cierra y listo). */
+async function verPago(id, desdeProveedorId) {
   abrirDrawer('Cargando...', '', '');
   try {
     const p = await apiFetch(`${API}/${id}`);
@@ -892,6 +1137,7 @@ async function verPago(id) {
     abrirDrawer(`Pago #${p.id}`,
       `${esc(p.proveedor_nombre || '')} · ${Shell.fecha(p.fecha)} · ${Shell.money(p.monto)}${p.anulado ? ' · ANULADO' : ''}`,
       `
+      ${desdeProveedorId ? `<div><button type="button" class="b b-ghost b-sm" data-volver="${desdeProveedorId}">← Volver a la cuenta</button></div>` : ''}
       ${p.anulado ? `<div class="notice notice-warn">Pago anulado: ${esc(p.motivo_anulacion || 'sin motivo')}</div>` : ''}
       <div class="panel">
         <div class="panel-head">Formas de pago</div>
@@ -921,7 +1167,7 @@ async function verPago(id) {
                 <td data-label="Emisión">${Shell.fecha(a.fecha_emision)}</td>
                 <td class="muted" data-label="Forma">${esc(a.forma_pago.replace(/_/g, ' '))}${a.cheque_numero ? ' ' + esc(a.cheque_numero) : ''}</td>
                 <td class="num" data-label="Importe">${Shell.money(a.monto_aplicado)}</td>
-                <td data-label="">${p.anulado ? '' : `<button class="b b-ghost b-sm" onclick="deshacerImputacion(${a.id}, ${p.id})">Deshacer</button>`}</td>
+                <td data-label="">${p.anulado ? '' : `<button class="b b-ghost b-sm" onclick="deshacerImputacion(${a.id}, ${p.id}, ${desdeProveedorId || 'null'})">Deshacer</button>`}</td>
               </tr>`).join('') : `<tr><td colspan="5">${Shell.vacio('Pago a cuenta, sin imputar', '')}</td></tr>`}</tbody>
           </table>
         </div></div>
@@ -932,14 +1178,14 @@ async function verPago(id) {
   }
 }
 
-async function deshacerImputacion(imputacionId, pagoId) {
+async function deshacerImputacion(imputacionId, pagoId, desdeProveedorId) {
   const ok = await confirmar('Deshacer imputación',
     '¿Deshacer esta imputación? La factura vuelve a quedar con saldo.');
   if (!ok) return;
   try {
     await apiFetch(`${API}/imputaciones/${imputacionId}`, { method: 'DELETE' });
     Shell.toast('ok', 'Imputación deshecha.');
-    await Promise.all([verPago(pagoId), cargarResumen(), cargarDeuda(), cargarHistorial()]);
+    await Promise.all([verPago(pagoId, desdeProveedorId || undefined), cargarResumen(), cargarDeuda(), cargarHistorial()]);
   } catch (err) {
     Shell.error(err, 'No se pudo deshacer la imputación');
   }

@@ -31,9 +31,10 @@ const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const {
   ESTADO_EFECTIVO_ITEM, CTE_FACTURAS_COMPRA, CTE_A_FAVOR_PROV,
   EXCESO_PAGADO, ESTADO_FACTURA_COMPRA,
-  resumenProveedor, cuentaCorrienteProveedor
+  resumenProveedor, cuentaCorrienteProveedor, estadoCuentaProveedor
 } = require('../services/cuenta-proveedor');
-const { fecha: fmtFecha, money } = require('../services/pdf-base');
+const { generarPdfEstadoCuentaProveedor } = require('../services/pdf-estado-cuenta');
+const { nombreArchivo, fecha: fmtFecha, money } = require('../services/pdf-base');
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
 
 const COLS_PDF_PAGOS_PROVEEDORES = [
@@ -245,6 +246,52 @@ router.get('/proveedores/:id/cuenta-corriente', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error en cuenta corriente de proveedor:', err);
     fallar(res, 500, err.message);
+  }
+});
+
+/* Estado de cuenta: una fila por factura de compra con los pagos imputados a
+ * cada una. Filtros: desde/hasta (fecha de factura), solo_pendientes=true. */
+router.get('/proveedores/:id/estado-cuenta', soloAdmin, async (req, res) => {
+  try {
+    const prov = await pool.query('SELECT id, nombre, cuit FROM proveedores WHERE id = $1', [req.params.id]);
+    if (!prov.rows.length) return fallar(res, 404, 'Proveedor no encontrado');
+
+    const datos = await estadoCuentaProveedor(pool, req.params.id, {
+      desde: req.query.desde, hasta: req.query.hasta,
+      soloPendientes: req.query.solo_pendientes === 'true'
+    });
+    res.json({ proveedor: prov.rows[0], ...datos });
+  } catch (err) {
+    console.error('Error en estado de cuenta de proveedor:', err);
+    fallar(res, 500, err.message);
+  }
+});
+
+/* PDF del estado de cuenta (mismos filtros). `detalle=false` deja solo el
+ * resumen y las facturas, sin los pagos de cada una. */
+router.get('/proveedores/:id/estado-cuenta/pdf', soloAdmin, async (req, res) => {
+  const { desde, hasta } = req.query;
+  try {
+    const prov = await pool.query('SELECT id, nombre, cuit FROM proveedores WHERE id = $1', [req.params.id]);
+    if (!prov.rows.length) return fallar(res, 404, 'Proveedor no encontrado');
+
+    const soloPendientes = req.query.solo_pendientes === 'true';
+    const datos = await estadoCuentaProveedor(pool, req.params.id, { desde, hasta, soloPendientes });
+
+    const filtros = [];
+    if (desde || hasta) filtros.push(`Facturas del ${desde ? fmtFecha(desde) : 'inicio'} al ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+    if (soloPendientes) filtros.push('Solo pendientes de pago');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `inline; filename="estado-cuenta-${nombreArchivo(prov.rows[0].nombre, 'proveedor')}.pdf"`);
+    generarPdfEstadoCuentaProveedor({ proveedor: prov.rows[0], ...datos }, {
+      filtrosTexto: filtros.join(' · ') || undefined,
+      detalle: req.query.detalle !== 'false'
+    }, res);
+  } catch (err) {
+    console.error('Error generando PDF de estado de cuenta de proveedor:', err);
+    if (!res.headersSent) fallar(res, 500, err.message);
   }
 });
 

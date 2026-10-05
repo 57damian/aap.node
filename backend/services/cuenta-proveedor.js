@@ -240,6 +240,96 @@ async function cuentaCorrienteProveedor(pool, proveedorId, { desde, hasta } = {}
   });
 }
 
+/** Orden de urgencia del estado de cuenta: primero lo que hay que pagar,
+ * después lo que hay que revisar (SOBRE_PAGADA es un problema de
+ * imputación, no de pago) y al final lo cerrado. */
+const ORDEN_ESTADO_COMPRA = {
+  VENCIDA: 0, PARCIAL: 1, PENDIENTE: 2, SOBRE_PAGADA: 3, PAGADA_EN_VALORES: 4, PAGADA: 5
+};
+
+const num = (v) => parseFloat(v) || 0;
+const r2 = (v) => Math.round(v * 100) / 100;
+
+/**
+ * Estado de cuenta de un proveedor: una fila por factura de compra (vigente)
+ * con los pagos imputados a ella. Espejo de estadoCuenta() de
+ * cuenta-cliente.js: lo usan la pantalla de Pagos a proveedores y el PDF,
+ * así que los dos muestran exactamente lo mismo.
+ * `soloPendientes` deja las facturas con saldo > 0.
+ */
+async function estadoCuentaProveedor(pool, proveedorId, { desde, hasta, soloPendientes } = {}) {
+  const params = [proveedorId];
+  let filtro = '';
+  if (desde) { params.push(desde); filtro += ` AND fs.fecha >= $${params.length}`; }
+  if (hasta) { params.push(hasta); filtro += ` AND fs.fecha <= $${params.length}`; }
+  if (soloPendientes) filtro += ' AND fs.saldo > 0.005';
+
+  const { rows: facturas } = await pool.query(`
+    WITH ${CTE_FACTURAS_COMPRA}
+    SELECT fs.*, ${ESTADO_FACTURA_COMPRA} AS estado
+    FROM facturas_compra_saldo fs
+    WHERE fs.proveedor_id = $1 ${filtro}
+  `, params);
+
+  facturas.sort((a, b) =>
+    (ORDEN_ESTADO_COMPRA[a.estado] - ORDEN_ESTADO_COMPRA[b.estado]) ||
+    (new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)) ||
+    (a.id - b.id));
+
+  const ids = facturas.map(f => f.id);
+  const pagosPorFactura = new Map();
+
+  if (ids.length) {
+    // Un renglón por (factura, pago): si el pago tiene varias formas
+    // imputadas a la misma factura, se suman acá. El estado es el
+    // efectivo: un cheque de cliente endosado vale lo que el original.
+    const { rows: pagos } = await pool.query(`
+      SELECT ap.factura_compra_id AS factura_id, pp.id AS pago_id, pp.referencia, pp.fecha,
+             ROUND(SUM(ap.monto_aplicado), 2) AS monto_aplicado,
+             string_agg(DISTINCT ppi.tipo
+                        || COALESCE(' ' || COALESCE(ppi.cheque_numero, orig.cheque_numero), ''), ' + ') AS formas,
+             CASE
+               WHEN bool_or(est.efectivo = 'RECHAZADO') THEN 'RECHAZADO'
+               WHEN bool_or(est.efectivo = 'ENTREGADO') THEN 'ENTREGADO'
+               WHEN bool_or(est.efectivo = 'DEBITADO')  THEN 'DEBITADO'
+               ELSE 'ANULADO'
+             END AS estado_forma
+      FROM aplicacion_pagos_proveedores ap
+      JOIN pago_proveedor_items ppi ON ppi.id = ap.pago_item_id
+      JOIN pagos_proveedores    pp  ON pp.id  = ppi.pago_id
+      LEFT JOIN pago_items      orig ON orig.id = ppi.pago_item_origen_id
+      CROSS JOIN LATERAL (SELECT ${ESTADO_EFECTIVO_ITEM} AS efectivo) est
+      WHERE ap.factura_compra_id = ANY($1::int[]) AND pp.anulado = false
+      GROUP BY ap.factura_compra_id, pp.id, pp.referencia, pp.fecha
+      ORDER BY pp.fecha ASC, pp.id ASC
+    `, [ids]);
+    pagos.forEach(p => {
+      if (!pagosPorFactura.has(p.factura_id)) pagosPorFactura.set(p.factura_id, []);
+      pagosPorFactura.get(p.factura_id).push(p);
+    });
+  }
+
+  facturas.forEach(f => { f.pagos = pagosPorFactura.get(f.id) || []; });
+
+  // Los totales salen de las mismas filas que se ven (respetan el filtro).
+  const positivas = facturas.filter(f => num(f.saldo) > 0.005);
+  const resumen = {
+    facturado: r2(facturas.reduce((s, f) => s + num(f.total), 0)),
+    pagado: r2(facturas.reduce((s, f) => s + num(f.pagado), 0)),
+    en_valores: r2(facturas.reduce((s, f) => s + num(f.en_valores), 0)),
+    por_pagar: r2(positivas.reduce((s, f) => s + num(f.saldo), 0)),
+    vencido: r2(positivas.filter(f => num(f.dias_atraso) > 0).reduce((s, f) => s + num(f.saldo), 0)),
+    exceso_pagado: r2(facturas.filter(f => num(f.saldo) < -0.005).reduce((s, f) => s - num(f.saldo), 0))
+  };
+
+  const { rows: af } = await pool.query(`
+    WITH ${CTE_A_FAVOR_PROV}
+    SELECT ROUND(GREATEST(COALESCE((SELECT saldo_a_favor FROM a_favor_prov WHERE proveedor_id = $1), 0), 0), 2) AS saldo_a_favor
+  `, [proveedorId]);
+
+  return { resumen, facturas, a_cuenta: num(af[0].saldo_a_favor) };
+}
+
 /** Saldo pendiente de una factura de compra puntual. */
 async function saldoFacturaCompra(clientOrPool, facturaCompraId) {
   const { rows } = await clientOrPool.query(`
@@ -258,5 +348,6 @@ module.exports = {
   ESTADO_FACTURA_COMPRA,
   resumenProveedor,
   cuentaCorrienteProveedor,
+  estadoCuentaProveedor,
   saldoFacturaCompra
 };
