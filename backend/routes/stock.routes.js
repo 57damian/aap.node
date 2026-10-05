@@ -29,7 +29,7 @@ const LECTURA = adminYOperario;
  */
 router.get('/', LECTURA, async (req, res) => {
   try {
-    const { proveedor_id, estado, search } = req.query;
+    const { proveedor_id, estado, search, categoria_id } = req.query;
 
     let query = `
       SELECT
@@ -42,11 +42,14 @@ router.get('/', LECTURA, async (req, res) => {
         mp.unidad_medida,
         mp.precio_referencia as ultimo_precio,
         mp.fecha_ultima_compra,
+        mp.categoria_id,
+        cat.nombre as categoria_nombre,
         ultimo_mov.proveedor_nombre,
         ultima_variacion.variacion_porcentaje as variacion_precio,
         ultima_variacion.precio_anterior as variacion_precio_anterior,
         ultima_variacion.fecha_cambio as variacion_fecha
       FROM materias_primas mp
+      LEFT JOIN categorias_materia_prima cat ON cat.id = mp.categoria_id
       LEFT JOIN LATERAL (
         SELECT p.nombre as proveedor_nombre
         FROM stock_movimientos sm
@@ -80,12 +83,23 @@ router.get('/', LECTURA, async (req, res) => {
       paramIndex++;
     }
 
+    // categoria_id=sin → las que no tienen categoría
+    if (categoria_id === 'sin') {
+      query += ` AND mp.categoria_id IS NULL`;
+    } else if (categoria_id) {
+      query += ` AND mp.categoria_id = $${paramIndex}`;
+      params.push(parseInt(categoria_id, 10) || 0);
+      paramIndex++;
+    }
+
     if (estado) {
-      if (estado === 'CRITICO') {
+      // La pantalla lo manda en minúscula (critico/bajo/normal).
+      const estadoUp = String(estado).toUpperCase();
+      if (estadoUp === 'CRITICO') {
         query += ` AND mp.stock_actual = 0`;
-      } else if (estado === 'BAJO') {
+      } else if (estadoUp === 'BAJO') {
         query += ` AND mp.stock_actual > 0 AND mp.stock_actual <= mp.stock_minimo`;
-      } else if (estado === 'NORMAL') {
+      } else if (estadoUp === 'NORMAL') {
         query += ` AND mp.stock_actual > mp.stock_minimo`;
       }
     }

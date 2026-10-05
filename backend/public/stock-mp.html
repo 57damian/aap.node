@@ -16,6 +16,7 @@
       <p>El catálogo de materias primas: alta, datos y precio de referencia</p>
     </div>
     <div class="page-head-actions">
+      <button class="b b-ghost" onclick="abrirCategorias()">Categorías</button>
       <button class="b b-primary" onclick="abrirModalCrear()">Nueva materia prima</button>
     </div>
   </div>
@@ -34,6 +35,12 @@
       <label for="searchInput">Buscar material</label>
       <input class="input" type="text" id="searchInput" placeholder="Código o nombre…">
     </div>
+    <div class="field">
+      <label for="filtroCategoria">Categoría</label>
+      <select class="input" id="filtroCategoria">
+        <option value="">Todas</option>
+      </select>
+    </div>
   </div>
 
   <div class="panel"><div class="panel-body flush"><div class="table-wrap">
@@ -41,6 +48,7 @@
       <thead>
         <tr>
           <th>Materia prima</th>
+          <th class="solo-escritorio">Categoría</th>
           <th class="solo-escritorio">Unidad</th>
           <th class="num">Stock</th>
           <th class="num solo-escritorio">Mínimo</th>
@@ -50,7 +58,7 @@
         </tr>
       </thead>
       <tbody id="materiasPrimasTableBody">
-        <tr><td colspan="7" class="muted">Cargando…</td></tr>
+        <tr><td colspan="8" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>
@@ -74,6 +82,14 @@
           <div class="field">
             <label for="nombre">Nombre</label>
             <input class="input" type="text" id="nombre" required>
+          </div>
+
+          <div class="field">
+            <label for="categoria_id">Categoría <span class="muted">(opcional)</span></label>
+            <select class="input" id="categoria_id">
+              <option value="">Sin categoría</option>
+            </select>
+            <small class="muted">Se administran con el botón "Categorías"</small>
           </div>
 
           <div class="field">
@@ -132,6 +148,45 @@
           <button type="button" class="b b-primary" onclick="guardarMateriaPrima()">Guardar</button>
         </div>
       </form>
+    </div>
+  </dialog>
+
+  <dialog id="categoriasModal" class="panel">
+    <div class="panel-head">
+      <h2>Categorías de materia prima</h2>
+      <div class="page-head-actions">
+        <button class="b b-ghost b-sm" data-cerrar="categoriasModal">Cerrar</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <p class="muted">Sirven para agrupar y filtrar el catálogo y el stock. Si eliminás una categoría, sus materias primas quedan sin categoría.</p>
+      <div class="table-wrap">
+        <table class="t">
+          <thead><tr><th>Nombre</th><th class="num">Materias primas</th><th></th></tr></thead>
+          <tbody id="categoriasBody"></tbody>
+        </table>
+      </div>
+      <div class="filters" style="margin-top:12px">
+        <div class="field grow">
+          <label for="categoriaNueva">Nueva categoría</label>
+          <input class="input" type="text" id="categoriaNueva" maxlength="60" placeholder="Ej: Barniz">
+        </div>
+        <div class="filters-actions">
+          <button type="button" class="b b-primary" id="btnAgregarCategoria" onclick="agregarCategoria()">Agregar</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="categoriaEliminarModal" class="panel">
+    <div class="panel-head"><h2>Eliminar categoría</h2></div>
+    <div class="panel-body">
+      <p id="categoriaEliminarTexto"></p>
+      <input type="hidden" id="categoriaEliminarId">
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="categoriaEliminarModal">Cancelar</button>
+        <button type="button" class="b b-primary" onclick="confirmarEliminarCategoria()">Eliminar</button>
+      </div>
     </div>
   </dialog>
 

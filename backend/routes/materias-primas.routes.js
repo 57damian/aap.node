@@ -29,14 +29,16 @@ router.use(verificarToken);
 // El operario consulta cantidades por GET /api/stock, que sale filtrado.
 router.get('/', soloAdmin, async (req, res) => {
   try {
-    const { search, activo = 'true', proveedor_id, con_stock } = req.query;
+    const { search, activo = 'true', proveedor_id, con_stock, categoria_id } = req.query;
 
     let query = `
       SELECT 
         mp.id, mp.codigo, mp.nombre, mp.descripcion, mp.unidad_medida,
         mp.stock_actual, mp.stock_minimo, mp.ubicacion, mp.activo,
-        mp.precio_referencia as ultimo_precio
+        mp.precio_referencia as ultimo_precio,
+        mp.categoria_id, cat.nombre as categoria_nombre
       FROM materias_primas mp
+      LEFT JOIN categorias_materia_prima cat ON cat.id = mp.categoria_id
       WHERE mp.activo = $1
     `;
     const params = [activo === 'true'];
@@ -61,6 +63,15 @@ router.get('/', soloAdmin, async (req, res) => {
 
     if (con_stock === 'true') {
       query += ` AND mp.stock_actual > 0`;
+    }
+
+    // categoria_id=sin → las que no tienen categoría
+    if (categoria_id === 'sin') {
+      query += ` AND mp.categoria_id IS NULL`;
+    } else if (categoria_id) {
+      query += ` AND mp.categoria_id = $${paramIndex}`;
+      params.push(parseInt(categoria_id, 10) || 0);
+      paramIndex++;
     }
 
     query += ` ORDER BY mp.nombre`;
@@ -194,7 +205,7 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
   router.post('/', soloAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
-      const { codigo, nombre, descripcion, unidad_medida, stock_minimo = 0, ubicacion, precio_referencia } = req.body;
+      const { codigo, nombre, descripcion, unidad_medida, stock_minimo = 0, ubicacion, precio_referencia, categoria_id } = req.body;
 
       if (!nombre || !unidad_medida) {
         return res.status(400).json({ error: 'Nombre y unidad de medida son obligatorios' });
@@ -204,10 +215,10 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
 
       const result = await client.query(`
         INSERT INTO materias_primas 
-          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, categoria_id, activo)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
         RETURNING *
-      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null, precio_referencia || null]);
+      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null, precio_referencia || null, categoria_id || null]);
 
       await client.query('COMMIT');
       res.status(201).json(result.rows[0]);
@@ -228,7 +239,10 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
       const { id } = req.params;
-      const { codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo } = req.body;
+      const { codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, categoria_id } = req.body;
+      // categoria_id puede venir null a propósito (quitar la categoría), por
+      // eso no usa COALESCE como el resto: solo se toca si vino en el body.
+      const cambiaCategoria = Object.prototype.hasOwnProperty.call(req.body, 'categoria_id');
 
       // Verificar que existe
       const check = await client.query('SELECT id FROM materias_primas WHERE id = $1', [id]);
@@ -248,10 +262,11 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
           ubicacion = COALESCE($6, ubicacion),
           precio_referencia = COALESCE($7, precio_referencia),
           activo = COALESCE($8, activo),
+          categoria_id = CASE WHEN $10::boolean THEN $11::integer ELSE categoria_id END,
           actualizado_en = NOW()
         WHERE id = $9
         RETURNING *
-      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id]);
+      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id, cambiaCategoria, categoria_id || null]);
 
       await client.query('COMMIT');
       res.json(result.rows[0]);

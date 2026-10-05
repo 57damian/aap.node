@@ -1,5 +1,7 @@
 // stock-mp.js - ABM de Materias Primas
 let materiasPrimasCache = [];
+let categoriasCache = [];
+let guardandoCategoria = false;
 
 // Formatear moneda
 function formatearMoneda(valor) {
@@ -14,15 +16,153 @@ function formatearMoneda(valor) {
 // Inicializar página
 document.addEventListener('DOMContentLoaded', () => {
     verificarAuth();
+    cargarCategorias();
     cargarMateriasPrimas();
+    document.getElementById('searchInput')?.addEventListener('input', buscarMateriasPrimas);
+    document.getElementById('filtroCategoria')?.addEventListener('change', buscarMateriasPrimas);
+    document.getElementById('categoriaNueva')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); agregarCategoria(); }
+    });
 });
+
+// ============================================
+// Categorías
+// ============================================
+async function cargarCategorias() {
+    try {
+        categoriasCache = await apiFetch('/api/categorias-materia-prima');
+    } catch (err) {
+        console.error('Error cargando categorías:', err);
+        Shell.error(err, 'No se pudieron cargar las categorías');
+        categoriasCache = [];
+    }
+    poblarSelectsCategoria();
+    renderizarCategorias();
+}
+
+// Llena el filtro de arriba y el desplegable del formulario, sin perder lo elegido
+function poblarSelectsCategoria() {
+    const opciones = categoriasCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+
+    const filtro = document.getElementById('filtroCategoria');
+    if (filtro) {
+        const elegida = filtro.value;
+        filtro.innerHTML = '<option value="">Todas</option><option value="sin">Sin categoría</option>' + opciones;
+        filtro.value = elegida;
+    }
+
+    const campo = document.getElementById('categoria_id');
+    if (campo) {
+        const elegida = campo.value;
+        campo.innerHTML = '<option value="">Sin categoría</option>' + opciones;
+        campo.value = elegida;
+    }
+}
+
+function renderizarCategorias() {
+    const tbody = document.getElementById('categoriasBody');
+    if (!tbody) return;
+
+    if (categoriasCache.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="muted">Todavía no hay categorías.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = categoriasCache.map(c => `
+        <tr>
+            <td><input class="input" type="text" maxlength="60" value="${c.nombre.replace(/"/g, '&quot;')}" data-categoria-nombre="${c.id}"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();renombrarCategoria(${c.id});}"></td>
+            <td class="num muted">${c.cantidad}</td>
+            <td class="num">
+                <button class="b b-ghost b-sm" onclick="renombrarCategoria(${c.id})">Guardar nombre</button>
+                <button class="b b-ghost b-sm" onclick="pedirEliminarCategoria(${c.id})">Eliminar</button>
+            </td>
+        </tr>`).join('');
+}
+
+function abrirCategorias() {
+    document.getElementById('categoriaNueva').value = '';
+    renderizarCategorias();
+    document.getElementById('categoriasModal').showModal();
+}
+
+async function agregarCategoria() {
+    if (guardandoCategoria) return;
+    const input = document.getElementById('categoriaNueva');
+    const nombre = input.value.trim();
+    if (!nombre) {
+        Shell.toast('err', 'Escribí el nombre de la categoría');
+        return;
+    }
+
+    guardandoCategoria = true;
+    const btn = document.getElementById('btnAgregarCategoria');
+    btn.disabled = true;
+    try {
+        await apiFetch('/api/categorias-materia-prima', {
+            method: 'POST',
+            body: JSON.stringify({ nombre })
+        });
+        input.value = '';
+        Shell.toast('ok', 'Categoría agregada');
+        await cargarCategorias();
+    } catch (err) {
+        Shell.error(err, 'No se pudo agregar la categoría');
+    } finally {
+        guardandoCategoria = false;
+        btn.disabled = false;
+    }
+}
+
+async function renombrarCategoria(id) {
+    const input = document.querySelector(`[data-categoria-nombre="${id}"]`);
+    const nombre = input ? input.value.trim() : '';
+    if (!nombre) {
+        Shell.toast('err', 'El nombre no puede quedar vacío');
+        return;
+    }
+    try {
+        await apiFetch(`/api/categorias-materia-prima/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ nombre })
+        });
+        Shell.toast('ok', 'Categoría actualizada');
+        await cargarCategorias();
+        cargarMateriasPrimas();
+    } catch (err) {
+        Shell.error(err, 'No se pudo guardar el nombre');
+    }
+}
+
+function pedirEliminarCategoria(id) {
+    const cat = categoriasCache.find(c => c.id === id);
+    if (!cat) return;
+    document.getElementById('categoriaEliminarId').value = id;
+    document.getElementById('categoriaEliminarTexto').textContent = cat.cantidad > 0
+        ? `¿Eliminar la categoría "${cat.nombre}"? Sus ${cat.cantidad} materias primas van a quedar sin categoría.`
+        : `¿Eliminar la categoría "${cat.nombre}"?`;
+    document.getElementById('categoriaEliminarModal').showModal();
+}
+
+async function confirmarEliminarCategoria() {
+    const id = document.getElementById('categoriaEliminarId').value;
+    try {
+        await apiFetch(`/api/categorias-materia-prima/${id}`, { method: 'DELETE' });
+        document.getElementById('categoriaEliminarModal').close();
+        Shell.toast('ok', 'Categoría eliminada');
+        await cargarCategorias();
+        cargarMateriasPrimas();
+    } catch (err) {
+        Shell.error(err, 'No se pudo eliminar la categoría');
+    }
+}
 
 // Cargar materias primas
 async function cargarMateriasPrimas() {
     try {
         const materiasPrimas = await apiFetch('/api/materias-primas');
         materiasPrimasCache = materiasPrimas;
-        renderizarTablaMateriasPrimas(materiasPrimas);
+        buscarMateriasPrimas();
     } catch (err) {
         console.error('Error cargando materias primas:', err);
         Shell.error(err, 'No se pudieron cargar los materiales');
@@ -34,9 +174,9 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
     const tbody = document.getElementById('materiasPrimasTableBody');
 
     if (!materiasPrimas || materiasPrimas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
-            'Todavía no hay materiales',
-            'Cargá el primero con el botón "Nueva materia prima".')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
+            'No hay materiales para mostrar',
+            'Cargá el primero con el botón "Nueva materia prima" o probá otro filtro.')}</td></tr>`;
         return;
     }
 
@@ -48,6 +188,7 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
         return `
             <tr>
                 <td><strong>${mp.nombre}</strong>${mp.codigo ? ' <span class="muted">' + mp.codigo + '</span>' : ''}</td>
+                <td class="muted solo-escritorio" data-label="Categoría">${mp.categoria_nombre || '—'}</td>
                 <td class="muted solo-escritorio" data-label="Unidad">${mp.unidad_medida || 'UNI'}</td>
                 <td class="num ${faltante ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
@@ -70,6 +211,7 @@ function abrirModalCrear() {
     document.getElementById('nombre').value = '';
     document.getElementById('descripcion').value = '';
     document.getElementById('unidad_medida').value = '';
+    document.getElementById('categoria_id').value = '';
     document.getElementById('ubicacion').value = '';
     document.getElementById('stock_minimo').value = '0';
     document.getElementById('precio_referencia').value = '';
@@ -91,6 +233,7 @@ async function abrirModalEditar(id) {
         document.getElementById('nombre').value = materiaPrima.nombre || '';
         document.getElementById('descripcion').value = materiaPrima.descripcion || '';
         document.getElementById('unidad_medida').value = materiaPrima.unidad_medida || '';
+        document.getElementById('categoria_id').value = materiaPrima.categoria_id || '';
         document.getElementById('ubicacion').value = materiaPrima.ubicacion || '';
         document.getElementById('stock_minimo').value = materiaPrima.stock_minimo || 0;
         document.getElementById('precio_referencia').value = materiaPrima.precio_referencia || '';
@@ -145,7 +288,9 @@ async function guardarMateriaPrima() {
             unidad_medida,
             ubicacion,
             stock_minimo,
-            activo
+            activo,
+            // null = sin categoría (al editar, el servidor lo toma como "quitarla")
+            categoria_id: document.getElementById('categoria_id').value || null
         };
         
         // Si hay precio referencia, lo agregamos
@@ -288,21 +433,20 @@ async function verHistorialPreciosModal() {
     }
 }
 
-// Buscar materias primas
+// Buscar y filtrar por categoría (sobre la lista ya cargada)
 function buscarMateriasPrimas() {
-    const searchTerm = document.getElementById('searchInput')?.value.toLowerCase();
-    
-    if (!searchTerm) {
-        renderizarTablaMateriasPrimas(materiasPrimasCache);
-        return;
-    }
-    
-    const filtradas = materiasPrimasCache.filter(mp => 
-        (mp.codigo && mp.codigo.toLowerCase().includes(searchTerm)) ||
-        (mp.nombre && mp.nombre.toLowerCase().includes(searchTerm)) ||
-        (mp.descripcion && mp.descripcion.toLowerCase().includes(searchTerm))
-    );
-    
+    const termino = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    const categoria = document.getElementById('filtroCategoria')?.value || '';
+
+    const filtradas = materiasPrimasCache.filter(mp => {
+        if (categoria === 'sin' && mp.categoria_id) return false;
+        if (categoria && categoria !== 'sin' && String(mp.categoria_id) !== categoria) return false;
+        if (!termino) return true;
+        return (mp.codigo && mp.codigo.toLowerCase().includes(termino)) ||
+               (mp.nombre && mp.nombre.toLowerCase().includes(termino)) ||
+               (mp.descripcion && mp.descripcion.toLowerCase().includes(termino));
+    });
+
     renderizarTablaMateriasPrimas(filtradas);
 }
 

@@ -25,6 +25,7 @@ const ventasRoutes = require('./routes/ventas.routes');
 
 // ========== NUEVAS RUTAS (reconstrucción módulo proveedores) ==========
 const materiasPrimasRoutes = require('./routes/materias-primas.routes');   // CRUD materias primas
+const categoriasMateriaPrimaRoutes = require('./routes/categorias-materia-prima.routes'); // Categorías de materia prima
 const stockRoutes = require('./routes/stock.routes');                     // Movimientos y ajustes de materias primas
 const stockProduccionRoutes = require('./routes/stock-produccion.routes'); // Stock de productos terminados
 const facturasCompraRoutes = require('./routes/facturas-compra.routes');   // Facturas de compra
@@ -271,6 +272,7 @@ app.use('/api', exigirPasswordAlDia);
 
 // ========== RUTAS PROTEGIDAS ACTIVAS ==========
 app.use('/api/materias-primas', materiasPrimasRoutes);
+app.use('/api/categorias-materia-prima', categoriasMateriaPrimaRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/stock-produccion', stockProduccionRoutes);
 app.use('/api/facturas-compra', facturasCompraRoutes);
