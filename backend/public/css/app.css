@@ -818,3 +818,8 @@ tr.clickable:hover td { background: var(--gray-50); }
 .subtabs { display: inline-flex; gap: 2px; background: var(--gray-100); padding: 2px; border-radius: var(--radius-md); }
 .subtabs button { font: inherit; font-size: 12px; border: 0; background: none; padding: 4px 12px; border-radius: var(--radius-md); cursor: pointer; color: var(--text-secondary); }
 .subtabs button.active { background: var(--bg-primary); color: var(--primary-600); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+/* Aviso de conversión de unidades debajo de la unidad en facturas de compra */
+.item-unidad-aviso { display: block; margin-top: 2px; font-size: 11px; line-height: 1.25; }
+.item-unidad-aviso.muted { color: var(--text-secondary); }
+.item-unidad-aviso.neg { color: var(--money-debe); }

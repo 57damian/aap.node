@@ -6,6 +6,7 @@ const {
   CTE_FACTURAS_COMPRA, ESTADO_FACTURA_COMPRA, SUBQ_IMPUTADO
 } = require('../services/cuenta-proveedor');
 const { generarPdfFacturaCompra } = require('../services/pdf-factura-compra');
+const { factorAUnidadMaterial } = require('../services/unidades');
 const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
@@ -293,27 +294,38 @@ function validarYCalcularItems(items) {
     borra. Mismo criterio que el DELETE de más abajo. Se llama antes de
     insertar los ítems nuevos en un PUT que trae `items`. */
 async function revertirItemsFactura(client, facturaId, estadoAnterior) {
-  const itemsAnteriores = (await client.query(
-    'SELECT * FROM factura_items WHERE factura_id = $1', [facturaId]
-  )).rows;
-
   if (estadoAnterior === 'PENDIENTE' || estadoAnterior === 'PAGADA') {
-    for (const item of itemsAnteriores) {
-      if (!item.materia_prima_id) continue;
-      await client.query(
-        `UPDATE materias_primas
-         SET stock_actual = stock_actual - $1, actualizado_en = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [item.cantidad, item.materia_prima_id]
-      );
-      await client.query(
-        'DELETE FROM stock_movimientos WHERE factura_id = $1 AND materia_prima_id = $2',
-        [facturaId, item.materia_prima_id]
-      );
-    }
+    await revertirStockDeFactura(client, facturaId);
   }
 
   await client.query('DELETE FROM factura_items WHERE factura_id = $1', [facturaId]);
+}
+
+/** Descuenta del stock lo que esta factura realmente sumó y borra sus
+    movimientos. Se lee de stock_movimientos (que ya está en la unidad del
+    material) y no de factura_items.cantidad (que está en la unidad de la
+    factura: 12,19 KG de un material en GR entraron como 12.190 GR). */
+async function revertirStockDeFactura(client, facturaId) {
+  const entradas = (await client.query(
+    `SELECT materia_prima_id, SUM(cantidad) AS cantidad
+       FROM stock_movimientos
+      WHERE factura_id = $1 AND tipo_movimiento = 'ENTRADA' AND materia_prima_id IS NOT NULL
+      GROUP BY materia_prima_id`,
+    [facturaId]
+  )).rows;
+
+  for (const entrada of entradas) {
+    await client.query(
+      `UPDATE materias_primas
+       SET stock_actual = stock_actual - $1, actualizado_en = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [entrada.cantidad, entrada.materia_prima_id]
+    );
+    await client.query(
+      'DELETE FROM stock_movimientos WHERE factura_id = $1 AND materia_prima_id = $2',
+      [facturaId, entrada.materia_prima_id]
+    );
+  }
 }
 
 /** Inserta los ítems (ya validados por validarYCalcularItems) de una
@@ -328,6 +340,27 @@ async function insertarItemsFactura(client, {
     let materia_prima_id = item.materia_prima_id;
     let es_item_manual = false;
     let creado_como_materia_prima = false;
+
+    // Unidades: el stock y el precio de referencia del material van en SU
+    // unidad (el alambre en gramos), pero la factura viene como la emitió el
+    // proveedor (12,19 KG a $34.034 el kg). `factor` = unidades del material
+    // por cada unidad de la factura (KG -> GR = 1000); `cantidadStock` y
+    // `precioMaterial` son la cantidad y el precio ya en la unidad del
+    // material. factura_items sigue guardando lo que dice el papel.
+    let factor = 1;
+    let unidadMaterial = item.unidad_medida || 'UNI';
+    if (materia_prima_id && !(item.es_item_manual && item.guardar_como_materia_prima)) {
+      const mpUnidad = await client.query(
+        'SELECT unidad_medida FROM materias_primas WHERE id = $1', [materia_prima_id]
+      );
+      if (mpUnidad.rows[0] && mpUnidad.rows[0].unidad_medida) {
+        unidadMaterial = mpUnidad.rows[0].unidad_medida;
+        factor = factorAUnidadMaterial(item.unidad_medida, unidadMaterial);
+      }
+    }
+    // redondeo a 3 decimales: 12.19 * 1000 en coma flotante no da justo 12190
+    const cantidadStock = Math.round(item.cantidad * factor * 1000) / 1000;
+    const precioMaterial = item.precio_unitario / factor;
 
     // Si es ítem manual y se quiere guardar como nueva materia prima
     if (item.es_item_manual && item.guardar_como_materia_prima) {
@@ -404,7 +437,7 @@ async function insertarItemsFactura(client, {
       const dolar_anterior = precioAnteriorProveedorResult.rows.length > 0 && precioAnteriorProveedorResult.rows[0].dolar_anterior !== null
         ? parseFloat(precioAnteriorProveedorResult.rows[0].dolar_anterior)
         : null;
-      const precio_nuevo = item.precio_unitario;
+      const precio_nuevo = precioMaterial;
 
       // Actualizar precio de referencia global (siempre, independiente del proveedor)
       await client.query(
@@ -492,7 +525,7 @@ async function insertarItemsFactura(client, {
 
     // Si tiene materia_prima_id, actualizar stock inmediatamente si la factura está activa
     if (materia_prima_id && (estadoFinal === 'PENDIENTE' || estadoFinal === 'PAGADA')) {
-      console.log(`📦 Actualizando stock para materia prima ${materia_prima_id}: +${item.cantidad} unidades (estado: ${estadoFinal})`);
+      console.log(`📦 Actualizando stock para materia prima ${materia_prima_id}: +${cantidadStock} ${unidadMaterial} (estado: ${estadoFinal})`);
 
       // Tomar el stock actual ANTES de modificarlo (con lock), para poder dejar
       // stock_anterior/stock_nuevo en el movimiento, igual que ya se hace en los
@@ -502,7 +535,7 @@ async function insertarItemsFactura(client, {
         [materia_prima_id]
       );
       const stockAnterior = parseFloat(stockActualResult.rows[0]?.stock_actual || 0);
-      const stockNuevo = stockAnterior + parseFloat(item.cantidad);
+      const stockNuevo = stockAnterior + cantidadStock;
 
       // Actualizar stock
       await client.query(
@@ -526,13 +559,15 @@ async function insertarItemsFactura(client, {
         ) VALUES ($1, 'ENTRADA', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_DATE, $8, $9, $10)`,
         [
           materia_prima_id,
-          item.cantidad,
-          item.precio_unitario,
+          cantidadStock,
+          precioMaterial,
           facturaId,
           proveedorId,
-          `Compra desde factura ${numeroFactura}`,
+          factor !== 1
+            ? `Compra desde factura ${numeroFactura} (${item.cantidad} ${item.unidad_medida} a $${item.precio_unitario} c/u)`
+            : `Compra desde factura ${numeroFactura}`,
           usuarioId,
-          item.unidad_medida || 'UNI',
+          unidadMaterial,
           stockAnterior,
           stockNuevo
         ]
@@ -989,30 +1024,9 @@ router.delete('/:id', soloAdmin, async (req, res) => {
     
     // Revertir stock si la factura estaba activa
     if (factura.estado === 'PENDIENTE') {
-      // Obtener items de la factura
-      const itemsResult = await client.query(
-        'SELECT * FROM factura_items WHERE factura_id = $1',
-        [id]
-      );
-      
-      // Revertir stock para cada item con materia_prima_id
-      for (const item of itemsResult.rows) {
-        if (item.materia_prima_id) {
-          await client.query(
-            `UPDATE materias_primas 
-             SET stock_actual = stock_actual - $1,
-                 actualizado_en = CURRENT_TIMESTAMP
-             WHERE id = $2`,
-            [item.cantidad, item.materia_prima_id]
-          );
-          
-          // Eliminar movimientos de stock asociados
-          await client.query(
-            'DELETE FROM stock_movimientos WHERE factura_id = $1 AND materia_prima_id = $2',
-            [id, item.materia_prima_id]
-          );
-        }
-      }
+      // Descuenta lo que realmente entró al stock (en la unidad del material)
+      // y borra los movimientos asociados.
+      await revertirStockDeFactura(client, id);
     }
     
     // Historial de precios ligado a esta factura: sin borrarlo antes, el

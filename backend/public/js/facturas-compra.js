@@ -1,6 +1,30 @@
 // facturas-compra.js - Versión corregida
 // Sistema de gestión de facturas de compra con ítems editables
 
+// Unidades que se ofrecen en cada renglón (las mismas del alta de materiales).
+// El criterio de conversión es el de services/unidades.js (backend): el servidor
+// es el que convierte de verdad al guardar; acá solo se avisa cómo va a entrar
+// al stock.
+const UNIDADES_FACTURA = ['UNI', 'GR', 'KG', 'M', 'L', 'M2', 'M3', 'ROLLO', 'BOLSA', 'CAJA'];
+const ALIAS_UNIDAD_FACTURA = {
+    KGS: 'KG', KILO: 'KG', KILOS: 'KG', KILOGRAMO: 'KG', KILOGRAMOS: 'KG',
+    GRS: 'GR', G: 'GR', GRAMO: 'GR', GRAMOS: 'GR'
+};
+
+function normalizarUnidadFc(unidad) {
+    const u = String(unidad || '').trim().toUpperCase();
+    return ALIAS_UNIDAD_FACTURA[u] || u;
+}
+
+// Unidades del material por cada unidad del renglón (KG -> GR = 1000)
+function factorUnidadFc(unidadItem, unidadMaterial) {
+    const origen = normalizarUnidadFc(unidadItem);
+    const destino = normalizarUnidadFc(unidadMaterial);
+    if (origen === 'KG' && destino === 'GR') return 1000;
+    if (origen === 'GR' && destino === 'KG') return 0.001;
+    return 1;
+}
+
 class FacturasCompra {
     constructor() {
         this.items = [];
@@ -419,17 +443,26 @@ class FacturasCompra {
             td2.appendChild(inputNombre);
             row.appendChild(td2);
             
-            // Columna 3: Unidad (editable)
+            // Columna 3: Unidad (desplegable) + aviso de cómo entra al stock
             const td3 = document.createElement('td');
             td3.dataset.label = 'Unidad';
-            const inputUnidad = document.createElement('input');
-            inputUnidad.type = 'text';
+            const inputUnidad = document.createElement('select');
             inputUnidad.className = 'input item-unidad';
-            inputUnidad.value = item.unidad_medida || 'UNI';
+            UNIDADES_FACTURA.forEach(u => {
+                const op = document.createElement('option');
+                op.value = u;
+                op.textContent = u;
+                inputUnidad.appendChild(op);
+            });
+            item.unidad_medida = normalizarUnidadFc(item.unidad_medida) || 'UNI';
+            this.asegurarOpcionUnidad(inputUnidad, item.unidad_medida);
+            inputUnidad.value = item.unidad_medida;
             inputUnidad.dataset.index = index;
-            inputUnidad.title = item.unidad_medida || 'UNI';
-            inputUnidad.addEventListener('input', (e) => this.onItemFieldChange(e, index, 'unidad_medida'));
+            inputUnidad.addEventListener('change', (e) => this.onItemFieldChange(e, index, 'unidad_medida'));
             td3.appendChild(inputUnidad);
+            const avisoUnidad = document.createElement('small');
+            avisoUnidad.className = 'item-unidad-aviso';
+            td3.appendChild(avisoUnidad);
             row.appendChild(td3);
             
             // Columna 4: Cantidad (editable)
@@ -557,6 +590,7 @@ class FacturasCompra {
             item.unidad_medida = option.dataset.unidad || item.unidad_medida || 'UNI';
             item.precio_unitario = parseFloat(option.dataset.precio) || 0;
             item.actualizar_precio_referencia = false; // Inicialmente no se actualiza el precio
+            item.precio_manual = false; // el precio es el de referencia hasta que se edite a mano
         } else {
             // Vacío
             item.materia_prima_id = null;
@@ -577,8 +611,8 @@ class FacturasCompra {
             nombreInput.title = item.nombre || '';
         }
         if (unidadInput) {
+            this.asegurarOpcionUnidad(unidadInput, item.unidad_medida);
             unidadInput.value = item.unidad_medida;
-            unidadInput.title = item.unidad_medida || 'UNI';
         }
         if (precioInput) precioInput.value = item.precio_unitario;
         
@@ -594,6 +628,16 @@ class FacturasCompra {
             item.nombre = value;
         } else if (field === 'unidad_medida') {
             item.unidad_medida = value;
+            // Si el precio sigue siendo el de referencia (no se tocó), se reescala a la
+            // unidad elegida: $34,03 el GR pasa a $34.030 el KG.
+            const unidadMaterial = this.unidadDelMaterial(item);
+            if (item.materia_prima_id && unidadMaterial && !item.precio_manual) {
+                const referencia = this.getPrecioOriginal(item.materia_prima_id);
+                item.precio_unitario = Math.round(referencia * factorUnidadFc(value, unidadMaterial) * 100) / 100;
+                const fila = event.target.closest('tr');
+                const precioInput = fila && fila.querySelector('.item-precio');
+                if (precioInput) precioInput.value = item.precio_unitario;
+            }
         } else if (field === 'cantidad') {
             item.cantidad = parseFloat(value) || 0;
         } else if (field === 'precio_unitario') {
@@ -609,6 +653,7 @@ class FacturasCompra {
             }
             
             item.precio_unitario = nuevoPrecio;
+            item.precio_manual = true;
         } else if (field === 'iva_porcentaje') {
             item.iva_porcentaje = parseFloat(value) || 0;
         }
@@ -617,6 +662,48 @@ class FacturasCompra {
         this.calculateTotals();
     }
     
+    // Unidad en la que se lleva el stock del material elegido (null si no hay)
+    unidadDelMaterial(item) {
+        if (!item.materia_prima_id) return null;
+        const mp = this.materiasPrimas.find(m => m.id == item.materia_prima_id);
+        return mp ? (mp.unidad_medida || 'UNI') : null;
+    }
+
+    // Si el valor no está entre las unidades del desplegable (factura vieja con
+    // otra unidad), se agrega para no perderlo.
+    asegurarOpcionUnidad(select, valor) {
+        if (!select || !valor) return;
+        if (![...select.options].some(o => o.value === valor)) {
+            const op = document.createElement('option');
+            op.value = valor;
+            op.textContent = valor;
+            select.appendChild(op);
+        }
+    }
+
+    // Aviso debajo de la unidad: cómo va a entrar al stock si hay conversión, o
+    // una advertencia si la unidad no coincide con la del material y no se puede convertir.
+    actualizarAvisoUnidad(row, item) {
+        const aviso = row.querySelector('.item-unidad-aviso');
+        if (!aviso) return;
+        aviso.textContent = '';
+        aviso.className = 'item-unidad-aviso';
+
+        const unidadMaterial = this.unidadDelMaterial(item);
+        if (!unidadMaterial) return;
+
+        const factor = factorUnidadFc(item.unidad_medida, unidadMaterial);
+        if (factor !== 1) {
+            const cantidad = Math.round((item.cantidad || 0) * factor * 1000) / 1000;
+            const precio = (item.precio_unitario || 0) / factor;
+            aviso.textContent = `Entra al stock como ${cantidad.toLocaleString('es-AR')} ${unidadMaterial} a ${Shell.money(precio)}/${unidadMaterial}`;
+            aviso.classList.add('muted');
+        } else if (normalizarUnidadFc(item.unidad_medida) !== normalizarUnidadFc(unidadMaterial)) {
+            aviso.textContent = `El material se lleva en ${unidadMaterial}: el stock no se convierte`;
+            aviso.classList.add('neg');
+        }
+    }
+
     calculateItemTotals(index) {
         const item = this.items[index];
         item.subtotal = item.cantidad * item.precio_unitario;
@@ -632,6 +719,7 @@ class FacturasCompra {
             if (subtotalCell) subtotalCell.textContent = Shell.money(item.subtotal);
             if (ivaCell) ivaCell.textContent = Shell.money(item.iva);
             if (totalCell) totalCell.textContent = Shell.money(item.total);
+            this.actualizarAvisoUnidad(row, item);
         }
     }
     
