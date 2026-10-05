@@ -280,6 +280,36 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-categorias-materia-prima.sql (05/10): tabla de categorías y
+  // columna materias_primas.categoria_id.
+  {
+    const tieneTabla = await existeTabla('categorias_materia_prima');
+    const tieneColumna = await existeColumna('materias_primas', 'categoria_id');
+    const faltan = [];
+    if (!tieneTabla) faltan.push('falta la tabla categorias_materia_prima');
+    if (!tieneColumna) faltan.push('falta la columna materias_primas.categoria_id');
+    resultados.push({
+      migracion: 'migracion-categorias-materia-prima.sql',
+      aplicada: tieneTabla && tieneColumna,
+      falta: faltan.join('; ')
+    });
+  }
+
+  // migracion-fix-vista-stock-produccion.sql (06/10): la vista stock_produccion
+  // no puede unir produccion y venta_items con JOIN (producto cartesiano).
+  {
+    const r = await pool.query(
+      `SELECT pg_get_viewdef('stock_produccion'::regclass) AS def`
+    ).catch(() => null);
+    const def = r ? r.rows[0].def : '';
+    const ok = !!def && !/JOIN\s+(public\.)?produccion\b/i.test(def);
+    resultados.push({
+      migracion: 'migracion-fix-vista-stock-produccion.sql',
+      aplicada: ok,
+      falta: ok ? '' : 'la vista stock_produccion multiplica producción por entregas'
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;
