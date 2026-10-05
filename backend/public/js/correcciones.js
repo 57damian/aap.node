@@ -3,6 +3,7 @@
 //   facturas  GET /api/facturas · GET|POST /api/facturas/:id/anulacion-preview|anular
 //   remitos   GET /api/ventas   · GET|POST /api/ventas/:id/anulacion-preview|anular
 //   OC        GET /api/ordenes-compra · GET|POST /api/ordenes-compra/:id/anulacion-preview|anular
+//   producción GET /api/produccion · GET|POST /api/produccion/:id/anulacion-preview|anular
 //   historial GET /api/facturas/anulaciones
 (function () {
   'use strict';
@@ -11,13 +12,14 @@
   var $ = function (id) { return document.getElementById(id); };
   var actual = null;   // { tipo, id, identificador, bloqueos } del diálogo abierto
   var enviando = false;
-  var remitos = [], ordenes = [];   // se filtran en el navegador
+  var remitos = [], ordenes = [], producciones = [];   // se filtran en el navegador
 
   // Cada tipo sabe dónde está su API y cómo se llama en pantalla.
   var TIPOS = {
     factura: { base: '/api/facturas', boton: 'Anular factura', confirmar: 'el número de la factura' },
     remito:  { base: '/api/ventas', boton: 'Anular remito', confirmar: 'el número del remito' },
-    oc:      { base: '/api/ordenes-compra', boton: 'Anular OC', confirmar: 'el número de la OC' }
+    oc:      { base: '/api/ordenes-compra', boton: 'Anular OC', confirmar: 'el número de la OC' },
+    produccion: { base: '/api/produccion', boton: 'Anular producción', confirmar: 'el N° de la carga' }
   };
 
   // Todo lo que viene de la base (números, nombres, motivos) se escapa antes de
@@ -50,6 +52,7 @@
       if (b.dataset.tab === 'historial') cargarHistorial();
       if (b.dataset.tab === 'remitos') cargarRemitos();
       if (b.dataset.tab === 'ordenes') cargarOrdenes();
+      if (b.dataset.tab === 'produccion') cargarProducciones();
     });
   });
 
@@ -157,9 +160,42 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Listado de cargas de producción (las anuladas están en el historial) */
+  /* ------------------------------------------------------------------ */
+  function pintarProducciones() {
+    var tbody = $('produccionGrid');
+    var t = $('filtroProduccion').value.trim();
+    var filas = producciones.filter(function (p) {
+      return !t || contiene([p.modelo, p.id, Shell.fecha(p.fecha_produccion)], t);
+    });
+    if (!filas.length) {
+      tbody.innerHTML = '<tr><td colspan="6">' + Shell.vacio(
+        'No hay cargas de producción', t ? 'Probá con otra búsqueda.' : 'Todavía no se registró producción.') + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filas.map(function (p) {
+      return '<tr>' +
+        '<td data-label="Fecha">' + Shell.fecha(p.fecha_produccion) + '</td>' +
+        '<td data-label="N°"><strong>' + esc(p.id) + '</strong></td>' +
+        '<td data-label="Modelo">' + esc(p.modelo) + '</td>' +
+        '<td class="num" data-label="Cantidad">' + esc(p.cantidad) + '</td>' +
+        '<td class="solo-escritorio muted" data-label="Registró">' + esc(p.registrado_por || '—') + '</td>' +
+        '<td><button type="button" class="b b-danger b-sm" data-anular="produccion:' + p.id + '">Anular…</button></td>' +
+        '</tr>';
+    }).join('');
+  }
+  async function cargarProducciones() {
+    try { producciones = await apiFetch('/api/produccion'); pintarProducciones(); }
+    catch (err) {
+      $('produccionGrid').innerHTML = '<tr><td colspan="6" class="muted">No se pudo cargar el listado.</td></tr>';
+      Shell.error(err, 'cargando la producción');
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Historial                                                           */
   /* ------------------------------------------------------------------ */
-  var ETIQUETA = { FACTURA_VENTA: 'Factura', REMITO: 'Remito', ORDEN_COMPRA: 'OC' };
+  var ETIQUETA = { FACTURA_VENTA: 'Factura', REMITO: 'Remito', ORDEN_COMPRA: 'OC', PRODUCCION: 'Producción N°' };
 
   async function cargarHistorial() {
     var tbody = $('historialGrid');
@@ -184,6 +220,9 @@
           partes.push(unidades + ' unidad(es) devuelta(s) al stock');
         } else if (a.entidad === 'ORDEN_COMPRA') {
           partes.push((Array.isArray(a.items) ? a.items.length : 0) + ' modelo(s) en la orden');
+        } else if (a.entidad === 'PRODUCCION') {
+          var pr = a.produccion || {};
+          partes.push(esc(pr.cantidad) + ' u. de ' + esc(pr.modelo || '') + ' descontadas del stock');
         }
         return '<tr>' +
           '<td data-label="Cuándo">' + cuando(a.creado_en) + '</td>' +
@@ -200,7 +239,7 @@
   }
 
   function recargarTodo() {
-    return Promise.all([cargarFacturas(), cargarRemitos(), cargarOrdenes(), cargarHistorial()]);
+    return Promise.all([cargarFacturas(), cargarRemitos(), cargarOrdenes(), cargarProducciones(), cargarHistorial()]);
   }
 
   $('btnBuscar').addEventListener('click', cargarFacturas);
@@ -210,6 +249,7 @@
   $('filtroNumero').addEventListener('keydown', function (e) { if (e.key === 'Enter') cargarFacturas(); });
   $('filtroRemitos').addEventListener('input', pintarRemitos);
   $('filtroOrdenes').addEventListener('input', pintarOrdenes);
+  $('filtroProduccion').addEventListener('input', pintarProducciones);
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-anular]');
     if (!b) return;
@@ -266,6 +306,22 @@
         identificador: v.identificador,
         resumen: '<strong>Remito ' + esc(v.identificador) + '</strong> · ' + esc(v.cliente_nombre) +
           '<br><span class="muted">' + Shell.fecha(v.remito_fecha || v.fecha) + (v.numero_oc ? ' · OC ' + esc(v.numero_oc) : '') + '</span>',
+        consecuencias: li,
+        cobros: null
+      };
+    },
+    produccion: function (p) {
+      var pr = p.produccion, st = p.stock;
+      var li = ['La carga se <strong>elimina de la producción</strong>: salen del stock <strong>' + pr.cantidad + ' unidad(es)</strong> de ' + esc(pr.modelo) + '.'];
+      li.push('De ' + esc(pr.modelo) + ' hay hoy ' + st.producido + ' producidas, ' + st.entregado + ' entregadas y ' + st.disponible +
+        ' disponibles. Después de anular quedan <strong>' + st.quedaria + ' disponibles</strong>.');
+      li.push('Se guarda una copia de la carga en el historial de anulaciones.');
+      return {
+        titulo: 'Anular producción N° ' + pr.identificador,
+        identificador: pr.identificador,
+        resumen: '<strong>Producción N° ' + esc(pr.identificador) + '</strong> · ' + esc(pr.modelo) + ' × ' + esc(pr.cantidad) +
+          '<br><span class="muted">' + Shell.fecha(pr.fecha_produccion) + (pr.registrado_por ? ' · cargó ' + esc(pr.registrado_por) : '') +
+          (pr.observaciones ? ' · ' + esc(pr.observaciones) : '') + '</span>',
         consecuencias: li,
         cobros: null
       };
@@ -397,7 +453,15 @@
   /* ------------------------------------------------------------------ */
   cargarFacturas().then(function () {
     // Enlace desde oc_detalle: correcciones.html?factura=ID abre el diálogo directo.
-    var id = new URLSearchParams(location.search).get('factura');
+    var params = new URLSearchParams(location.search);
+    var id = params.get('factura');
     if (id && /^\d+$/.test(id)) abrirAnular('factura', id);
+    // Enlace desde Producción → Historial: correcciones.html?produccion=ID
+    var prod = params.get('produccion');
+    if (prod && /^\d+$/.test(prod)) {
+      var tab = document.querySelector('.tabs .tab[data-tab="produccion"]');
+      if (tab) tab.click();
+      abrirAnular('produccion', prod);
+    }
   });
 })();

@@ -13,7 +13,7 @@
   <div class="page-head">
     <div>
       <h1>Anulaciones</h1>
-      <p>Anular facturas, remitos y órdenes de compra cargados con errores. Queda registrado quién, cuándo y por qué, con una copia de lo anulado.</p>
+      <p>Anular facturas, remitos, órdenes de compra y cargas de producción cargados con errores. Queda registrado quién, cuándo y por qué, con una copia de lo anulado.</p>
     </div>
   </div>
 
@@ -21,6 +21,7 @@
     <button type="button" class="tab active" data-tab="facturas">Facturas de venta</button>
     <button type="button" class="tab" data-tab="remitos">Remitos</button>
     <button type="button" class="tab" data-tab="ordenes">Órdenes de compra</button>
+    <button type="button" class="tab" data-tab="produccion">Producción</button>
     <button type="button" class="tab" data-tab="historial">Historial de anulaciones</button>
   </div>
 
@@ -121,6 +122,34 @@
     </div></div></div>
   </div>
 
+  <!-- ================= Producción ================= -->
+  <div id="tab-produccion" class="tab-content">
+    <p class="muted" style="margin:0 0 var(--space-3)">Para una carga de producción duplicada o con la cantidad equivocada. Al anularla, esas unidades salen del stock; si ya se entregaron, primero hay que anular el remito.</p>
+    <div class="filters">
+      <div class="field grow">
+        <label for="filtroProduccion">Buscar</label>
+        <input class="input" type="text" id="filtroProduccion" placeholder="Modelo, N° de carga o fecha">
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)"><div class="panel-body flush"><div class="table-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>N°</th>
+            <th>Modelo</th>
+            <th class="num">Cantidad</th>
+            <th class="solo-escritorio">Registró</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="produccionGrid">
+          <tr><td colspan="6" class="muted">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
+  </div>
+
   <!-- ================= Historial ================= -->
   <div id="tab-historial" class="tab-content">
     <div class="panel"><div class="panel-body flush"><div class="table-wrap">
@@ -195,7 +224,7 @@
 <script src="js/shell.js"></script>
 <script src="js/api.js"></script>
 <script>
-  Shell.montar({ titulo: 'Anulaciones', sub: 'Facturas, remitos y órdenes de compra' });
+  Shell.montar({ titulo: 'Anulaciones', sub: 'Facturas, remitos, órdenes de compra y producción' });
 
   document.querySelectorAll('[data-cerrar]').forEach(b => {
     b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());

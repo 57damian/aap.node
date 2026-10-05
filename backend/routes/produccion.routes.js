@@ -4,6 +4,7 @@ const pool = require('../db');
 const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
 const { fecha } = require('../services/pdf-base');
+const { vistaPreviaAnulacionProduccion, anularProduccion } = require('../services/anulaciones');
 
 const COLS_PDF_PRODUCCION = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 70 },
@@ -390,6 +391,48 @@ router.get('/reporte', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error generando reporte:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* ============================================
+   ANULAR UNA CARGA DE PRODUCCIÓN (se cargó por error, por ejemplo duplicada)
+   GET  /api/produccion/:id/anulacion-preview
+   POST /api/produccion/:id/anular   { motivo, confirmar_numero }
+   Solo admin. No se puede anular si después quedaría stock negativo (ya se
+   entregaron esas unidades): primero hay que anular el remito.
+============================================ */
+router.get('/:id(\\d+)/anulacion-preview', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    res.json(await vistaPreviaAnulacionProduccion(client, req.params.id));
+  } catch (err) {
+    if (!err.status) console.error('Error en vista previa de anulación (PRODUCCION):', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo preparar la anulación' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id(\\d+)/anular', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await anularProduccion(client, req.params.id, {
+      motivo: req.body.motivo,
+      confirmar_numero: req.body.confirmar_numero,
+      usuario: req.usuario
+    });
+    await client.query('COMMIT');
+    res.json({
+      message: `Producción N° ${r.identificador} anulada: se descontaron ${r.unidades_descontadas} unidad(es) de ${r.modelo}. Stock actual: ${r.stock_restante}.`,
+      ...r
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (!err.status) console.error('Error anulando PRODUCCION:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'No se pudo anular la producción' });
+  } finally {
+    client.release();
   }
 });
 

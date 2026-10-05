@@ -405,7 +405,71 @@ async function anularOC(client, ocId, { motivo, confirmar_numero, usuario }) {
   return { oc_id: ocId, identificador: oc.identificador };
 }
 
+/* ---------------------------------------------------------------------
+ * PRODUCCIÓN (filas de `produccion`: una carga de transformadores fabricados)
+ * ------------------------------------------------------------------- */
+
+/** Qué pasaría al anular una carga de producción. Con `bloquear`, FOR UPDATE de la fila.
+ * El stock se calcula acá con sumas directas (no con la vista stock_produccion):
+ * es lo que decide si se puede anular, así que no depende de cómo esté definida la vista. */
+async function vistaPreviaAnulacionProduccion(client, produccionId, { bloquear = false } = {}) {
+  const r = await client.query(`
+    SELECT p.id, p.ficha_id, p.cantidad, p.fecha_produccion, p.observaciones, p.created_at,
+           ft.modelo, u.nombre_usuario AS registrado_por
+    FROM produccion p
+    JOIN ficha_transformador ft ON ft.id = p.ficha_id
+    LEFT JOIN usuarios u ON u.id = p.usuario_id
+    WHERE p.id = $1
+    ${bloquear ? 'FOR UPDATE OF p' : ''}
+  `, [produccionId]);
+  if (!r.rows.length) throw fallo(404, 'Carga de producción no encontrada (puede que ya esté anulada)');
+  const produccion = r.rows[0];
+  produccion.identificador = String(produccion.id);
+
+  const stock = (await client.query(`
+    SELECT
+      COALESCE((SELECT SUM(cantidad) FROM produccion WHERE ficha_id = $1), 0)::int AS producido,
+      COALESCE((SELECT SUM(vi.cantidad)
+                  FROM venta_items vi JOIN ventas v ON v.id = vi.venta_id
+                 WHERE vi.ficha_id = $1), 0)::int AS entregado
+  `, [produccion.ficha_id])).rows[0];
+  stock.disponible = stock.producido - stock.entregado;
+  stock.quedaria = stock.disponible - Number(produccion.cantidad);
+
+  const bloqueos = [];
+  if (stock.quedaria < 0) {
+    bloqueos.push(
+      `De ${stock.producido} unidades producidas de ${produccion.modelo} ya se entregaron ${stock.entregado}: ` +
+      `si se anulan estas ${produccion.cantidad}, el stock quedaría en ${stock.quedaria}. ` +
+      'Anulá primero el remito que corresponda (solapa Remitos) o anulá una carga más chica.');
+  }
+  return { produccion, stock, bloqueos };
+}
+
+async function anularProduccion(client, produccionId, { motivo, confirmar_numero, usuario }) {
+  const prev = await vistaPreviaAnulacionProduccion(client, produccionId, { bloquear: true });
+  const { produccion } = prev;
+  if (prev.bloqueos.length) throw fallo(409, prev.bloqueos[0]);
+  const motivoLimpio = validarConfirmacion(motivo, confirmar_numero, produccion.identificador);
+
+  // Las unidades salen del stock al borrar la fila: producido y disponible se
+  // calculan sumando produccion.cantidad. La copia completa queda en la auditoría.
+  await client.query('DELETE FROM produccion WHERE id = $1', [produccionId]);
+
+  await registrarAuditoria(client, 'PRODUCCION', produccionId, produccion.identificador, motivoLimpio, usuario,
+    { produccion, stock_antes: prev.stock });
+
+  return {
+    produccion_id: produccionId,
+    identificador: produccion.identificador,
+    modelo: produccion.modelo,
+    unidades_descontadas: Number(produccion.cantidad),
+    stock_restante: prev.stock.quedaria
+  };
+}
+
 module.exports = {
+  vistaPreviaAnulacionProduccion, anularProduccion,
   anularCobro,
   vistaPreviaAnulacion, anularFactura,
   vistaPreviaAnulacionRemito, anularRemito,

@@ -366,7 +366,8 @@ router.get('/anulaciones', soloAdmin, async (req, res) => {
       SELECT id, entidad, entidad_id, numero, motivo, usuario_nombre, creado_en,
              snapshot->'remitos'  AS remitos,
              snapshot->'acciones' AS acciones,
-             snapshot->'items'    AS items
+             snapshot->'items'    AS items,
+             snapshot->'produccion' AS produccion
       FROM auditoria_anulaciones
       ORDER BY creado_en DESC, id DESC
       LIMIT 500

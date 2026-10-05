@@ -311,7 +311,7 @@ async function cargarHistorial() {
     const tbody = document.getElementById('historialTable');
 
     if (!historial || historial.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
+      tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio(
         'Sin registros en este período',
         'Probá ampliar las fechas o sacar el filtro de modelo.')}</td></tr>`;
       return;
@@ -324,6 +324,8 @@ async function cargarHistorial() {
           <td class="num" data-label="Cantidad">${item.cantidad}</td>
           <td class="muted solo-escritorio" data-label="Registró">${item.registrado_por || '—'}</td>
           <td class="muted solo-escritorio" data-label="Observaciones">${item.observaciones || '—'}</td>
+          <td class="num">${puedeVerReportes()
+            ? `<a class="b b-ghost b-sm" href="correcciones.html?produccion=${encodeURIComponent(item.id)}">Anular…</a>` : ''}</td>
         </tr>`).join('');
 
   } catch (err) {
