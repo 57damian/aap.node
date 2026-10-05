@@ -347,7 +347,9 @@ async function eliminarMateriaPrima(id) {
 function renderPrecioUsd(valorUsd) {
     if (valorUsd === null || valorUsd === undefined) return '';
     // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
-    const texto = `USD ${parseFloat(valorUsd).toFixed(2)}`;
+    // Un precio por gramo en USD es chico (0,0243): con 2 decimales saldría 0,02.
+    const valor = parseFloat(valorUsd);
+    const texto = `USD ${valor.toFixed(Math.abs(valor) < 1 ? 4 : 2)}`;
     return `<br><small class="text-muted">${window.Shell && Shell.monto ? Shell.monto(texto) : texto}</small>`;
 }
 

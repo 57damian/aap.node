@@ -183,12 +183,17 @@ class FacturasCompra {
                 precio: mp.ultimo_precio
             })));
             
+            this.errorMateriasPrimas = null;
         } catch (error) {
+            // Antes seguía en "modo manual": la factura se guardaba con los
+            // renglones sin materia prima y no sumaba stock ni actualizaba el
+            // precio, sin que se notara (pasó en producción el 05/10/2026 con
+            // la migración 18 sin aplicar en Neon). Ahora saveFactura no deja
+            // guardar hasta que la lista cargue.
             console.error('Error cargando materias primas:', error);
-            this.showAlert(`Error cargando materias primas: ${error.message}`, 'danger');
-            // Inicializar array vacío para evitar errores
             this.materiasPrimas = [];
-            this.showAlert('Usando modo manual para ítems. Puede agregar productos manualmente.', 'warning');
+            this.errorMateriasPrimas = error.message;
+            this.showAlert(`No se pudieron cargar las materias primas (${error.message}). Recargá la página antes de cargar la factura: así no se actualiza el stock.`, 'danger');
         }
     }
     
@@ -761,6 +766,11 @@ class FacturasCompra {
     // Métodos para guardar factura
     async saveFactura() {
         if (this.guardando) return;
+
+        if (this.errorMateriasPrimas) {
+            this.showAlert('No se puede guardar: las materias primas no cargaron y la factura no actualizaría el stock ni los precios. Recargá la página; si sigue fallando, avisá.', 'danger');
+            return;
+        }
 
         // Validar formulario
         if (!this.validateForm()) {

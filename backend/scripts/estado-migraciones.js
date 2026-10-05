@@ -310,6 +310,28 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-precios-decimales.sql (05/10): precios por gramo con 4 decimales
+  // (6 los de USD) en materias_primas, stock_movimientos e historial de precios.
+  {
+    const r = await pool.query(
+      `SELECT table_name || '.' || column_name AS col, numeric_scale
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND ((table_name = 'materias_primas' AND column_name = 'precio_referencia')
+            OR (table_name = 'stock_movimientos' AND column_name = 'precio_unitario')
+            OR (table_name = 'historial_precios_materias' AND column_name IN
+                ('precio_anterior', 'precio_nuevo', 'precio_anterior_usd', 'precio_nuevo_usd')))`
+    );
+    const faltan = r.rows
+      .filter(c => c.numeric_scale < (c.col.endsWith('_usd') ? 6 : 4))
+      .map(c => `${c.col} con ${c.numeric_scale} decimales`);
+    resultados.push({
+      migracion: 'migracion-precios-decimales.sql',
+      aplicada: faltan.length === 0,
+      falta: faltan.join(', ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;
