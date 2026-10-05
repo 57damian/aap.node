@@ -9,6 +9,7 @@ const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/au
 const { segunRol } = require('../services/vista-operario');
 const { generarPdfFicha } = require('../services/pdf-ficha');
 const { nombreArchivo } = require('../services/pdf-base');
+const { rutaFisica } = require('../config/uploads');
 
 router.use(verificarToken);
 
@@ -371,7 +372,7 @@ router.delete('/:id/etiquetas/:etiquetaId', adminYOperario, async (req, res) => 
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Etiqueta no encontrada' });
 
-    fs.unlink(path.join(__dirname, '..', r.rows[0].archivo), () => {});
+    fs.unlink(rutaFisica(r.rows[0].archivo), () => {});
     res.json({ ok: true });
   } catch (err) {
     console.error('Error borrando etiqueta:', err);

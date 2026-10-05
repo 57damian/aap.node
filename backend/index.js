@@ -7,6 +7,7 @@ require('dotenv').config();
 
 const pool = require('./db');
 const { verificarToken, exigirPasswordAlDia } = require('./middlewares/auth');
+const { RAIZ_UPLOADS } = require('./config/uploads');
 
 // Importar rutas existentes que se mantienen
 const authRoutes = require('./routes/auth.routes');
@@ -191,7 +192,13 @@ app.use(
         res.setHeader('Cache-Control', 'private, no-store');
         next();
     },
-    express.static(path.join(__dirname, 'uploads'), { index: false, dotfiles: 'deny' })
+    express.static(RAIZ_UPLOADS, { index: false, dotfiles: 'deny' }),
+    // Si el archivo no está en disco (p. ej. el disco de Railway se vació en
+    // un deploy), sin esto caía en el index.html de la ruta comodín y el
+    // frontend "descargaba" la pantalla de inicio de sesión como si fuera el PDF.
+    (req, res) => {
+        res.status(404).json({ error: 'El archivo ya no está en el servidor. Hay que volver a subirlo.' });
+    }
 );
 
 // En producción, servir el frontend desde la carpeta public/

@@ -23,7 +23,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const RAIZ_UPLOADS = path.join(__dirname, '..', 'uploads');
+const { RAIZ_UPLOADS } = require('../config/uploads');
 const MAX_BYTES = 5 * 1024 * 1024;
 
 const EXTENSION_POR_TIPO = {

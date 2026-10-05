@@ -6,9 +6,9 @@
  * ===================================================================== */
 
 const fs = require('fs');
-const path = require('path');
 const PDFDocument = require('pdfkit');
 const { MARGEN, ANCHO_UTIL, dibujarLinea, dibujarMembrete, piePagina } = require('./pdf-base');
+const { rutaFisica } = require('../config/uploads');
 
 const NOMBRE_DEVANADO = ['Terciario', 'Cuarto', 'Quinto', 'Sexto', 'Séptimo', 'Octavo', 'Noveno', 'Décimo'];
 const ALTO_DEVANADO_ESTIMADO = 100; // título + 5 campos, para decidir salto de página
@@ -58,7 +58,7 @@ function generarPdfFicha(ficha, res) {
   // La foto (si existe) va arriba a la derecha; el texto de al lado se
   // angosta para no meterse debajo de la imagen.
   const yInicio = doc.y;
-  const fotoPath = ficha.foto_modelo ? path.join(__dirname, '..', 'public', ficha.foto_modelo) : null;
+  const fotoPath = ficha.foto_modelo ? rutaFisica(ficha.foto_modelo) : null;
   const hayFoto = !!(fotoPath && fs.existsSync(fotoPath));
   if (hayFoto) {
     try {

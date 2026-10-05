@@ -25,6 +25,7 @@ Notas de contexto detalladas por módulo y auditorías: `docs/claude/` (empezar 
 | `JWT_EXPIRES_IN` | no | Default `8h`. |
 | `CORS_ORIGIN` | no | Orígenes extra separados por coma. El dominio público de Railway (`RAILWAY_PUBLIC_DOMAIN`) se autoriza solo. |
 | `DB_SSL_NO_VERIFY` | no | `true` solo si el proveedor de la base usa un certificado propio. |
+| `UPLOAD_PATH` | **en Railway, sí** | Carpeta física de las fotos de modelos/OC y las etiquetas PDF (default `backend/uploads`). **El disco de Railway es efímero**: cada deploy/reinicio lo vacía y los archivos subidos desaparecen (la base sigue apuntando a ellos). En producción: crear un **Volume** en el servicio, montarlo en `/data` y cargar `UPLOAD_PATH=/data/uploads`. Config en `config/uploads.js`. |
 | `RATE_LIMIT_WINDOW`, `RATE_LIMIT_MAX`, `PORT` | no | |
 
 **Incidente 19/09/2026:** el deploy en Railway crasheó con `JWT_SECRET no está definido o es demasiado corto`. Causa: la variable no estaba cargada en Railway (sí en el `.env` local). Solución: cargar `JWT_SECRET` en Variables del servicio y redeployar.
