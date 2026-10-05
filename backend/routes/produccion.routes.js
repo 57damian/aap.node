@@ -217,7 +217,10 @@ router.get('/stock', adminYOperario, async (req, res) => {
   const { con_stock, solo_genericos, cliente_id } = req.query;
 
   try {
-    let query = `SELECT * FROM stock_produccion WHERE 1=1`;
+    // La vista stock_produccion no filtra deleted_at: sin esto un modelo
+    // eliminado seguía apareciendo en el stock de producción.
+    let query = `SELECT * FROM stock_produccion
+                 WHERE ficha_id IN (SELECT id FROM ficha_transformador WHERE deleted_at IS NULL)`;
     const params = [];
     let paramCounter = 1;
 
