@@ -46,8 +46,8 @@ function renderLoadingTabla() {
 function renderEmptyTabla() {
   if (!tablaVentas) return;
   tablaVentas.innerHTML = `<tr><td colspan="9">${Shell.vacio(
-    'No hay ventas para este filtro',
-    'Las ventas se generan al entregar una orden de compra.',
+    'No hay remitos para este filtro',
+    'Los remitos se generan al registrar una entrega en una orden de compra.',
     { txt: 'Ver órdenes de compra', url: 'oc.html' })}</td></tr>`;
 }
 
@@ -143,10 +143,10 @@ async function cargarVentas() {
           <td class="muted solo-escritorio" data-label="Modelos / cantidad">${modelosTexto(venta)}</td>
           <td class="muted solo-escritorio" data-label="Factura">${venta.numero_factura || '—'}</td>
           <td class="muted solo-escritorio" data-label="Observaciones">${venta.remito_observaciones || '—'}</td>
-          <td data-label="Estado">${Shell.pill(facturada ? 'FACTURADA' : 'PENDIENTE')}</td>
+          <td data-label="Estado">${Shell.pill(facturada ? 'FACTURADA' : 'SIN_FACTURAR')}</td>
           <td class="num">
             <button class="b b-ghost b-sm" onclick="verVenta(${venta.id})">
-              ${facturada ? 'Ver' : 'Facturar'}
+              ${facturada ? 'Ver' : 'Ver / facturar'}
             </button>
           </td>
         </tr>`;
@@ -198,7 +198,7 @@ function exportarVentasCSV() {
 
   const link = document.createElement('a');
   link.href = encodeURI(csvContent);
-  link.download = `entregas-${rango}.csv`;
+  link.download = `remitos-${rango}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();

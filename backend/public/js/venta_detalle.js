@@ -39,7 +39,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  document.getElementById('ventaId').textContent = ventaId;
 
   document.querySelectorAll('[data-cerrar]').forEach(b => {
     b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
@@ -64,6 +63,7 @@ async function cargarVenta() {
     // Actualizar info del cliente
     document.getElementById('clienteNombre').textContent = ventaData.cliente || 'Sin cliente';
     document.getElementById('ocNumero').textContent = ventaData.numero_oc || '-';
+    document.getElementById('ventaId').textContent = ventaData.remito_numero || '(sin número)';
     document.getElementById('fechaVenta').textContent = ventaData.fecha ? ventaData.fecha.split('T')[0] : '-';
     document.getElementById('tipoCambio').textContent = `$${ventaData.tipo_cambio || 1}`;
 

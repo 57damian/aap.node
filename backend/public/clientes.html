@@ -13,16 +13,13 @@
   <div class="page-head">
     <div>
       <h1>Clientes</h1>
-      <p>Alta y datos de contacto de los clientes</p>
-    </div>
-    <div class="page-head-actions">
-      <button class="b b-primary" onclick="showTab('crear', event)">+ Nuevo cliente</button>
+      <p>Datos de contacto, condiciones de pago y cuenta de cada cliente</p>
     </div>
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="tab" onclick="showTab('crear', event)">Crear nuevo</button>
-    <button class="tab active" onclick="showTab('listar', event)">Listar clientes</button>
+    <button class="tab" data-tab="crear" onclick="showTab('crear', event)">Nuevo cliente</button>
+    <button class="tab active" data-tab="listar" onclick="showTab('listar', event)">Lista de clientes</button>
   </div>
 
   <!-- TAB CREAR -->
@@ -71,7 +68,7 @@
               </select>
             </div>
             <div class="field">
-              <label for="dias_max_pago">Días máximo de pago</label>
+              <label for="dias_max_pago">Plazo de pago (días)</label>
               <input class="input" type="number" id="dias_max_pago" name="dias_max_pago" placeholder="Ej: 30">
             </div>
           </div>

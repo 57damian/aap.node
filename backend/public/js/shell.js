@@ -69,8 +69,9 @@
     { grupo: 'Comercial', items: [
       { id: 'clientes', txt: 'Clientes',           url: 'clientes.html', icon: 'clientes', roles: ['admin'] },
       { id: 'oc',       txt: 'Órdenes de compra',  url: 'oc.html',       icon: 'oc',       roles: ['admin'], alias: 'oc pedidos' },
-      { id: 'ventas',   txt: 'Ventas',  url: 'ventas.html',   icon: 'ventas',   roles: ['admin'], alias: 'remito entrega facturar' },
-      { id: 'cobros',   txt: 'Cobros',             url: 'cobros.html',   icon: 'cobros',   roles: ['admin'], alias: 'deuda clientes cheques recibos quien me debe' }
+      { id: 'ventas',   txt: 'Remitos y facturación', url: 'ventas.html',   icon: 'ventas',   roles: ['admin'], alias: 'ventas remito entrega facturar' },
+      { id: 'cobros',   txt: 'Cobros',             url: 'cobros.html',   icon: 'cobros',   roles: ['admin'], alias: 'deuda por cobrar clientes cheques recibos quien me debe' },
+      { id: 'correcciones', txt: 'Anulaciones',    url: 'correcciones.html', icon: 'correcciones', roles: ['admin'], alias: 'correcciones anular factura remito orden error borrar corregir auditoria' }
     ]},
     { grupo: 'Compras', items: [
       { id: 'proveedores', txt: 'Proveedores',        url: 'proveedores.html',        icon: 'prov',    roles: ['admin'] },
@@ -88,8 +89,7 @@
     ]},
     { grupo: 'Configuración', items: [
       { id: 'precios',  txt: 'Precios y dólar', url: 'precios.html',  icon: 'precios',  roles: ['admin'], alias: 'cotizacion tipo de cambio aumento' },
-      { id: 'usuarios', txt: 'Usuarios',        url: 'usuarios.html', icon: 'usuarios', roles: ['admin'] },
-      { id: 'correcciones', txt: 'Correcciones', url: 'correcciones.html', icon: 'correcciones', roles: ['admin'], alias: 'anular factura error borrar corregir auditoria' }
+      { id: 'usuarios', txt: 'Usuarios',        url: 'usuarios.html', icon: 'usuarios', roles: ['admin'] }
     ]}
   ];
 
@@ -439,13 +439,14 @@
     pill: function (estado) {
       var e = String(estado || '').toUpperCase();
       var clase = 'pill-neutral';
-      if (/^(PAGADA|COBRADA|ACREDITADO|DEBITADO|IMPUTADO|ENTRADA)$/.test(e)) clase = 'pill-ok';
-      else if (/^(PARCIAL|EN_GESTION|EN_CARTERA|PAGADA_EN_VALORES|A_CUENTA|AJUSTE)$/.test(e)) clase = 'pill-warn';
+      if (/^(PAGADA|COBRADA|FACTURADA|ACREDITADO|DEBITADO|IMPUTADO|ENTRADA)$/.test(e)) clase = 'pill-ok';
+      else if (/^(PARCIAL|EN_GESTION|EN_CARTERA|PAGADA_EN_VALORES|A_CUENTA|SIN_FACTURAR|AJUSTE)$/.test(e)) clase = 'pill-warn';
       else if (/^(VENCIDA|RECHAZADO|SALIDA|MERMA)$/.test(e)) clase = 'pill-danger';
       else if (e === 'SOBRE_COBRADA' || e === 'SOBRE_PAGADA') clase = 'pill-review';
       else if (/^(PENDIENTE|DEPOSITADO|ENTREGADO)$/.test(e)) clase = 'pill-info';
       var texto = e === 'SOBRE_COBRADA' ? 'COBRADA DE MÁS'
-        : e === 'SOBRE_PAGADA' ? 'PAGADA DE MÁS' : e.replace(/_/g, ' ');
+        : e === 'SOBRE_PAGADA' ? 'PAGADA DE MÁS'
+        : e === 'A_CUENTA' ? 'A FAVOR DEL CLIENTE' : e.replace(/_/g, ' ');
       return '<span class="pill ' + clase + '">' + texto + '</span>';
     },
     /** Estado vacío que dice qué hacer, no solo que no hay nada. */

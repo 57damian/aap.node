@@ -13,7 +13,7 @@
   <div class="page-head">
     <div>
       <h1>Cobros y cuentas por cobrar</h1>
-      <p>Qué hay por cobrar, qué está vencido y qué cheques hay en cartera</p>
+      <p>Qué hay por cobrar, qué está vencido, los cheques en cartera, y registrar o consultar cobros</p>
     </div>
     <div class="page-head-actions">
       <button class="b b-primary" data-tab-ir="cobrar">Registrar cobro</button>
@@ -28,7 +28,7 @@
     <button class="tab active" data-tab="deuda">Por cobrar</button>
     <button class="tab" data-tab="cobrar">Registrar cobro</button>
     <button class="tab" data-tab="cheques">Cheques</button>
-    <button class="tab" data-tab="historial">Cobros y recibos</button>
+    <button class="tab" data-tab="historial">Historial de cobros</button>
   </div>
 
   <!-- ============ TAB: DEUDA ============ -->
@@ -87,7 +87,7 @@
             <select class="select" id="cobroCliente"><option value="">-- Seleccionar --</option></select>
           </div>
           <div class="field">
-            <label for="cobroFecha">Fecha de recepción *</label>
+            <label for="cobroFecha">Fecha en que se recibió *</label>
             <input class="input" type="date" id="cobroFecha">
           </div>
           <div class="field grow">
@@ -148,7 +148,7 @@
         <div class="totales-inline">
           <div><span>Total del cobro</span><strong id="totCobro">$0</strong></div>
           <div><span>Imputado a facturas</span><strong id="totImputado">$0</strong></div>
-          <div><span>Queda a cuenta <button type="button" class="ayuda" data-ayuda="a_cuenta">?</button></span><strong id="totACuenta">$0</strong></div>
+          <div><span>Queda a favor del cliente <button type="button" class="ayuda" data-ayuda="a_cuenta">?</button></span><strong id="totACuenta">$0</strong></div>
         </div>
         <div style="margin-top:var(--space-4); display:flex; gap:var(--space-3); flex-wrap:wrap;">
           <button class="b b-primary" id="btnGuardarCobro">Registrar cobro</button>
@@ -222,7 +222,7 @@
         <label for="filtroHistEstado">Estado</label>
         <select class="select" id="filtroHistEstado">
           <option value="">Todos</option>
-          <option value="A_CUENTA">Sin imputar (a cuenta)</option>
+          <option value="A_CUENTA">A favor del cliente (sin imputar)</option>
           <option value="PARCIAL">Imputados en parte</option>
           <option value="IMPUTADO">Totalmente imputados</option>
           <option value="ANULADO">Anulados</option>

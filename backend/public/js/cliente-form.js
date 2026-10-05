@@ -36,7 +36,7 @@
           <option value="transferencia">Transferencia</option>
           <option value="otro">Otro</option>
         </select></div>
-      <div class="field"><label>Días máximo de pago</label>
+      <div class="field"><label>Plazo de pago (días)</label>
         <input class="input" type="number" name="dias_max_pago" min="0" placeholder="Ej: 30"></div>
       <div class="field ancho-total"><label>Observaciones</label>
         <textarea class="input" name="observaciones" placeholder="Notas adicionales sobre el cliente..."></textarea></div>

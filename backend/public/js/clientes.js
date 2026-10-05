@@ -51,8 +51,7 @@ async function cargarClientes() {
     if (!clientes.length) {
       tbody.innerHTML = '<tr><td colspan="5">' + Shell.vacio(
         'No hay clientes creados aún',
-        'Cargá el primero desde "Crear nuevo".',
-        { txt: 'Crear nuevo', url: '#' }
+        'Cargá el primero desde la solapa "Nuevo cliente".'
       ) + '</td></tr>';
       return;
     }
@@ -80,9 +79,9 @@ async function cargarClientes() {
 
 function getFormaPagoLabel(formaPago) {
   const labels = {
-    contado: 'Contado', cheque: 'Cheque', transferencia: 'Transferencia', otro: 'Otro', '': 'No especificado'
+    contado: 'Contado', cheque: 'Cheque', transferencia: 'Transferencia', otro: 'Otro', '': '—'
   };
-  return labels[formaPago] || formaPago || 'No especificado';
+  return labels[formaPago] || formaPago || '—';
 }
 
 /* ---------------------- ficha del cliente (drawer) ---------------------- */
@@ -110,7 +109,7 @@ async function verDetalles(id) {
         <div class="panel-body">
           <div class="form-grid">
             <div class="field"><label>Forma de pago</label><div>${getFormaPagoLabel(cliente.forma_pago)}</div></div>
-            <div class="field"><label>Días máximo de pago</label><div>${cliente.dias_max_pago ? cliente.dias_max_pago + ' días' : 'No especificado'}</div></div>
+            <div class="field"><label>Plazo de pago</label><div>${cliente.dias_max_pago ? cliente.dias_max_pago + ' días' : '—'}</div></div>
           </div>
         </div>
       </div>
@@ -128,9 +127,9 @@ async function verDetalles(id) {
         html += `
           <div class="kpi-row">
             <div class="kpi"><div class="kpi-k">Total facturado</div><div class="kpi-v">${Shell.money(estado.total_facturado)}</div></div>
-            <div class="kpi is-success"><div class="kpi-k">Total pagado</div><div class="kpi-v">${Shell.money(estado.total_pagado)}</div></div>
+            <div class="kpi is-success"><div class="kpi-k">Cobrado</div><div class="kpi-v">${Shell.money(estado.total_pagado)}</div></div>
             <div class="kpi ${estado.saldo > 0 ? 'is-danger' : 'is-success'}">
-              <div class="kpi-k">Por cobrar <button type="button" class="ayuda" data-ayuda="saldo">?</button></div>
+              <div class="kpi-k">Por cobrar <button type="button" class="ayuda" data-ayuda="por_cobrar">?</button></div>
               <div class="kpi-v">${Shell.money(estado.saldo)}</div>
             </div>
           </div>`;
@@ -204,7 +203,6 @@ async function handleSubmit(e) {
 
   clienteEnviando = true;
   const btn = e.target.querySelector('button[type="submit"]');
-  const textoBoton = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
   try {
@@ -223,7 +221,7 @@ async function handleSubmit(e) {
     Shell.error(err, 'No se pudo guardar el cliente');
   } finally {
     clienteEnviando = false;
-    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
+    if (btn) { btn.disabled = false; actualizarModoForm(); }
   }
 }
 
@@ -242,6 +240,7 @@ async function editarCliente(id) {
 
     editMode = true;
     currentId = id;
+    actualizarModoForm();
 
     showTab('crear');
     Shell.toast('ok', `Editando cliente: ${cliente.nombre}`);
@@ -255,15 +254,27 @@ function resetForm() {
   document.getElementById('clienteForm').reset();
   editMode = false;
   currentId = null;
+  actualizarModoForm();
+}
+
+// La solapa y el botón dicen "Editar cliente" / "Guardar cambios" mientras se
+// edita, para que quede claro que no se está creando uno nuevo.
+function actualizarModoForm() {
+  const tab = document.querySelector('.tab[data-tab="crear"]');
+  const btn = document.querySelector('#clienteForm button[type="submit"]');
+  if (tab) tab.textContent = editMode ? 'Editar cliente' : 'Nuevo cliente';
+  if (btn) btn.textContent = editMode ? 'Guardar cambios' : 'Guardar cliente';
 }
 
 function showTab(tabName, event) {
+  // Tocar la solapa "Nuevo cliente" con un cliente a medio editar arranca de cero
+  if (event && tabName === 'crear' && editMode) resetForm();
+
   document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabName));
 
   const tabElement = document.getElementById(tabName);
   if (tabElement) tabElement.classList.add('active');
-  if (event && event.target) event.target.classList.add('active');
 
   if (tabName === 'listar') cargarClientes();
 }

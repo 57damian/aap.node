@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Correcciones — Transformadores ERP</title>
+  <title>Anulaciones — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
@@ -12,7 +12,7 @@
 
   <div class="page-head">
     <div>
-      <h1>Correcciones</h1>
+      <h1>Anulaciones</h1>
       <p>Anular facturas, remitos y órdenes de compra cargados con errores. Queda registrado quién, cuándo y por qué, con una copia de lo anulado.</p>
     </div>
   </div>
@@ -195,7 +195,7 @@
 <script src="js/shell.js"></script>
 <script src="js/api.js"></script>
 <script>
-  Shell.montar({ titulo: 'Correcciones', sub: 'Facturas, remitos y órdenes de compra' });
+  Shell.montar({ titulo: 'Anulaciones', sub: 'Facturas, remitos y órdenes de compra' });
 
   document.querySelectorAll('[data-cerrar]').forEach(b => {
     b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());

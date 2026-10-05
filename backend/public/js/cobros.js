@@ -398,7 +398,7 @@ function pintarEstadoCuenta() {
       </div>
     </div>
 
-    ${num(a_cuenta) > 0 ? `<div class="muted" style="font-size:13px">Cobros a cuenta sin imputar a ninguna factura: <strong>${Shell.money(a_cuenta)}</strong></div>` : ''}
+    ${num(a_cuenta) > 0 ? `<div class="muted" style="font-size:13px">Cobros a favor del cliente, sin imputar a ninguna factura: <strong>${Shell.money(a_cuenta)}</strong></div>` : ''}
     <div class="muted" style="font-size:12px">
       Ordenado por urgencia: primero lo vencido. Tocá "pagos" para ver qué cobro se imputó a cada factura y por cuánto.
     </div>`;
@@ -596,7 +596,7 @@ function pintarFacturasCobro() {
 
   if (!estado.facturas.length) {
     tbody.innerHTML = `<tr><td colspan="8">${
-      $('cobroCliente').value ? 'Este cliente no tiene facturas pendientes. El cobro va a quedar a cuenta.'
+      $('cobroCliente').value ? 'Este cliente no tiene facturas pendientes. El cobro va a quedar a favor del cliente.'
                               : 'Elegí un cliente para ver sus facturas pendientes'}</td></tr>`;
     recalcularTotales();
     return;
@@ -672,7 +672,7 @@ function imputarAutomatico() {
 
   pintarFacturasCobro();
   if (restante > 0) {
-    Shell.toast('ok', `Quedan ${Shell.money(restante / 100)} sin imputar: se van a registrar a cuenta del cliente.`);
+    Shell.toast('ok', `Quedan ${Shell.money(restante / 100)} sin imputar: quedan a favor del cliente.`);
   }
 }
 
@@ -773,7 +773,7 @@ function leerFormas() {
   for (const i of estado.formas) {
     const tipo = $(`f-tipo-${i}`).value;
     const monto = parseFloat($(`f-monto-${i}`).value);
-    if (!monto || monto <= 0) throw new Error('Hay una forma de cobro sin monto.');
+    if (!monto || monto <= 0) throw new Error('Hay una forma de cobro sin importe.');
 
     const item = { tipo, monto };
 
@@ -825,7 +825,7 @@ async function guardarCobro() {
     if (total - imputado > 0.005 && estado.facturas.length && aplicaciones.length === 0) {
       const seguir = confirm(
         `El cliente tiene facturas pendientes y no imputaste nada.\n` +
-        `El cobro de ${Shell.money(total)} va a quedar a cuenta. ¿Seguimos?`);
+        `El cobro de ${Shell.money(total)} va a quedar a favor del cliente, sin asignar a ninguna factura. ¿Seguimos?`);
       if (!seguir) return;
     }
 

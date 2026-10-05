@@ -18,10 +18,20 @@
 
   var GLOSARIO = {
     /* ---------- Cobros a clientes ---------- */
+    por_cobrar: {
+      t: 'Por cobrar',
+      d: 'Lo que los clientes todavía nos deben: facturas emitidas, menos notas de crédito, menos cobros que ya se acreditaron.',
+      n: 'Los cheques en cartera todavía no se descuentan: figuran aparte como "en gestión".'
+    },
+    por_pagar: {
+      t: 'Por pagar',
+      d: 'Lo que les debemos a los proveedores: facturas de compra, menos lo que ya se pagó.',
+      n: 'Un cheque entregado ya cuenta como pagado aunque todavía no se haya debitado de la cuenta.'
+    },
     saldo: {
       t: 'Saldo',
       d: 'Lo que el cliente todavía debe: total de la factura, menos las notas de crédito, menos los cobros que ya se acreditaron.',
-      n: 'El saldo nunca se guarda en la base: se calcula cada vez que se consulta, así no puede quedar desactualizado.'
+      n: 'Se calcula en el momento con los cobros acreditados, así que siempre está al día.'
     },
     en_gestion: {
       t: 'En gestión de cobro',
@@ -35,12 +45,12 @@
     },
     imputar: {
       t: 'Imputar',
-      d: 'Decir a qué factura se aplica un cobro. Un cobro puede repartirse entre varias facturas, y una factura puede recibir varios cobros.',
-      n: 'La imputación se hace desde una forma de pago concreta (el cheque tal, la transferencia tal), no desde el cobro entero. Por eso si un cheque rebota, el saldo de esa factura vuelve solo.'
+      d: 'Asignar un cobro a una o más facturas para descontarlas de lo que el cliente debe. Un cobro puede repartirse entre varias facturas, y una factura puede recibir varios cobros.',
+      n: 'Cada forma de pago (el cheque tal, la transferencia tal) se imputa por separado: si un cheque rebota, el saldo de esa factura vuelve solo.'
     },
     a_cuenta: {
-      t: 'Cobro a cuenta',
-      d: 'Un cobro que se registró sin decir a qué factura corresponde. Queda como saldo a favor del cliente hasta que se impute.'
+      t: 'A favor del cliente',
+      d: 'Un cobro que se registró sin asignarlo a ninguna factura. Queda como saldo a favor del cliente hasta que se impute.'
     },
     en_cartera: {
       t: 'En cartera',
@@ -94,7 +104,7 @@
     dias_credito: {
       t: 'Días de crédito',
       d: 'Plazo acordado con el proveedor para pagar. Se usa para calcular el vencimiento de cada factura de compra: fecha de emisión + estos días.',
-      n: 'Si está en 0, toda factura vence el mismo día que se emite y aparece vencida enseguida. Cargalo en la ficha del proveedor.'
+      n: 'Si está en 0, toda factura vence el mismo día que se emite y aparece vencida enseguida. Se carga en la ficha del proveedor.'
     },
 
     /* ---------- Común a los dos lados ---------- */
@@ -125,7 +135,7 @@
     },
     dolar_banco: {
       t: 'Dólar Banco Nación',
-      d: 'Cotización que el sistema usa para convertir los precios en USD a pesos al registrar una entrega.',
+      d: 'Cotización que el sistema usa para convertir los precios en USD a pesos al registrar una entrega y al facturar.',
       n: 'Al cargar una factura de compra se puede informar la cotización de ese día sin pisar este valor.'
     },
     precio_referencia: {

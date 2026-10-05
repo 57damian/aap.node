@@ -124,7 +124,7 @@ async function cargarResumen() {
 }
 
 // =====================
-// CARGAR DETALLE (alimenta la tabla "Detalle e items" y la de "Registrar
+// CARGAR DETALLE (alimenta la tabla "Ítems del pedido" y la de "Registrar
 // entrega" con un solo fetch: antes cada pestaña pedía por separado el
 // mismo /detalle, que ya trae todo lo que necesitan las dos)
 // =====================
@@ -207,7 +207,7 @@ async function guardarItem() {
     });
     document.getElementById('editarItemModal').close();
     itemSeleccionado = null;
-    mostrarNotificacion('Item actualizado', 'success');
+    mostrarNotificacion('Ítem actualizado', 'success');
     await Promise.all([cargarDetalle(), cargarResumen()]);
   } catch (err) {
     console.error('Error actualizando item:', err);
@@ -232,7 +232,7 @@ async function eliminarItem() {
     });
     document.getElementById('eliminarItemModal').close();
     itemSeleccionado = null;
-    mostrarNotificacion('Item eliminado', 'success');
+    mostrarNotificacion('Ítem eliminado', 'success');
     await Promise.all([cargarDetalle(), cargarResumen()]);
   } catch (err) {
     console.error('Error eliminando item:', err);
@@ -311,7 +311,7 @@ async function cargarFacturas() {
     // renglones por modelo, al precio facturado.
     facturas.forEach((factura) => {
       // Una factura anulada se ve como tal y no ofrece más acciones; una
-      // vigente enlaza a Correcciones, donde se anula con confirmación.
+      // vigente enlaza a Anulaciones, donde se anula con confirmación.
       const anulada = String(factura.estado || '').toUpperCase() === 'ANULADA';
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -344,7 +344,7 @@ async function cargarFacturas() {
         });
       } else {
         const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = '<td colspan="5" class="muted">Sin items</td>';
+        emptyRow.innerHTML = '<td colspan="5" class="muted">Sin ítems</td>';
         tbody.appendChild(emptyRow);
       }
     });
@@ -415,7 +415,7 @@ async function cargarRemitos() {
 
     const ventasConRemito = (ventas || []).filter((v) => v.remito_numero);
     if (!ventasConRemito.length) {
-      tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+      tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio(
         'Todavía no hay remitos',
         'Se registran al entregar items en la pestaña "Registrar entrega".')}</td></tr>`;
       return;
@@ -431,7 +431,6 @@ async function cargarRemitos() {
       tr.innerHTML = `
         <td><strong>${venta.remito_numero}</strong></td>
         <td data-label="Fecha">${Shell.fecha(venta.remito_fecha)}</td>
-        <td class="muted solo-escritorio" data-label="Venta">#${venta.id}</td>
         <td data-label="Ítems">${itemsHtml}</td>
         <td data-label="Factura">${venta.numero_factura
           ? `<strong>${venta.numero_factura}</strong>`
@@ -547,7 +546,7 @@ async function registrarEntrega() {
     });
 
     mostrarNotificacion(
-      `Entrega registrada correctamente | Remito: ${remitoNumero} | Dólar: ARS ${tipoCambio.toFixed(2)} | Venta N°: ${venta.id}`,
+      `Entrega registrada correctamente | Remito: ${remitoNumero} | Dólar: ARS ${tipoCambio.toFixed(2)}`,
       'success'
     );
 
@@ -606,7 +605,7 @@ function inicializarEventos() {
         });
 
         itemForm.reset();
-        mostrarNotificacion('Item agregado correctamente', 'success');
+        mostrarNotificacion('Ítem agregado correctamente', 'success');
         await cargarDetalle();
       } catch (err) {
         console.error('Error agregando item:', err);

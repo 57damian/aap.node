@@ -30,9 +30,25 @@ document.addEventListener('DOMContentLoaded', () => {
     verificarAuth();
     precargarFiltroMovFechas();
     cargarProveedores();
+    cargarCategorias();
     cargarDolar();
     cargarStock();
 });
+
+// Categorías de materia prima para el filtro (se administran en el catálogo)
+async function cargarCategorias() {
+    try {
+        const categorias = await apiFetch('/api/categorias-materia-prima');
+        const select = document.getElementById('filtroCategoria');
+        if (!select) return;
+        const seleccionada = select.value;
+        select.innerHTML = '<option value="">Todas</option><option value="sin">Sin categoría</option>' +
+            categorias.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+        select.value = seleccionada;
+    } catch (err) {
+        console.error('Error cargando categorías:', err);
+    }
+}
 
 // Por defecto el informe de Movimientos arranca acotado al mes en curso,
 // para no depender nunca del LIMIT de salvaguarda del backend.
@@ -106,7 +122,9 @@ async function cargarStock() {
         const proveedor = document.getElementById('filtroProveedor')?.value;
         const estado = document.getElementById('filtroEstadoStock')?.value;
         const search = document.getElementById('searchInput')?.value;
+        const categoria = document.getElementById('filtroCategoria')?.value;
         
+        if (categoria) params.append('categoria_id', categoria);
         if (proveedor) params.append('proveedor_id', proveedor);
         if (estado) params.append('estado', estado);
         if (search) params.append('search', search);
@@ -151,7 +169,7 @@ function renderizarTablaStock(stock) {
         tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
             'No hay materias primas para este filtro',
             'Probá limpiar los filtros o cargá materias primas nuevas.',
-            { txt: 'Administrar materiales', url: 'stock-mp.html' })}</td></tr>`;
+            { txt: 'Administrar materias primas', url: 'stock-mp.html' })}</td></tr>`;
         return;
     }
 
@@ -164,7 +182,7 @@ function renderizarTablaStock(stock) {
 
         return `
             <tr>
-                <td><strong>${s.nombre || '—'}</strong>${s.codigo ? ' <span class="muted">' + s.codigo + '</span>' : ''}</td>
+                <td><strong>${s.nombre || '—'}</strong>${s.codigo ? ' <span class="muted">' + s.codigo + '</span>' : ''}${s.categoria_nombre ? '<br><small class="muted">' + s.categoria_nombre + '</small>' : ''}</td>
                 <td class="num ${actual === 0 ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')} ${unidad}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
                 <td class="num" data-label="Último precio">${formatearMoneda(s.ultimo_precio || 0)}${renderizarVariacionPrecio(s)}</td>
@@ -536,6 +554,7 @@ async function verPrecios(articuloId) {
 function limpiarFiltros() {
     document.getElementById('filtroProveedor').value = '';
     document.getElementById('filtroEstadoStock').value = '';
+    document.getElementById('filtroCategoria').value = '';
     document.getElementById('searchInput').value = '';
     cargarStock();
 }
