@@ -5,6 +5,12 @@ let movimientosCache = [];
 let preciosCompraCache = [];
 let dolarActual = 0;
 
+// Cantidades de stock: llegan como texto con 4 decimales ("236400.0000"); se
+// muestran como número, con los decimales que hagan falta (cinta en rollos: 0,006).
+function numEs(v) {
+    return (Number(v) || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 });
+}
+
 // Formatear moneda
 function formatearMoneda(valor) {
     // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
@@ -240,7 +246,7 @@ function renderizarMovimientos(movimientos) {
             <td data-label="Fecha">${Shell.fecha(m.fecha)}</td>
             <td data-label="Materia prima"><strong>${m.articulo_nombre || '-'}</strong>${m.articulo_codigo ? ' <span class="muted">' + m.articulo_codigo + '</span>' : ''}</td>
             <td data-label="Tipo">${Shell.pill(m.tipo_movimiento)}</td>
-            <td class="num" data-label="Cantidad">${m.cantidad ?? 0} ${m.unidad || ''}</td>
+            <td class="num" data-label="Cantidad">${numEs(m.cantidad)} ${m.unidad || ''}</td>
             <td data-label="Proveedor">${m.proveedor_nombre || '—'}</td>
             <td class="solo-escritorio" data-label="N° de factura">${m.numero_factura ? (m.numero_factura + (m.factura_fecha ? ' (' + Shell.fecha(m.factura_fecha) + ')' : '')) : '—'}</td>
             <td class="solo-escritorio" data-label="Observación">${m.observacion || '—'}</td>
@@ -418,8 +424,8 @@ async function verPreciosPdf() {
 function actualizarEstadisticas(stock) {
     const totalArticulos = stock.length;
     const stockValorizado = stock.reduce((sum, s) => sum + ((s.stock_actual || 0) * (s.ultimo_precio || 0)), 0);
-    const bajo = stock.filter(s => s.stock_actual > 0 && s.stock_actual <= s.stock_minimo).length;
-    const critico = stock.filter(s => s.stock_actual === 0).length;
+    const bajo = stock.filter(s => Number(s.stock_actual) > 0 && Number(s.stock_actual) <= Number(s.stock_minimo)).length;
+    const critico = stock.filter(s => Number(s.stock_actual) === 0).length;
     
     // Calcular valor en dólares
     const stockValorizadoUSD = dolarActual > 0 ? stockValorizado / dolarActual : 0;
@@ -503,9 +509,9 @@ async function verHistorial(articuloId) {
                 <tr>
                     <td>${m.fecha_movimiento || '-'}</td>
                     <td>${m.tipo_movimiento || '-'}</td>
-                    <td>${m.cantidad || 0}</td>
-                    <td>${m.stock_anterior || 0}</td>
-                    <td>${m.stock_nuevo || 0}</td>
+                    <td>${numEs(m.cantidad)}</td>
+                    <td>${numEs(m.stock_anterior)}</td>
+                    <td>${numEs(m.stock_nuevo)}</td>
                     <td>${m.usuario_nombre || '-'}</td>
                     <td>${m.observaciones || '-'}</td>
                 </tr>

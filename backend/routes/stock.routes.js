@@ -146,8 +146,9 @@ router.get('/actual', LECTURA, async (req, res) => {
     const rows = result.rows.map(item => agregarPrecioDeCompra({
       ...item,
       valor_total: (item.stock_actual || 0) * (item.ultimo_precio || 0),
-      estado_stock: item.stock_actual === 0 ? 'CRITICO' :
-                    item.stock_actual <= item.stock_minimo ? 'BAJO' : 'NORMAL'
+      // numeric llega como texto: se compara como número.
+      estado_stock: Number(item.stock_actual) === 0 ? 'CRITICO' :
+                    Number(item.stock_actual) <= Number(item.stock_minimo) ? 'BAJO' : 'NORMAL'
     }, { precio_compra: 'ultimo_precio' }));
 
     // El valor_total de arriba es justamente lo que el operario no tiene que

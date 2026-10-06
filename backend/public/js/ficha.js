@@ -48,7 +48,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
   cargarClientes();
   cargarFichas();
+  materialesListos = cargarMateriales();
 });
+
+/* =====================
+   MATERIALES (catálogo de materias primas para la receta y para elegir el
+   alambre de cada devanado). Sin precios.
+===================== */
+let materialesCache = [];
+let materialesListos = Promise.resolve();
+
+async function cargarMateriales() {
+  try {
+    materialesCache = await apiFetch('/api/ficha-transformador/materiales');
+  } catch (err) {
+    console.error('Error cargando materiales:', err);
+    materialesCache = [];
+  }
+  document.querySelectorAll('select[data-select-material]').forEach(sel => {
+    const elegido = sel.value;
+    sel.innerHTML = opcionesMateriales(elegido);
+    sel.value = elegido;
+  });
+}
+
+/** <option>s de materiales: primero los de la categoría Alambres, después el resto. */
+function opcionesMateriales(seleccionadoId) {
+  const grupo = (lista) => lista.map(m =>
+    `<option value="${m.id}" ${String(m.id) === String(seleccionadoId) ? 'selected' : ''}>${escHtml(m.nombre)} (${escHtml(m.unidad_medida)})</option>`).join('');
+  const alambres = materialesCache.filter(m => m.categoria_nombre === 'Alambres');
+  const otros = materialesCache.filter(m => m.categoria_nombre !== 'Alambres');
+  return '<option value="">Sin material (no descuenta stock)</option>' +
+    (alambres.length ? `<optgroup label="Alambres">${grupo(alambres)}</optgroup>` : '') +
+    (otros.length ? `<optgroup label="${alambres.length ? 'Otros materiales' : 'Materiales'}">${grupo(otros)}</optgroup>` : '');
+}
+
+/* =====================
+   SOLAPAS DEL DETALLE: Ficha · Receta · Diagrama de salidas
+===================== */
+function mostrarSolapaDetalle(nombre) {
+  document.querySelectorAll('#detailModal .dtab').forEach(b => b.classList.toggle('active', b.dataset.dtab === nombre));
+  ['ficha', 'receta', 'diagrama'].forEach(n => {
+    const pane = document.getElementById('dtab-' + n);
+    if (pane) pane.hidden = n !== nombre;
+  });
+  if (nombre === 'receta' && typeof cargarRecetaTab === 'function') cargarRecetaTab();
+  if (nombre === 'diagrama' && typeof cargarDiagramaTab === 'function') cargarDiagramaTab();
+}
 
 /* =====================
    FOTO DEL MODELO
@@ -499,6 +545,7 @@ async function verDetalles(id) {
     content.querySelectorAll('img[data-foto]').forEach(img => cargarImagenProtegida(img, img.dataset.foto));
     mostrarError('etiquetaError', '');
     actualizarEtiquetasUI(ficha);
+    mostrarSolapaDetalle('ficha');
     document.getElementById('detailModal').showModal();
 
   } catch (err) {
@@ -729,6 +776,10 @@ function agregarDevanadoExtra(datos) {
           <input class="input" type="text" id="${id}_alambre" data-campo="alambre" maxlength="100"
                  placeholder="Ej: Esmaltado 1.0mm" value="${escHtml(d.alambre)}">
         </div>
+        <div class="field ancho-total">
+          <label for="${id}_material">Material de alambre en stock <span class="muted">(opcional)</span></label>
+          <select class="input" id="${id}_material" data-campo="material_id" data-select-material="alambre">${opcionesMateriales(d.material_id)}</select>
+        </div>
         <div class="field">
           <label for="${id}_diametro">Diámetro</label>
           <div class="field-unit">
@@ -800,6 +851,11 @@ document.addEventListener('click', (e) => {
     agregarDevanadoExtra();
     return;
   }
+  const solapa = e.target.closest('#detailModal .dtab');
+  if (solapa) {
+    mostrarSolapaDetalle(solapa.dataset.dtab);
+    return;
+  }
   if (e.target.closest('#btnQuitarFoto')) {
     quitarFotoActual();
     return;
@@ -844,10 +900,10 @@ async function handleSubmit(e) {
     'peso_laminacion_kg', 'observaciones',
     'alambre_primario', 'diametro_primario_mm',
     'espiras_primario', 'pines_primario',
-    'peso_primario_kg',
+    'peso_primario_kg', 'material_primario_id',
     'alambre_secundario', 'diametro_secundario_mm',
     'espiras_secundario', 'pines_secundario',
-    'peso_secundario_kg'
+    'peso_secundario_kg', 'material_secundario_id'
   ];
 
   fields.forEach(field => {
@@ -908,6 +964,8 @@ async function editarFicha(id) {
     console.log('Editando ficha:', id);
     
     const ficha = await apiFetch(`/api/ficha-transformador/${id}`);
+    // Los desplegables de material tienen que estar armados antes de asignarles valor.
+    await materialesListos;
 
     // Se parte de un formulario limpio: sin esto quedaba la foto elegida (o el
     // aviso de error) de la ficha anterior, y se mandaba al guardar esta.

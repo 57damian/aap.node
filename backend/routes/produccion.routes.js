@@ -5,6 +5,7 @@ const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/au
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
 const { fecha } = require('../services/pdf-base');
 const { vistaPreviaAnulacionProduccion, anularProduccion } = require('../services/anulaciones');
+const { calcularNecesidad, aplicarConsumo } = require('../services/receta');
 
 const COLS_PDF_PRODUCCION = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 70 },
@@ -19,14 +20,24 @@ router.use(verificarToken);
    REGISTRAR PRODUCCIÓN
    POST /api/produccion
 ============================================ */
+// Además de sumar al stock de producción, descuenta la materia prima de la
+// receta del modelo (cantidad × receta), todo en una sola transacción:
+//   - modelo sin receta: produce igual y avisa que no se descontó nada;
+//   - si algún material no alcanza y el pedido no trae `confirmar_faltantes: true`,
+//     no se registra nada y se responde 409 con el detalle de lo que falta;
+//   - confirmado, se descuenta lo que haya (nunca queda stock negativo) y el
+//     faltante queda anotado en produccion_consumos.
+// Si la receta tiene unidades que no se pueden convertir, se rechaza (400): hay
+// que corregir la receta antes de producir.
 router.post('/', adminYOperario, async (req, res) => {
-  const { 
-    ficha_id, 
-    cantidad, 
-    fecha_produccion, 
-    observaciones 
+  const {
+    ficha_id,
+    cantidad,
+    fecha_produccion,
+    observaciones,
+    confirmar_faltantes
   } = req.body;
-  
+
   // hallazgo D4: antes salía de un header o del body, o sea de datos que
   // controla el cliente — cualquiera podía registrar producción a nombre
   // de otro operario. verificarToken (línea 6) ya dejó req.usuario cargado
@@ -34,9 +45,13 @@ router.post('/', adminYOperario, async (req, res) => {
   const usuario_id = req.usuario.id;
 
   if (!ficha_id || !cantidad || cantidad <= 0) {
-    return res.status(400).json({ 
-      error: 'Ficha y cantidad son obligatorios' 
+    return res.status(400).json({
+      error: 'Ficha y cantidad son obligatorios'
     });
+  }
+  // La cantidad son unidades enteras (produccion.cantidad es integer).
+  if (!Number.isInteger(Number(cantidad))) {
+    return res.status(400).json({ error: 'La cantidad tiene que ser un número entero' });
   }
 
   // Las observaciones las escribe el operario y las lee el administrador: sin HTML.
@@ -44,9 +59,10 @@ router.post('/', adminYOperario, async (req, res) => {
     return res.status(400).json({ error: 'Las observaciones no pueden contener < ni >' });
   }
 
+  const client = await pool.connect();
   try {
     // Verificar que la ficha existe
-    const fichaCheck = await pool.query(
+    const fichaCheck = await client.query(
       'SELECT modelo FROM ficha_transformador WHERE id = $1',
       [ficha_id]
     );
@@ -54,21 +70,58 @@ router.post('/', adminYOperario, async (req, res) => {
     if (fichaCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Modelo no encontrado' });
     }
+    const modelo = fichaCheck.rows[0].modelo;
+
+    await client.query('BEGIN');
 
     // Insertar producción
-    const result = await pool.query(
-      `INSERT INTO produccion 
+    const result = await client.query(
+      `INSERT INTO produccion
        (ficha_id, cantidad, fecha_produccion, usuario_id, observaciones)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
-        ficha_id, 
-        cantidad, 
+        ficha_id,
+        Number(cantidad),
         fecha_produccion || new Date().toISOString().split('T')[0],
         usuario_id || null,
         observaciones || null
       ]
     );
+    const produccion = result.rows[0];
+
+    // Materia prima: lo que pide la receta, contra el stock (con las filas bloqueadas).
+    const necesidad = await calcularNecesidad(client, ficha_id, Number(cantidad), { bloquear: true });
+
+    if (necesidad.errores.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `La receta de ${modelo} tiene un problema y no se puede descontar el material: ${necesidad.errores[0]}`,
+        codigo: 'RECETA_INVALIDA',
+        errores: necesidad.errores
+      });
+    }
+
+    if (necesidad.faltantes.length && confirmar_faltantes !== true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Falta material en stock para fabricar esta cantidad',
+        codigo: 'FALTA_MATERIA_PRIMA',
+        modelo,
+        faltantes: necesidad.faltantes
+      });
+    }
+
+    const consumos = necesidad.tiene_receta
+      ? await aplicarConsumo(client, {
+          produccionId: produccion.id,
+          lineas: necesidad.lineas,
+          observaciones: `Producción #${produccion.id} – ${modelo} (${Number(cantidad)} u.)`,
+          usuarioId: usuario_id
+        })
+      : [];
+
+    await client.query('COMMIT');
 
     // Obtener stock actualizado (usando nueva vista stock_produccion)
     const stockRes = await pool.query(
@@ -76,16 +129,28 @@ router.post('/', adminYOperario, async (req, res) => {
       [ficha_id]
     );
 
+    const avisos = [...necesidad.avisos];
+    if (!necesidad.tiene_receta) {
+      avisos.unshift(`${modelo} no tiene receta cargada: no se descontó materia prima.`);
+    }
+    const faltantesFinales = consumos.filter(c => c.faltante > 0);
+
     res.json({
       ok: true,
-      produccion: result.rows[0],
+      produccion,
       stock: stockRes.rows[0] || { stock_actual: 0 },
-      mensaje: `✅ Registrados ${cantidad} unidades de ${fichaCheck.rows[0].modelo}`
+      consumos,
+      faltantes: faltantesFinales,
+      avisos,
+      mensaje: `✅ Registrados ${cantidad} unidades de ${modelo}`
     });
 
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Error registrando producción:', err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

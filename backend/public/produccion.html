@@ -53,6 +53,9 @@
             <input class="input" type="text" id="observaciones" placeholder="Lote, novedades…">
           </div>
 
+          <!-- Qué materia prima se va a descontar según la receta del modelo -->
+          <div class="ancho-total" id="consumoPrevisto" hidden></div>
+
           <div class="ancho-total">
             <button type="submit" class="b b-primary">Registrar producción</button>
           </div>
@@ -216,6 +219,26 @@
       </table>
     </div></div></div>
   </div>
+
+  <!-- Falta materia prima para fabricar lo pedido: se muestra qué falta y se
+       deja elegir si se produce igual. -->
+  <dialog id="faltantesModal" class="panel">
+    <div class="panel-head"><h2>Falta materia prima</h2></div>
+    <div class="panel-body">
+      <p id="faltantesIntro" class="dialog-bloque"></p>
+      <div class="table-wrap dialog-bloque"><table class="t">
+        <thead><tr><th>Material</th><th class="num">Hace falta</th><th class="num">En stock</th><th class="num">Falta</th></tr></thead>
+        <tbody id="faltantesBody"></tbody>
+      </table></div>
+      <p class="muted dialog-bloque" style="font-size:.85rem">
+        Si producís igual, se descuenta lo que haya y el faltante queda registrado. El stock no queda en negativo.
+      </p>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="faltantesModal">Cancelar</button>
+        <button type="button" class="b b-primary" id="btnProducirIgual">Producir igual</button>
+      </div>
+    </div>
+  </dialog>
 
 </div>
 

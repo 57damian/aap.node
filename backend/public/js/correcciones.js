@@ -315,6 +315,12 @@
       var li = ['La carga se <strong>elimina de la producción</strong>: salen del stock <strong>' + pr.cantidad + ' unidad(es)</strong> de ' + esc(pr.modelo) + '.'];
       li.push('De ' + esc(pr.modelo) + ' hay hoy ' + st.producido + ' producidas, ' + st.entregado + ' entregadas y ' + st.disponible +
         ' disponibles. Después de anular quedan <strong>' + st.quedaria + ' disponibles</strong>.');
+      // Materia prima que descontó esta carga según la receta: vuelve al stock.
+      if (p.consumos && p.consumos.length) {
+        li.push('Vuelve al stock la materia prima que descontó esta carga: ' + lista(p.consumos, function (c) {
+          return esc(c.nombre) + ' ' + Number(c.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 4 }) + ' ' + esc(c.unidad);
+        }) + '.');
+      }
       li.push('Se guarda una copia de la carga en el historial de anulaciones.');
       return {
         titulo: 'Anular producción N° ' + pr.identificador,

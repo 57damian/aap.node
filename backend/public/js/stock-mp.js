@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('searchInput')?.addEventListener('input', buscarMateriasPrimas);
     document.getElementById('filtroCategoria')?.addEventListener('change', buscarMateriasPrimas);
     document.getElementById('unidad_medida')?.addEventListener('change', actualizarEtiquetaPrecio);
+    document.getElementById('unidad_medida')?.addEventListener('change', actualizarCampoMetrosRollo);
     document.getElementById('categoriaNueva')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); agregarCategoria(); }
     });
@@ -220,6 +221,13 @@ function actualizarEtiquetaPrecio() {
         : 'Se actualiza solo con cada factura de compra';
 }
 
+// "Metros por rollo" solo tiene sentido para lo que se lleva por unidad o por rollo
+// (cinta, presspan): la receta se anota en cm y se descuenta en rollos.
+function actualizarCampoMetrosRollo() {
+    const unidad = document.getElementById('unidad_medida').value;
+    document.getElementById('metrosRolloGroup').hidden = !(unidad === 'UNI' || unidad === 'ROLLO');
+}
+
 // Abrir modal para crear nueva materia prima
 function abrirModalCrear() {
     document.getElementById('modalTitle').textContent = 'Nueva materia prima';
@@ -232,7 +240,9 @@ function abrirModalCrear() {
     document.getElementById('ubicacion').value = '';
     document.getElementById('stock_minimo').value = '0';
     document.getElementById('precio_referencia').value = '';
+    document.getElementById('metros_por_rollo').value = '';
     actualizarEtiquetaPrecio();
+    actualizarCampoMetrosRollo();
     document.getElementById('activo').checked = true;
     // Al crear todavía no hay stock cargado (entra por factura de compra o ajuste manual)
     document.getElementById('stockActualGroup').hidden = true;
@@ -256,12 +266,16 @@ async function abrirModalEditar(id) {
         document.getElementById('stock_minimo').value = materiaPrima.stock_minimo || 0;
         // precio_compra viene por kg si el material se lleva en gramos
         document.getElementById('precio_referencia').value = materiaPrima.precio_compra || '';
+        document.getElementById('metros_por_rollo').value = materiaPrima.metros_por_rollo || '';
         actualizarEtiquetaPrecio();
+        actualizarCampoMetrosRollo();
         document.getElementById('activo').checked = materiaPrima.activo !== false;
         // Al editar se muestra el stock actual solo como referencia (de solo lectura):
         // se carga por factura de compra o por ajuste en stock.html, nunca desde acá.
         document.getElementById('stockActualGroup').hidden = false;
-        document.getElementById('stock_actual_display').value = `${materiaPrima.stock_actual || 0} ${materiaPrima.unidad_medida || ''}`.trim();
+        // Number(): el stock llega como texto con 4 decimales ("236400.0000").
+        document.getElementById('stock_actual_display').value =
+            `${(Number(materiaPrima.stock_actual) || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 })} ${materiaPrima.unidad_medida || ''}`.trim();
 
         document.getElementById('materiaPrimaModal').showModal();
     } catch (err) {
@@ -313,7 +327,11 @@ async function guardarMateriaPrima() {
             stock_minimo,
             activo,
             // null = sin categoría (al editar, el servidor lo toma como "quitarla")
-            categoria_id: document.getElementById('categoria_id').value || null
+            categoria_id: document.getElementById('categoria_id').value || null,
+            // null = sin metros por rollo (al editar, también los quita). Solo se manda
+            // el valor si la unidad es por unidad/rollo; si no, no tiene sentido.
+            metros_por_rollo: (unidad_medida === 'UNI' || unidad_medida === 'ROLLO')
+                ? (document.getElementById('metros_por_rollo').value || null) : null
         };
         
         // Si hay precio referencia, lo agregamos

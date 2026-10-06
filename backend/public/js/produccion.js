@@ -76,6 +76,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (form) {
     form.addEventListener('submit', registrarProduccion);
   }
+  document.getElementById('ficha_id')?.addEventListener('change', actualizarConsumoPrevisto);
+  document.getElementById('cantidad')?.addEventListener('input', actualizarConsumoPrevisto);
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
 
   // Setear fecha actual por defecto
   const hoy = new Date().toISOString().split('T')[0];
@@ -199,24 +204,40 @@ async function registrarProduccion(e) {
   const textoBoton = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
 
+  const payload = {
+    ficha_id: parseInt(ficha_id),
+    cantidad: parseInt(cantidad),
+    fecha_produccion: fecha_produccion || undefined,
+    observaciones: observaciones || null,
+    usuario_id: usuario.id
+  };
+
   try {
-    const response = await apiFetch('/api/produccion', {
-      method: 'POST',
-      body: JSON.stringify({
-        ficha_id: parseInt(ficha_id),
-        cantidad: parseInt(cantidad),
-        fecha_produccion: fecha_produccion || undefined,
-        observaciones: observaciones || null,
-        usuario_id: usuario.id
-      })
-    });
+    let response;
+    try {
+      response = await apiFetch('/api/produccion', { method: 'POST', body: JSON.stringify(payload) });
+    } catch (err) {
+      // Falta materia prima: no se registró nada. Se muestra qué falta y se
+      // deja elegir si se produce igual (el servidor descuenta lo que haya).
+      if (!err || err.codigo !== 'FALTA_MATERIA_PRIMA') throw err;
+      const seguir = await confirmarFaltantes(err, payload.cantidad);
+      if (!seguir) return;
+      response = await apiFetch('/api/produccion', {
+        method: 'POST', body: JSON.stringify({ ...payload, confirmar_faltantes: true })
+      });
+    }
 
     mostrarAlerta(response.mensaje || '✅ Producción registrada', 'success');
-    
+    // Avisos: modelo sin receta, devanado con peso pero sin material, material que faltó.
+    (response.avisos || []).forEach(a => Shell.toast('warn', a));
+    (response.faltantes || []).forEach(f =>
+      Shell.toast('warn', `Faltó ${numProd(f.faltante)} ${f.unidad} de ${f.nombre}: se descontó solo lo que había.`));
+
     // Limpiar formulario
     document.getElementById('cantidad').value = '';
     document.getElementById('observaciones').value = '';
-    
+    actualizarConsumoPrevisto();
+
     // Recargar datos
     await cargarStock();
     await cargarHistorial();
@@ -229,6 +250,84 @@ async function registrarProduccion(e) {
     produccionEnviando = false;
     if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
+}
+
+// ============================================
+// MATERIA PRIMA DE LA RECETA
+// ============================================
+function numProd(v) {
+  return (Number(v) || 0).toLocaleString('es-AR', { maximumFractionDigits: 4 });
+}
+
+function escProd(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Muestra el diálogo con lo que falta. Devuelve una Promise<boolean>:
+// true si se elige "Producir igual".
+function confirmarFaltantes(detalle, unidades) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('faltantesModal');
+    document.getElementById('faltantesIntro').textContent =
+      `Para fabricar ${unidades} ${detalle.modelo || 'transformadores'} no alcanza el stock de:`;
+    document.getElementById('faltantesBody').innerHTML = (detalle.faltantes || []).map(f => `
+      <tr>
+        <td>${escProd(f.nombre)}</td>
+        <td class="num">${numProd(f.necesaria)} ${escProd(f.unidad)}</td>
+        <td class="num">${numProd(f.stock_actual)} ${escProd(f.unidad)}</td>
+        <td class="num neg">${numProd(f.faltante)} ${escProd(f.unidad)}</td>
+      </tr>`).join('');
+
+    const btn = document.getElementById('btnProducirIgual');
+    function limpiar() {
+      btn.removeEventListener('click', onSeguir);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onSeguir() { limpiar(); modal.close(); resolve(true); }
+    function onCerrar() { limpiar(); resolve(false); }
+    btn.addEventListener('click', onSeguir);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+  });
+}
+
+// Vista previa de lo que se va a descontar, debajo del formulario.
+let consumoTimer = null;
+let consumoSolicitud = 0;
+
+function actualizarConsumoPrevisto() {
+  clearTimeout(consumoTimer);
+  consumoTimer = setTimeout(async () => {
+    const cont = document.getElementById('consumoPrevisto');
+    if (!cont) return;
+    const fichaId = document.getElementById('ficha_id').value;
+    const cantidad = parseInt(document.getElementById('cantidad').value, 10);
+    if (!fichaId || !(cantidad > 0)) { cont.hidden = true; return; }
+
+    const solicitud = ++consumoSolicitud;
+    try {
+      const r = await apiFetch(`/api/ficha-transformador/${fichaId}/receta/necesidad?cantidad=${cantidad}`);
+      if (solicitud !== consumoSolicitud) return;   // llegó una respuesta más nueva
+      let html = '';
+      r.errores.forEach(e => { html += `<div class="notice notice-err" style="margin-bottom:6px">${escProd(e)}</div>`; });
+      r.avisos.forEach(a => { html += `<div class="notice notice-warn" style="margin-bottom:6px">${escProd(a)}</div>`; });
+      if (!r.tiene_receta) {
+        html += '<p class="muted" style="margin:0">Este modelo no tiene receta: no se descuenta materia prima.</p>';
+      } else {
+        html += `<p style="margin:0 0 4px"><strong>Se va a descontar del stock:</strong></p>
+          <ul style="margin:0;padding-left:20px">${r.lineas.map(l =>
+            `<li>${escProd(l.nombre)}: ${numProd(l.necesaria)} ${escProd(l.unidad)}` +
+            (l.faltante > 0 ? ` <span class="neg">— falta ${numProd(l.faltante)} (hay ${numProd(l.stock_actual)})</span>` : '') +
+            '</li>').join('')}</ul>`;
+      }
+      cont.innerHTML = html;
+      cont.hidden = false;
+    } catch (err) {
+      if (solicitud === consumoSolicitud) cont.hidden = true;
+    }
+  }, 300);
 }
 
 // ============================================

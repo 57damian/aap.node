@@ -87,6 +87,11 @@
                   <label for="alambre_primario">Alambre</label>
                   <input class="input" type="text" id="alambre_primario" placeholder="Ej: Esmaltado 1.5mm">
                 </div>
+                <div class="field ancho-total">
+                  <label for="material_primario_id">Material de alambre en stock <span class="muted">(opcional)</span></label>
+                  <select class="input" id="material_primario_id" data-select-material="alambre"></select>
+                  <small class="muted">Si lo elegís, al producir se descuentan del stock los gramos de este devanado</small>
+                </div>
                 <div class="field">
                   <label for="diametro_primario_mm">Diámetro</label>
                   <div class="field-unit">
@@ -118,6 +123,11 @@
                 <div class="field ancho-total">
                   <label for="alambre_secundario">Alambre</label>
                   <input class="input" type="text" id="alambre_secundario" placeholder="Ej: Esmaltado 2.0mm">
+                </div>
+                <div class="field ancho-total">
+                  <label for="material_secundario_id">Material de alambre en stock <span class="muted">(opcional)</span></label>
+                  <select class="input" id="material_secundario_id" data-select-material="alambre"></select>
+                  <small class="muted">Si lo elegís, al producir se descuentan del stock los gramos de este devanado</small>
                 </div>
                 <div class="field">
                   <label for="diametro_secundario_mm">Diámetro</label>
@@ -259,13 +269,32 @@
   <!-- ================= Ventana: detalle de la ficha =================
        Va adentro de [data-content] a propósito: Shell.montar() reemplaza el
        body y solo conserva lo que está adentro de ese contenedor. -->
-  <dialog id="detailModal" class="panel">
+  <dialog id="detailModal" class="panel" style="width:min(900px, calc(100% - 32px))">
     <div class="panel-head">
       <h2 id="detailModelo">Especificaciones técnicas</h2>
       <div class="page-head-actions">
         <button class="b b-ghost b-sm" data-cerrar="detailModal">Cerrar</button>
       </div>
     </div>
+    <div class="dtabs-bar" style="padding:0 var(--space-4)">
+      <div class="tabs" role="tablist">
+        <button type="button" class="dtab active" data-dtab="ficha">Ficha</button>
+        <button type="button" class="dtab" data-dtab="receta">Receta</button>
+        <button type="button" class="dtab" data-dtab="diagrama">Diagrama de salidas</button>
+      </div>
+    </div>
+
+    <!-- Solapa Receta: material que se descuenta del stock por cada transformador -->
+    <div id="dtab-receta" hidden>
+      <div class="panel-body" id="recetaContenido"><p class="muted">Cargando…</p></div>
+    </div>
+
+    <!-- Solapa Diagrama de salidas -->
+    <div id="dtab-diagrama" hidden>
+      <div class="panel-body" id="diagramaContenido"><p class="muted">Cargando…</p></div>
+    </div>
+
+    <div id="dtab-ficha">
     <div class="panel-body" id="detailContent"></div>
 
     <div class="panel-body" style="padding-top:0">
@@ -286,6 +315,7 @@
         <button class="b b-primary" onclick="verFichaPdf()">Ver PDF</button>
       </div>
     </div>
+    </div><!-- /dtab-ficha -->
   </dialog>
 
   <dialog id="confirmarFichaModal" class="panel">
@@ -341,5 +371,7 @@
   verificarRolPagina(['admin']);
 </script>
 <script src="js/ficha.js"></script>
+<script src="js/ficha-receta.js"></script>
+<script src="js/diagrama-editor.js"></script>
 </body>
 </html>

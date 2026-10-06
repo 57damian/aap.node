@@ -34,6 +34,98 @@ function dibujarDevanado(doc, titulo, d) {
   campo(doc, 'Peso', d.peso_kg, ' gr');
 }
 
+const COLOR_PIN = { PRIMARIO: '#dc2626', SECUNDARIO: '#2563eb', OTRO: '#6b7280' };
+const NOMBRE_FUNCION = { PRIMARIO: 'Primario', SECUNDARIO: 'Secundario', OTRO: 'Otro' };
+const ANCHO_CELDA_BORNERA = 28;
+const ALTO_BORNERA = 34;
+
+/**
+ * Dibuja el diagrama de salidas (pines, cables, borneras, textos) con
+ * primitivas vectoriales de pdfkit, escalado al ancho de la página. Las
+ * coordenadas son las del editor (ficha_diagramas.datos). Si no entra en lo
+ * que queda de la hoja, pasa a una página nueva.
+ */
+function dibujarDiagrama(doc, diag, fondoBuffer) {
+  const escala = Math.min(1, ANCHO_UTIL / diag.ancho);
+  const alto = diag.alto * escala;
+  const necesario = alto + 60;
+  if (doc.y + necesario > doc.page.height - MARGEN - 40) doc.addPage();
+
+  tituloSeccion(doc, 'Diagrama de salidas');
+  const x0 = MARGEN;
+  const y0 = doc.y + 4;
+
+  // Leyenda de pines (qué color es primario / secundario)
+  const usadas = [...new Set(diag.elementos.filter(e => e.tipo === 'pin').map(e => e.funcion))];
+  if (usadas.length) {
+    let lx = x0;
+    doc.font('Helvetica').fontSize(8);
+    usadas.forEach(f => {
+      doc.circle(lx + 4, y0 + 4, 4).fill(COLOR_PIN[f]);
+      doc.fillColor('#000').text(NOMBRE_FUNCION[f], lx + 12, y0 + 1, { lineBreak: false });
+      lx += 80;
+    });
+  }
+  const yDibujo = y0 + (usadas.length ? 14 : 0);
+
+  doc.save();
+  doc.translate(x0, yDibujo).scale(escala);
+  doc.rect(0, 0, diag.ancho, diag.alto).lineWidth(1 / escala).strokeColor('#cbd5e1').stroke();
+  doc.rect(0, 0, diag.ancho, diag.alto).clip();
+
+  if (fondoBuffer) {
+    try {
+      doc.image(fondoBuffer, 0, 0, { fit: [diag.ancho, diag.alto], align: 'center', valign: 'center' });
+    } catch (e) {
+      // pdfkit no lee WEBP: el diagrama sale igual, sin el fondo.
+      console.warn('No se pudo insertar el fondo del diagrama en el PDF:', e.message);
+    }
+  }
+
+  diag.elementos.forEach(e => {
+    if (e.tipo === 'cable') {
+      // Borde oscuro debajo, para que se vea también un cable blanco o amarillo.
+      doc.lineJoin('round').lineCap('round');
+      doc.lineWidth(7).strokeColor('#1e293b');
+      e.puntos.forEach(([px, py], i) => (i ? doc.lineTo(px, py) : doc.moveTo(px, py)));
+      doc.stroke();
+      doc.lineWidth(4).strokeColor(e.color);
+      e.puntos.forEach(([px, py], i) => (i ? doc.lineTo(px, py) : doc.moveTo(px, py)));
+      doc.stroke();
+      if (e.etiqueta) {
+        const medio = e.puntos[Math.floor(e.puntos.length / 2)];
+        doc.font('Helvetica').fontSize(11).fillColor('#0f172a')
+          .text(e.etiqueta, medio[0] + 6, medio[1] - 16, { lineBreak: false });
+      }
+    } else if (e.tipo === 'bornera') {
+      const ancho = ANCHO_CELDA_BORNERA * e.posiciones;
+      doc.rect(e.x, e.y, ancho, ALTO_BORNERA).lineWidth(1.5).fillAndStroke('#e2e8f0', '#334155');
+      for (let i = 0; i < e.posiciones; i++) {
+        const cx = e.x + i * ANCHO_CELDA_BORNERA;
+        if (i) doc.moveTo(cx, e.y).lineTo(cx, e.y + ALTO_BORNERA).lineWidth(1).strokeColor('#334155').stroke();
+        doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f172a')
+          .text(String(i + 1), cx, e.y + 11, { width: ANCHO_CELDA_BORNERA, align: 'center', lineBreak: false });
+      }
+      if (e.etiqueta) {
+        doc.font('Helvetica').fontSize(11).fillColor('#0f172a').text(e.etiqueta, e.x, e.y - 16, { lineBreak: false });
+      }
+    } else if (e.tipo === 'pin') {
+      doc.circle(e.x, e.y, 12).lineWidth(1.5).fillAndStroke(COLOR_PIN[e.funcion] || COLOR_PIN.OTRO, '#ffffff');
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff')
+        .text(e.numero, e.x - 12, e.y - 6, { width: 24, align: 'center', lineBreak: false });
+      if (e.etiqueta) {
+        doc.font('Helvetica').fontSize(10).fillColor('#0f172a').text(e.etiqueta, e.x - 40, e.y + 16, { width: 80, align: 'center', lineBreak: false });
+      }
+    } else if (e.tipo === 'texto') {
+      doc.font('Helvetica').fontSize(e.tam || 14).fillColor('#0f172a').text(e.texto, e.x, e.y, { lineBreak: false });
+    }
+  });
+  doc.restore();
+
+  doc.fillColor('#000');
+  doc.y = yDibujo + alto + 8;
+}
+
 /**
  * `ficha` trae las columnas de ficha_transformador + cliente_nombre +
  * devanados_extra: [{ orden, alambre, diametro_mm, espiras, pines, peso_kg }].
@@ -102,6 +194,10 @@ function generarPdfFicha(ficha, res) {
   if (ficha.observaciones) {
     tituloSeccion(doc, 'Observaciones');
     doc.font('Helvetica').fontSize(9).text(ficha.observaciones, MARGEN, doc.y, { width: ANCHO_UTIL });
+  }
+
+  if (ficha.diagrama && ficha.diagrama.elementos && ficha.diagrama.elementos.length) {
+    dibujarDiagrama(doc, ficha.diagrama, ficha.diagrama_fondo);
   }
 
   piePagina(doc);

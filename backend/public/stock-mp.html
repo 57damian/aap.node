@@ -109,6 +109,12 @@
             </select>
           </div>
 
+          <div class="field" id="metrosRolloGroup" hidden>
+            <label for="metros_por_rollo">Metros por rollo <span class="muted">(opcional)</span></label>
+            <input class="input" type="number" id="metros_por_rollo" step="any" min="0" placeholder="Ej: 50">
+            <small class="muted">Para cinta o presspan que se lleva por rollo pero se consume por longitud: la receta se anota en cm y se descuenta en rollos</small>
+          </div>
+
           <div class="field">
             <label for="stock_minimo">Stock mínimo</label>
             <input class="input" type="number" id="stock_minimo" step="0.01" min="0" required>

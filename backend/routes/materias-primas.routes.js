@@ -22,6 +22,14 @@ const COLS_PDF_HIST_PRECIOS_MP = [
   { campo: 'factura', titulo: 'N° Factura', x: 610, ancho: ANCHO_UTIL_REPORTE - 610 }
 ];
 
+// Metros por rollo (cinta, presspan): null si no vino o vino vacío, el número si es
+// válido (> 0), o undefined si es inválido.
+function metrosPorRolloONull(valor) {
+  if (valor === null || valor === undefined || String(valor).trim() === '') return null;
+  const n = Number(String(valor).replace(',', '.'));
+  return isFinite(n) && n > 0 && n <= 99999999 ? n : undefined;
+}
+
 // Todas las rutas requieren autenticación
 router.use(verificarToken);
 
@@ -43,7 +51,7 @@ router.get('/', soloAdmin, async (req, res) => {
         mp.id, mp.codigo, mp.nombre, mp.descripcion, mp.unidad_medida,
         mp.stock_actual, mp.stock_minimo, mp.ubicacion, mp.activo,
         mp.precio_referencia as ultimo_precio,
-        mp.categoria_id, cat.nombre as categoria_nombre
+        mp.categoria_id, cat.nombre as categoria_nombre, mp.metros_por_rollo
       FROM materias_primas mp
       LEFT JOIN categorias_materia_prima cat ON cat.id = mp.categoria_id
       WHERE mp.activo = $1
@@ -86,11 +94,13 @@ router.get('/', soloAdmin, async (req, res) => {
     const result = await pool.query(query, params);
     
     // Agregar campo calculado valor_total y estado_stock
+    // Los numeric de Postgres llegan como texto: se comparan como números
+    // (como string, "9.0000" <= "10.0000" daba falso).
     const rows = result.rows.map(item => agregarPrecioDeCompra({
       ...item,
       valor_total: (item.stock_actual || 0) * (item.ultimo_precio || 0),
-      estado_stock: item.stock_actual === 0 ? 'CRITICO' :
-                    item.stock_actual <= item.stock_minimo ? 'BAJO' : 'NORMAL'
+      estado_stock: Number(item.stock_actual) === 0 ? 'CRITICO' :
+                    Number(item.stock_actual) <= Number(item.stock_minimo) ? 'BAJO' : 'NORMAL'
     }, { precio_compra: 'ultimo_precio' }));
 
     res.json(rows);
@@ -219,15 +229,19 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
       if (!nombre || !unidad_medida) {
         return res.status(400).json({ error: 'Nombre y unidad de medida son obligatorios' });
       }
+      const metros = metrosPorRolloONull(req.body.metros_por_rollo);
+      if (metros === undefined) {
+        return res.status(400).json({ error: 'Los metros por rollo tienen que ser un número mayor a cero' });
+      }
 
       await client.query('BEGIN');
 
       const result = await client.query(`
-        INSERT INTO materias_primas 
-          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, categoria_id, activo)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        INSERT INTO materias_primas
+          (codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, categoria_id, metros_por_rollo, activo)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
         RETURNING *
-      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null, precio_referencia || null, categoria_id || null]);
+      `, [codigo || null, nombre, descripcion || null, unidad_medida, stock_minimo, ubicacion || null, precio_referencia || null, categoria_id || null, metros]);
 
       await client.query('COMMIT');
       res.status(201).json(result.rows[0]);
@@ -252,6 +266,12 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
       // categoria_id puede venir null a propósito (quitar la categoría), por
       // eso no usa COALESCE como el resto: solo se toca si vino en el body.
       const cambiaCategoria = Object.prototype.hasOwnProperty.call(req.body, 'categoria_id');
+      // Igual con los metros por rollo: null los quita.
+      const cambiaMetros = Object.prototype.hasOwnProperty.call(req.body, 'metros_por_rollo');
+      const metros = metrosPorRolloONull(req.body.metros_por_rollo);
+      if (metros === undefined) {
+        return res.status(400).json({ error: 'Los metros por rollo tienen que ser un número mayor a cero' });
+      }
 
       // Verificar que existe
       const check = await client.query('SELECT id FROM materias_primas WHERE id = $1', [id]);
@@ -272,10 +292,11 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
           precio_referencia = COALESCE($7, precio_referencia),
           activo = COALESCE($8, activo),
           categoria_id = CASE WHEN $10::boolean THEN $11::integer ELSE categoria_id END,
+          metros_por_rollo = CASE WHEN $12::boolean THEN $13::numeric ELSE metros_por_rollo END,
           actualizado_en = NOW()
         WHERE id = $9
         RETURNING *
-      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id, cambiaCategoria, categoria_id || null]);
+      `, [codigo, nombre, descripcion, unidad_medida, stock_minimo, ubicacion, precio_referencia, activo, id, cambiaCategoria, categoria_id || null, cambiaMetros, metros]);
 
       await client.query('COMMIT');
       res.json(result.rows[0]);

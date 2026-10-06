@@ -6,8 +6,15 @@ const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/au
 const { segunRol } = require('../services/vista-operario');
 const { generarPdfFicha } = require('../services/pdf-ficha');
 const { nombreArchivo } = require('../services/pdf-base');
+const { unidadesPermitidas } = require('../services/unidades');
 
 router.use(verificarToken);
+
+// Receta del modelo (GET/PUT /:id/receta y /:id/receta/necesidad).
+router.use('/:id(\\d+)/receta', require('./receta.routes'));
+
+// Diagrama de salidas (pines, cables, borneras): GET/PUT /:id/diagrama y /:id/diagrama/fondo.
+router.use('/:id(\\d+)/diagrama', require('./diagrama.routes'));
 
 /* =========================
    FOTO Y ETIQUETAS (06/10/2026)
@@ -115,6 +122,14 @@ function textoCorto(valor, max, etiqueta) {
   return t;
 }
 
+// Id de una materia prima (el material de alambre de un devanado) o null.
+function materialIdONull(valor, etiqueta) {
+  if (valor === null || valor === undefined || String(valor).trim() === '') return null;
+  const n = Number(valor);
+  if (!Number.isInteger(n) || n <= 0) throw fallo(400, `${etiqueta} no es válido`);
+  return n;
+}
+
 function numeroONull(valor, max, etiqueta) {
   if (valor === null || valor === undefined || String(valor).trim() === '') return null;
   const n = Number(String(valor).replace(',', '.'));
@@ -147,7 +162,8 @@ function normalizarExtras(raw) {
       pines: textoCorto(d?.pines, 50, `Los pines ${cual}`),
       // Peso en gramos (antes en kg): tope acorde a ficha_devanados_extra.peso_kg
       // numeric(9,2) — ver migracion-ficha-pesos-gramos.sql.
-      peso_kg: numeroONull(d?.peso_kg, 9999999.99, `El peso ${cual}`)
+      peso_kg: numeroONull(d?.peso_kg, 9999999.99, `El peso ${cual}`),
+      material_id: materialIdONull(d?.material_id, `El material ${cual}`)
     };
   });
 }
@@ -157,16 +173,16 @@ async function guardarExtras(client, fichaId, extras) {
   await client.query('DELETE FROM ficha_devanados_extra WHERE ficha_id = $1', [fichaId]);
   for (const d of extras) {
     await client.query(
-      `INSERT INTO ficha_devanados_extra (ficha_id, orden, alambre, diametro_mm, espiras, pines, peso_kg)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [fichaId, d.orden, d.alambre, d.diametro_mm, d.espiras, d.pines, d.peso_kg]
+      `INSERT INTO ficha_devanados_extra (ficha_id, orden, alambre, diametro_mm, espiras, pines, peso_kg, material_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [fichaId, d.orden, d.alambre, d.diametro_mm, d.espiras, d.pines, d.peso_kg, d.material_id]
     );
   }
 }
 
 async function leerExtras(cliente, fichaId) {
   const r = await cliente.query(
-    `SELECT orden, alambre, diametro_mm, espiras, pines, peso_kg
+    `SELECT orden, alambre, diametro_mm, espiras, pines, peso_kg, material_id
      FROM ficha_devanados_extra WHERE ficha_id = $1 ORDER BY orden`,
     [fichaId]
   );
@@ -183,6 +199,10 @@ async function leerEtiquetas(cliente, fichaId) {
 }
 
 function responderError(res, err, contexto) {
+  // 23503 = clave foránea: el material elegido (alambre de un devanado) no existe.
+  if (err.code === '23503' && /material/.test(err.constraint || '')) {
+    return res.status(400).json({ error: 'El material de alambre elegido ya no existe. Elegí otro.' });
+  }
   if (!err.status) console.error(contexto, err);
   res.status(err.status || 500).json({ error: err.message });
 }
@@ -211,6 +231,8 @@ router.post('/', adminYOperario, subidaImagen.single('foto'), async (req, res) =
     const espirasPrimario = textoCorto(req.body.espiras_primario, 40, 'Las espiras del primario');
     const espirasSecundario = textoCorto(req.body.espiras_secundario, 40, 'Las espiras del secundario');
     const extras = normalizarExtras(req.body.devanados_extra);
+    const materialPrimario = materialIdONull(req.body.material_primario_id, 'El material del primario');
+    const materialSecundario = materialIdONull(req.body.material_secundario_id, 'El material del secundario');
 
     await client.query('BEGIN');
     const result = await client.query(
@@ -219,13 +241,15 @@ router.post('/', adminYOperario, subidaImagen.single('foto'), async (req, res) =
         voltaje_entrada, voltaje_salida, amperaje_entrada, amperaje_salida,
         alambre_primario, diametro_primario_mm, espiras_primario, pines_primario, peso_primario_kg,
         alambre_secundario, diametro_secundario_mm, espiras_secundario, pines_secundario, peso_secundario_kg,
-        laminacion, peso_laminacion_kg, observaciones
+        laminacion, peso_laminacion_kg, observaciones,
+        material_primario_id, material_secundario_id
       ) VALUES (
         $1,$2,$3,
         $4,$5,$6,$7,
         $8,$9,$10,$11,$12,
         $13,$14,$15,$16,$17,
-        $18,$19,$20
+        $18,$19,$20,
+        $21,$22
       ) RETURNING *`,
       [
         modelo,
@@ -247,7 +271,9 @@ router.post('/', adminYOperario, subidaImagen.single('foto'), async (req, res) =
         req.body.peso_secundario_kg,
         laminacion,
         req.body.peso_laminacion_kg,
-        observaciones
+        observaciones,
+        materialPrimario,
+        materialSecundario
       ]
     );
 
@@ -310,6 +336,30 @@ router.get('/', adminYOperario, async (req, res) => {
 });
 
 /* =========================
+   MATERIALES - materias primas activas para armar la receta y elegir el
+   alambre de cada devanado (sin precios). Va antes de /:id.
+========================= */
+router.get('/materiales', adminYOperario, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT mp.id, mp.nombre, mp.unidad_medida, mp.metros_por_rollo,
+             c.nombre AS categoria_nombre
+        FROM materias_primas mp
+        LEFT JOIN categorias_materia_prima c ON c.id = mp.categoria_id
+       WHERE mp.activo = true
+       ORDER BY lower(mp.nombre)`);
+    res.json(r.rows.map(m => ({
+      ...m,
+      metros_por_rollo: m.metros_por_rollo === null ? null : Number(m.metros_por_rollo),
+      unidades_permitidas: unidadesPermitidas(m)
+    })));
+  } catch (err) {
+    console.error('Error listando materiales para la receta:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
    READ ONE - Obtener una ficha por ID (con sus devanados adicionales)
 ========================= */
 router.get('/:id', adminYOperario, async (req, res) => {
@@ -366,6 +416,15 @@ router.get('/:id/pdf', adminYOperario, async (req, res) => {
       [ficha.id]
     );
     ficha.foto_buffer = foto.rows.length ? foto.rows[0].contenido : null;
+
+    // Diagrama de salidas (si tiene), con su imagen de fondo.
+    const diag = await pool.query('SELECT datos FROM ficha_diagramas WHERE ficha_id = $1', [ficha.id]);
+    ficha.diagrama = diag.rows.length ? diag.rows[0].datos : null;
+    if (ficha.diagrama && ficha.diagrama.elementos && ficha.diagrama.elementos.length) {
+      const fondo = await pool.query(
+        `SELECT contenido FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'FONDO_DIAGRAMA'`, [ficha.id]);
+      ficha.diagrama_fondo = fondo.rows.length ? fondo.rows[0].contenido : null;
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition',
@@ -503,8 +562,9 @@ router.put('/:id', adminYOperario, subidaImagen.single('foto'), async (req, res)
         voltaje_entrada=$4, voltaje_salida=$5, amperaje_entrada=$6, amperaje_salida=$7,
         alambre_primario=$8, diametro_primario_mm=$9, espiras_primario=$10, pines_primario=$11, peso_primario_kg=$12,
         alambre_secundario=$13, diametro_secundario_mm=$14, espiras_secundario=$15, pines_secundario=$16, peso_secundario_kg=$17,
-        laminacion=$18, peso_laminacion_kg=$19, observaciones=$20
-       WHERE id=$21
+        laminacion=$18, peso_laminacion_kg=$19, observaciones=$20,
+        material_primario_id=$21, material_secundario_id=$22
+       WHERE id=$23
        RETURNING *`,
       [
         req.body.modelo,
@@ -527,6 +587,8 @@ router.put('/:id', adminYOperario, subidaImagen.single('foto'), async (req, res)
         req.body.laminacion,
         req.body.peso_laminacion_kg,
         req.body.observaciones,
+        materialIdONull(req.body.material_primario_id, 'El material del primario'),
+        materialIdONull(req.body.material_secundario_id, 'El material del secundario'),
         req.params.id
       ]
     );

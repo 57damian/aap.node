@@ -11,6 +11,8 @@
  * correcto (400 datos inválidos, 404 no existe, 409 estado que no lo permite).
  * ===================================================================== */
 
+const { leerConsumos, devolverConsumo } = require('./receta');
+
 const MOTIVO_MIN = 10;
 
 function fallo(status, mensaje) {
@@ -443,7 +445,13 @@ async function vistaPreviaAnulacionProduccion(client, produccionId, { bloquear =
       `si se anulan estas ${produccion.cantidad}, el stock quedaría en ${stock.quedaria}. ` +
       'Anulá primero el remito que corresponda (solapa Remitos) o anulá una carga más chica.');
   }
-  return { produccion, stock, bloqueos };
+  // Materia prima que descontó esta carga (si el modelo tenía receta): se
+  // devuelve al stock al anularla.
+  const consumos = (await leerConsumos(client, produccionId))
+    .filter(c => c.cantidad_descontada > 0)
+    .map(c => ({ materia_prima_id: c.materia_prima_id, nombre: c.nombre, unidad: c.unidad, cantidad: c.cantidad_descontada }));
+
+  return { produccion, stock, consumos, bloqueos };
 }
 
 async function anularProduccion(client, produccionId, { motivo, confirmar_numero, usuario }) {
@@ -452,19 +460,27 @@ async function anularProduccion(client, produccionId, { motivo, confirmar_numero
   if (prev.bloqueos.length) throw fallo(409, prev.bloqueos[0]);
   const motivoLimpio = validarConfirmacion(motivo, confirmar_numero, produccion.identificador);
 
+  // La materia prima que se descontó al producir vuelve al stock (con su
+  // movimiento ENTRADA). Las cargas anteriores a la receta no tienen consumo.
+  const { devueltos } = await devolverConsumo(client, produccionId, {
+    observaciones: `Anulación de la producción #${produccion.identificador} – ${produccion.modelo}`,
+    usuarioId: usuario?.id
+  });
+
   // Las unidades salen del stock al borrar la fila: producido y disponible se
   // calculan sumando produccion.cantidad. La copia completa queda en la auditoría.
   await client.query('DELETE FROM produccion WHERE id = $1', [produccionId]);
 
   await registrarAuditoria(client, 'PRODUCCION', produccionId, produccion.identificador, motivoLimpio, usuario,
-    { produccion, stock_antes: prev.stock });
+    { produccion, stock_antes: prev.stock, materia_prima_devuelta: devueltos });
 
   return {
     produccion_id: produccionId,
     identificador: produccion.identificador,
     modelo: produccion.modelo,
     unidades_descontadas: Number(produccion.cantidad),
-    stock_restante: prev.stock.quedaria
+    stock_restante: prev.stock.quedaria,
+    materia_prima_devuelta: devueltos
   };
 }
 

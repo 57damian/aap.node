@@ -259,6 +259,39 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-receta-ficha.sql (06/10): receta por modelo y descuento de
+  // materia prima al producir.
+  {
+    const falta = [];
+    if (!await existeColumna('materias_primas', 'metros_por_rollo')) falta.push('falta materias_primas.metros_por_rollo');
+    if (!await existeTabla('ficha_receta_items')) falta.push('falta la tabla ficha_receta_items');
+    if (!await existeTabla('produccion_consumos')) falta.push('falta la tabla produccion_consumos');
+    if (!await existeColumna('stock_movimientos', 'produccion_id')) falta.push('falta stock_movimientos.produccion_id');
+    if (!await existeColumna('ficha_transformador', 'material_primario_id')) falta.push('falta ficha_transformador.material_primario_id');
+    if (await existeTabla('ficha_devanados_extra') && !await existeColumna('ficha_devanados_extra', 'material_id')) {
+      falta.push('falta ficha_devanados_extra.material_id');
+    }
+    const r = await pool.query(
+      `SELECT numeric_scale FROM information_schema.columns
+       WHERE table_name = 'materias_primas' AND column_name = 'stock_actual'`);
+    if (!r.rows.length || Number(r.rows[0].numeric_scale) < 4) falta.push('materias_primas.stock_actual todavía no tiene 4 decimales');
+    resultados.push({
+      migracion: 'migracion-receta-ficha.sql',
+      aplicada: falta.length === 0,
+      falta: falta.join('; ')
+    });
+  }
+
+  // migracion-ficha-diagramas.sql (06/10): diagrama de salidas de la ficha.
+  {
+    const tieneTabla = await existeTabla('ficha_diagramas');
+    resultados.push({
+      migracion: 'migracion-ficha-diagramas.sql',
+      aplicada: tieneTabla,
+      falta: tieneTabla ? '' : 'falta la tabla ficha_diagramas'
+    });
+  }
+
   // migracion-impuestos-provinciales-compra.sql (24/09): columna
   // facturas_compra.impuestos_provinciales.
   {
