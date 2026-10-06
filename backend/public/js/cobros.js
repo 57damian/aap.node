@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnCerrarDrawer').addEventListener('click', cerrarDrawer);
   $('drawerBg').addEventListener('click', cerrarDrawer);
   $('drawerCuerpo').addEventListener('click', clicEnDrawer);
+  $('btnConfirmarCancelar').addEventListener('click', () => $('confirmarModal').close());
   $('drawerCuerpo').addEventListener('change', (e) => {
     if (e.target.matches('#ecDesde, #ecHasta, #ecSoloPend')) cargarEstadoCuenta();
   });
@@ -448,7 +449,8 @@ function pintarFilasEstadoCuenta() {
         <td class="num" data-label="Imputado">${Shell.money(p.monto_aplicado)}</td>
         <td></td>
         <td data-label="Estado">${Shell.pill(p.estado_forma)}</td>
-        <td></td>
+        <td><button type="button" class="b b-ghost b-sm" data-desimputar="${p.pago_id}" data-factura="${f.id}"
+                    title="Sacar este cobro de la factura (queda a favor del cliente)">Deshacer</button></td>
       </tr>`;
       });
       f.notas_credito_detalle.forEach(n => {
@@ -518,6 +520,10 @@ function clicEnDrawer(e) {
     pintarFilasEstadoCuenta();
     return;
   }
+  const desimputar = e.target.closest('[data-desimputar]');
+  if (desimputar) {
+    return desimputarCobro(Number(desimputar.dataset.desimputar), Number(desimputar.dataset.factura));
+  }
   const pdf = e.target.closest('[data-pdf]');
   if (pdf) {
     e.preventDefault();
@@ -532,6 +538,53 @@ function clicEnDrawer(e) {
   }
 }
 
+
+/* Confirmación en <dialog> (confirm() queda bloqueado en algunos navegadores). */
+function confirmarCobro(titulo, mensajeHtml) {
+  return new Promise((resolve) => {
+    $('confirmarTitulo').textContent = titulo;
+    $('confirmarMsg').innerHTML = mensajeHtml;
+    const modal = $('confirmarModal');
+    const btn = $('btnConfirmarConfirmar');
+
+    function limpiar() {
+      btn.removeEventListener('click', onConfirmar);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onConfirmar() { limpiar(); modal.close(); resolve(true); }
+    function onCerrar() { limpiar(); resolve(false); }
+
+    btn.addEventListener('click', onConfirmar);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+  });
+}
+
+let desimputando = false;
+
+async function desimputarCobro(pagoId, facturaId) {
+  if (desimputando) return;
+  const factura = ec.datos && ec.datos.facturas.find(f => f.id === facturaId);
+  const pago = factura && factura.pagos.find(p => p.pago_id === pagoId);
+  const ok = await confirmarCobro('Deshacer imputación',
+    `¿Sacar el <strong>Cobro #${pagoId}</strong>${pago ? ` (${Shell.money(pago.monto_aplicado)})` : ''} de la factura ` +
+    `<strong>${esc(factura ? factura.numero_factura : '')}</strong>?<br>` +
+    'La factura vuelve a tener saldo y el cobro queda a favor del cliente, para imputarlo a otra factura.');
+  if (!ok) return;
+
+  desimputando = true;
+  try {
+    const r = await apiFetch(`${API}/${pagoId}/desimputar`, {
+      method: 'POST', body: JSON.stringify({ factura_id: facturaId })
+    });
+    Shell.toast('ok', r.message);
+    await Promise.all([cargarEstadoCuenta(), cargarTodo()]);
+  } catch (err) {
+    Shell.error(err, 'No se pudo deshacer la imputación');
+  } finally {
+    desimputando = false;
+  }
+}
 
 function chipEstadoFactura(e) {
   return Shell.pill(e);

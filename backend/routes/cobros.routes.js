@@ -1201,6 +1201,45 @@ router.post('/:id/imputar', soloAdmin, async (req, res) => {
   }
 });
 
+/* Sacar un cobro de UNA factura (se imputó a la equivocada) sin anular el
+ * cobro: la plata queda a favor del cliente, lista para imputar de nuevo.
+ * Borra todas las imputaciones de ese cobro a esa factura (puede haber una
+ * por forma de pago). */
+router.post('/:id/desimputar', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const pago = await client.query(
+      'SELECT id, anulado FROM pagos WHERE id = $1 FOR UPDATE', [req.params.id]
+    );
+    if (!pago.rows.length) throw new Error('Cobro no encontrado');
+    if (pago.rows[0].anulado) throw new Error('El cobro está anulado');
+
+    const facturaId = Number(req.body.factura_id);
+    if (!Number.isInteger(facturaId)) throw new Error('Falta indicar la factura');
+
+    const { rows } = await client.query(
+      'DELETE FROM aplicacion_pagos WHERE pago_id = $1 AND factura_id = $2 RETURNING monto_aplicado',
+      [req.params.id, facturaId]
+    );
+    if (!rows.length) throw new Error('Ese cobro no está imputado a esa factura');
+
+    await client.query('COMMIT');
+    const total = rows.reduce((a, r) => a + Number(r.monto_aplicado), 0);
+    res.json({
+      message: 'Imputación deshecha. La factura vuelve a tener saldo y el cobro queda a favor del cliente.',
+      monto_liberado: total
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error deshaciendo imputación:', err);
+    fallar(res, 400, err.message);
+  } finally {
+    client.release();
+  }
+});
+
 /* Anular un cobro entero (se cargó mal). Libera la deuda imputada. */
 router.post('/:id/anular', soloAdmin, async (req, res) => {
   const client = await pool.connect();
