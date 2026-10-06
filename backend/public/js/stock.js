@@ -157,7 +157,7 @@ function renderizarVariacionPrecio(s) {
     // qué precio se compara, que es el de la compra anterior al mismo proveedor.
     const clase = valor > 0 ? 'neg' : 'pos';
     const signo = valor > 0 ? '▲' : '▼';
-    const antes = formatearMoneda(s.variacion_precio_anterior || 0);
+    const antes = Shell.precioCompra(s.variacion_precio_anterior_compra ?? s.variacion_precio_anterior ?? 0, s.unidad_precio);
     return ` <span class="${clase}" title="Antes: ${antes}">${signo} ${Math.abs(valor).toFixed(1)}%</span>`;
 }
 
@@ -185,7 +185,7 @@ function renderizarTablaStock(stock) {
                 <td><strong>${s.nombre || '—'}</strong>${s.codigo ? ' <span class="muted">' + s.codigo + '</span>' : ''}${s.categoria_nombre ? '<br><small class="muted">' + s.categoria_nombre + '</small>' : ''}</td>
                 <td class="num ${actual === 0 ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')} ${unidad}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
-                <td class="num" data-label="Último precio">${formatearMoneda(s.ultimo_precio || 0)}${renderizarVariacionPrecio(s)}</td>
+                <td class="num" data-label="Último precio">${Shell.precioCompra(s.precio_compra ?? s.ultimo_precio ?? 0, s.unidad_precio)}${renderizarVariacionPrecio(s)}</td>
                 <td class="muted solo-escritorio" data-label="Proveedor">${s.proveedor_nombre || '—'}</td>
                 <td data-label="Estado">${Shell.pill(estado)}</td>
                 <td class="num">
@@ -350,8 +350,8 @@ function renderizarEvolucionPrecios(precios) {
             <td data-label="Fecha">${Shell.fecha(p.fecha_cambio)}</td>
             <td data-label="Materia prima"><strong>${p.material_nombre || '-'}</strong>${p.material_codigo ? ' <span class="muted">' + p.material_codigo + '</span>' : ''}</td>
             <td data-label="Proveedor">${p.proveedor_nombre || '—'}</td>
-            <td class="num" data-label="Precio anterior">${p.precio_anterior != null ? formatearMoneda(p.precio_anterior) : '—'}</td>
-            <td class="num" data-label="Precio nuevo">${formatearMoneda(p.precio_nuevo)}</td>
+            <td class="num" data-label="Precio anterior">${p.precio_anterior_compra != null ? Shell.precioCompra(p.precio_anterior_compra, p.unidad_precio) : '—'}</td>
+            <td class="num" data-label="Precio nuevo">${Shell.precioCompra(p.precio_nuevo_compra, p.unidad_precio)}</td>
             <td class="num ${claseVar}" data-label="Variación">${variacion != null ? (variacion > 0 ? '+' : '') + Number(variacion).toFixed(1) + '%' : '—'}</td>
             <td class="solo-escritorio" data-label="N° de factura">${p.factura_numero || '—'}</td>
         </tr>`;
@@ -373,7 +373,7 @@ function exportarPreciosCSV() {
     }
 
     let csvContent = 'data:text/csv;charset=utf-8,';
-    const headers = ['Fecha', 'Materia prima', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Variación %', 'N° de factura'];
+    const headers = ['Fecha', 'Materia prima', 'Código', 'Proveedor', 'Precio anterior', 'Precio nuevo', 'Unidad del precio', 'Variación %', 'N° de factura'];
     csvContent += headers.join(',') + '\n';
 
     preciosCompraCache.forEach(p => {
@@ -382,8 +382,9 @@ function exportarPreciosCSV() {
             `"${(p.material_nombre || '').replace(/"/g, '""')}"`,
             `"${(p.material_codigo || '').replace(/"/g, '""')}"`,
             `"${(p.proveedor_nombre || '').replace(/"/g, '""')}"`,
-            p.precio_anterior ?? '',
-            p.precio_nuevo ?? '',
+            p.precio_anterior_compra ?? '',
+            p.precio_nuevo_compra ?? '',
+            p.unidad_precio || '',
             p.variacion_porcentaje ?? '',
             p.factura_numero || ''
         ];
@@ -531,8 +532,8 @@ async function verPrecios(articuloId) {
             tbody.innerHTML = precios.map(p => `
                 <tr>
                     <td>${Shell.fecha(p.fecha_cambio)}</td>
-                    <td>${formatearMoneda(p.precio_anterior || 0)}</td>
-                    <td>${formatearMoneda(p.precio_nuevo || 0)}</td>
+                    <td>${Shell.precioCompra(p.precio_anterior_compra || 0, p.unidad_precio)}</td>
+                    <td>${Shell.precioCompra(p.precio_nuevo_compra || 0, p.unidad_precio)}</td>
                     <td class="${p.variacion_porcentaje > 0 ? 'neg' : (p.variacion_porcentaje < 0 ? 'pos' : '')}">
                         ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
                     </td>

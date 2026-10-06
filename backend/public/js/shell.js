@@ -425,6 +425,13 @@
      *  acá: devuelve el mismo texto y lo anota para que el ojo lo oculte. */
     monto: registrarMonto,
 
+    /** Precio de compra de una materia prima: el que viene por kg (material que se
+     *  lleva en gramos) lleva el "/kg" al lado. `unidad` = unidad_precio de la API. */
+    precioCompra: function (v, unidad) {
+      var m = Shell.money(v);
+      return String(unidad || '').toUpperCase() === 'KG' ? m + ' /kg' : m;
+    },
+
     money: function (v) {
       var n = parseFloat(v);
       if (!isFinite(n)) return '—';

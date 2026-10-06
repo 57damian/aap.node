@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarMateriasPrimas();
     document.getElementById('searchInput')?.addEventListener('input', buscarMateriasPrimas);
     document.getElementById('filtroCategoria')?.addEventListener('change', buscarMateriasPrimas);
+    document.getElementById('unidad_medida')?.addEventListener('change', actualizarEtiquetaPrecio);
     document.getElementById('categoriaNueva')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); agregarCategoria(); }
     });
@@ -203,6 +204,22 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
     }).join('');
 }
 
+// El stock del alambre se lleva en gramos pero se compra y se negocia por kg:
+// para un material en GR el precio se muestra y se edita por kg (el servidor
+// sigue guardando el precio por unidad de stock, o sea por gramo).
+function factorPrecioMaterial(unidad) {
+    return unidad === 'GR' ? 1000 : 1;
+}
+
+function actualizarEtiquetaPrecio() {
+    const porKg = factorPrecioMaterial(document.getElementById('unidad_medida').value) === 1000;
+    document.getElementById('precioReferenciaLabel').textContent =
+        porKg ? 'Precio de referencia (por kg)' : 'Precio de referencia';
+    document.getElementById('precioReferenciaAyuda').textContent = porKg
+        ? 'Por kg, como lo factura el proveedor (el stock se lleva en gramos). Se actualiza solo con cada factura de compra'
+        : 'Se actualiza solo con cada factura de compra';
+}
+
 // Abrir modal para crear nueva materia prima
 function abrirModalCrear() {
     document.getElementById('modalTitle').textContent = 'Nueva materia prima';
@@ -215,6 +232,7 @@ function abrirModalCrear() {
     document.getElementById('ubicacion').value = '';
     document.getElementById('stock_minimo').value = '0';
     document.getElementById('precio_referencia').value = '';
+    actualizarEtiquetaPrecio();
     document.getElementById('activo').checked = true;
     // Al crear todavía no hay stock cargado (entra por factura de compra o ajuste manual)
     document.getElementById('stockActualGroup').hidden = true;
@@ -236,7 +254,9 @@ async function abrirModalEditar(id) {
         document.getElementById('categoria_id').value = materiaPrima.categoria_id || '';
         document.getElementById('ubicacion').value = materiaPrima.ubicacion || '';
         document.getElementById('stock_minimo').value = materiaPrima.stock_minimo || 0;
-        document.getElementById('precio_referencia').value = materiaPrima.precio_referencia || '';
+        // precio_compra viene por kg si el material se lleva en gramos
+        document.getElementById('precio_referencia').value = materiaPrima.precio_compra || '';
+        actualizarEtiquetaPrecio();
         document.getElementById('activo').checked = materiaPrima.activo !== false;
         // Al editar se muestra el stock actual solo como referencia (de solo lectura):
         // se carga por factura de compra o por ajuste en stock.html, nunca desde acá.
@@ -260,7 +280,10 @@ async function guardarMateriaPrima() {
         const unidad_medida = document.getElementById('unidad_medida').value;
         const ubicacion = document.getElementById('ubicacion').value.trim();
         const stock_minimo = parseFloat(document.getElementById('stock_minimo').value) || 0;
-        const precio_referencia = document.getElementById('precio_referencia').value ? parseFloat(document.getElementById('precio_referencia').value) : null;
+        // Lo tipeado va por kg si el material se lleva en gramos: se guarda por gramo.
+        const precioTipeado = document.getElementById('precio_referencia').value ? parseFloat(document.getElementById('precio_referencia').value) : null;
+        const precio_referencia = precioTipeado === null ? null
+            : Math.round(precioTipeado / factorPrecioMaterial(unidad_medida) * 1e6) / 1e6;
         const activo = document.getElementById('activo').checked;
         
         // Validaciones
@@ -344,13 +367,14 @@ async function eliminarMateriaPrima(id) {
 // cargado para esa compra (diseño acordado 12/09/2026 - cotización del dólar
 // por factura). Si no hay dato en USD (facturas viejas, o factura sin dólar
 // cargado), no se muestra nada.
-function renderPrecioUsd(valorUsd) {
+function renderPrecioUsd(valorUsd, unidad) {
     if (valorUsd === null || valorUsd === undefined) return '';
     // Montos ocultos: Shell.monto lo anota para que el ojo lo oculte (shell.js).
     // Un precio por gramo en USD es chico (0,0243): con 2 decimales saldría 0,02.
     const valor = parseFloat(valorUsd);
     const texto = `USD ${valor.toFixed(Math.abs(valor) < 1 ? 4 : 2)}`;
-    return `<br><small class="text-muted">${window.Shell && Shell.monto ? Shell.monto(texto) : texto}</small>`;
+    const sufijo = String(unidad || '').toUpperCase() === 'KG' ? ' /kg' : '';
+    return `<br><small class="text-muted">${window.Shell && Shell.monto ? Shell.monto(texto) : texto}${sufijo}</small>`;
 }
 
 function renderVariacionHistorial(p) {
@@ -376,8 +400,8 @@ async function verHistorialPrecios(id) {
             tbody.innerHTML = historial.map(p => `
                 <tr>
                     <td>${Shell.fecha(p.fecha_cambio)}</td>
-                    <td class="num" data-label="Antes">${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
-                    <td class="num" data-label="Después">${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
+                    <td class="num" data-label="Antes">${Shell.precioCompra(p.precio_anterior_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_anterior_usd_compra, p.unidad_precio)}</td>
+                    <td class="num" data-label="Después">${Shell.precioCompra(p.precio_nuevo_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_nuevo_usd_compra, p.unidad_precio)}</td>
                     <td class="num" data-label="Variación">${renderVariacionHistorial(p)}</td>
                     <td class="muted solo-escritorio" data-label="Factura">${p.factura_numero || '—'}</td>
                     <td class="muted solo-escritorio" data-label="Cargó">${p.usuario_nombre || '—'}</td>
@@ -416,8 +440,8 @@ async function verHistorialPreciosModal() {
             tbody.innerHTML = historial.map(p => `
                 <tr>
                     <td>${Shell.fecha(p.fecha_cambio)}</td>
-                    <td class="num" data-label="Antes">${formatearMoneda(p.precio_anterior || 0)}${renderPrecioUsd(p.precio_anterior_usd)}</td>
-                    <td class="num" data-label="Después">${formatearMoneda(p.precio_nuevo || 0)}${renderPrecioUsd(p.precio_nuevo_usd)}</td>
+                    <td class="num" data-label="Antes">${Shell.precioCompra(p.precio_anterior_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_anterior_usd_compra, p.unidad_precio)}</td>
+                    <td class="num" data-label="Después">${Shell.precioCompra(p.precio_nuevo_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_nuevo_usd_compra, p.unidad_precio)}</td>
                     <td class="num" data-label="Variación">${renderVariacionHistorial(p)}</td>
                     <td class="muted solo-escritorio" data-label="Factura">${p.factura_numero || '—'}</td>
                     <td class="muted solo-escritorio" data-label="Cargó">${p.usuario_nombre || '—'}</td>

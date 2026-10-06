@@ -700,8 +700,14 @@ class FacturasCompra {
         const factor = factorUnidadFc(item.unidad_medida, unidadMaterial);
         if (factor !== 1) {
             const cantidad = Math.round((item.cantidad || 0) * factor * 1000) / 1000;
-            const precio = (item.precio_unitario || 0) / factor;
-            aviso.textContent = `Entra al stock como ${cantidad.toLocaleString('es-AR')} ${unidadMaterial} a ${Shell.money(precio)}/${unidadMaterial}`;
+            // El precio guardado del material se ve por kg (es el que maneja el
+            // proveedor): si el material va en gramos, se muestra el precio de la
+            // factura tal cual y no por gramo.
+            const porKg = normalizarUnidadFc(unidadMaterial) === 'GR';
+            const precio = porKg ? (item.precio_unitario || 0) * (factorUnidadFc('KG', item.unidad_medida))
+                                 : (item.precio_unitario || 0) / factor;
+            aviso.textContent = `Entra al stock como ${cantidad.toLocaleString('es-AR')} ${unidadMaterial}` +
+                ` y el precio del material queda en ${Shell.money(precio)}/${porKg ? 'KG' : unidadMaterial}`;
             aviso.classList.add('muted');
         } else if (normalizarUnidadFc(item.unidad_medida) !== normalizarUnidadFc(unidadMaterial)) {
             aviso.textContent = `El material se lleva en ${unidadMaterial}: el stock no se convierte`;

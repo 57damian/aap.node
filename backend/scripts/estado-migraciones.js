@@ -332,6 +332,27 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-precios-6-decimales.sql (06/10): el precio por gramo con 6 decimales
+  // para que el precio por kg que se ve en pantalla quede exacto al centavo.
+  {
+    const r = await pool.query(
+      `SELECT table_name || '.' || column_name AS col, numeric_scale
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND ((table_name = 'materias_primas' AND column_name = 'precio_referencia')
+            OR (table_name = 'stock_movimientos' AND column_name = 'precio_unitario')
+            OR (table_name = 'historial_precios_materias' AND column_name IN ('precio_anterior', 'precio_nuevo')))`
+    );
+    const faltan = r.rows
+      .filter(c => c.numeric_scale < 6)
+      .map(c => `${c.col} con ${c.numeric_scale} decimales`);
+    resultados.push({
+      migracion: 'migracion-precios-6-decimales.sql',
+      aplicada: faltan.length === 0,
+      falta: faltan.join(', ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

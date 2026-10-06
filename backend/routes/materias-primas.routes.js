@@ -4,6 +4,13 @@ const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { fecha: fmtFecha, money } = require('../services/pdf-base');
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+const { agregarPrecioDeCompra, precioDeCompra } = require('../services/unidades');
+
+// Campos de precio del historial que se agregan por unidad de compra (por kg para el alambre).
+const PRECIOS_HISTORIAL = {
+  precio_anterior_compra: 'precio_anterior', precio_nuevo_compra: 'precio_nuevo',
+  precio_anterior_usd_compra: 'precio_anterior_usd', precio_nuevo_usd_compra: 'precio_nuevo_usd'
+};
 
 const COLS_PDF_HIST_PRECIOS_MP = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 60 },
@@ -79,12 +86,12 @@ router.get('/', soloAdmin, async (req, res) => {
     const result = await pool.query(query, params);
     
     // Agregar campo calculado valor_total y estado_stock
-    const rows = result.rows.map(item => ({
+    const rows = result.rows.map(item => agregarPrecioDeCompra({
       ...item,
       valor_total: (item.stock_actual || 0) * (item.ultimo_precio || 0),
       estado_stock: item.stock_actual === 0 ? 'CRITICO' :
                     item.stock_actual <= item.stock_minimo ? 'BAJO' : 'NORMAL'
-    }));
+    }, { precio_compra: 'ultimo_precio' }));
 
     res.json(rows);
   } catch (err) {
@@ -110,6 +117,7 @@ function construirQueryHistorialPreciosMP(req) {
       hpm.precio_nuevo_usd, hpm.precio_anterior_usd,
       hpm.variacion_porcentaje, hpm.fecha_cambio,
       mp.nombre as material_nombre, mp.codigo as material_codigo,
+      mp.unidad_medida,
       fc.numero_factura as factura_numero,
       p.nombre as proveedor_nombre
     FROM historial_precios_materias hpm
@@ -131,7 +139,7 @@ router.get('/historial-precios', soloAdmin, async (req, res) => {
   try {
     const { query, params } = construirQueryHistorialPreciosMP(req);
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    res.json(result.rows.map(r => agregarPrecioDeCompra(r, PRECIOS_HISTORIAL)));
   } catch (err) {
     console.error('Error en GET /materias-primas/historial-precios:', err);
     res.status(500).json({ error: err.message });
@@ -146,6 +154,7 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
 
     const filtros = [];
     if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
+    filtros.push('Materiales que se llevan en gramos: precios por kg');
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="precios-compra-${desde || 'todo'}_a_${hasta || 'hoy'}.pdf"`);
@@ -158,8 +167,8 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
         fecha: fmtFecha(r.fecha_cambio),
         material: `${r.material_nombre || '—'}${r.material_codigo ? ' (' + r.material_codigo + ')' : ''}`,
         proveedor: r.proveedor_nombre || '—',
-        precio_anterior: r.precio_anterior != null ? money(r.precio_anterior) : '—',
-        precio_nuevo: money(r.precio_nuevo),
+        precio_anterior: r.precio_anterior != null ? money(precioDeCompra(r.precio_anterior, r.unidad_medida)) : '—',
+        precio_nuevo: money(precioDeCompra(r.precio_nuevo, r.unidad_medida)),
         variacion: r.variacion_porcentaje != null ? `${Number(r.variacion_porcentaje) > 0 ? '+' : ''}${Number(r.variacion_porcentaje).toFixed(1)}%` : '—',
         factura: r.factura_numero || '—'
       })
@@ -191,7 +200,7 @@ router.get('/historial-precios/pdf', soloAdmin, async (req, res) => {
         return res.status(404).json({ error: 'Materia prima no encontrada' });
       }
 
-      res.json(result.rows[0]);
+      res.json(agregarPrecioDeCompra(result.rows[0], { precio_compra: 'precio_referencia' }));
     } catch (err) {
       console.error('Error en GET /materias-primas/:id:', err);
       res.status(500).json({ error: err.message });
@@ -319,8 +328,10 @@ router.delete('/:id', soloAdmin, async (req, res) => {
           hpm.fecha_cambio,
           fc.numero_factura as factura_numero,
           p.nombre as proveedor_nombre,
-          u.nombre_completo as usuario_nombre
+          u.nombre_completo as usuario_nombre,
+          mp.unidad_medida
         FROM historial_precios_materias hpm
+        JOIN materias_primas mp ON mp.id = hpm.materia_prima_id
         LEFT JOIN facturas_compra fc ON hpm.factura_id = fc.id
         LEFT JOIN proveedores p ON hpm.proveedor_id = p.id
         LEFT JOIN usuarios u ON hpm.created_by = u.id
@@ -328,7 +339,7 @@ router.delete('/:id', soloAdmin, async (req, res) => {
         ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC
       `, params);
 
-      res.json(result.rows);
+      res.json(result.rows.map(r => agregarPrecioDeCompra(r, PRECIOS_HISTORIAL)));
     } catch (err) {
       console.error('Error en GET /materias-primas/:id/historial-precios:', err);
       res.status(500).json({ error: err.message });

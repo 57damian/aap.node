@@ -18,6 +18,8 @@ const CAMPOS_CONTABLES = [
   'precio', 'precio_referencia', 'precio_unitario', 'precio_anterior',
   'precio_promedio', 'precio_venta', 'precio_costo', 'costo',
   'ultimo_precio', 'ultimo_precio_usd', 'precio_usd',
+  'precio_compra', 'precio_anterior_compra', 'precio_nuevo_compra',
+  'precio_anterior_usd_compra', 'precio_nuevo_usd_compra', 'variacion_precio_anterior_compra',
   'variacion_precio', 'variacion_precio_anterior', 'variacion_fecha',
   'valor_total', 'valor_stock', 'valorizado',
   'subtotal', 'total', 'importe', 'monto',

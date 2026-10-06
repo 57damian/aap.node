@@ -42,4 +42,45 @@ function sonIncompatibles(unidadItem, unidadMaterial) {
   return factorAUnidadMaterial(origen, destino) === 1;
 }
 
-module.exports = { normalizarUnidad, factorAUnidadMaterial, sonIncompatibles };
+// ----------------------------------------------------------------------------
+// Precio de compra
+//
+// El alambre se lleva en stock en gramos (se consume en gramos: ~22 g por
+// bobinado) pero se compra y se negocia por kg. Los precios se guardan por
+// unidad de stock (materias_primas.precio_referencia, el historial y los
+// movimientos); para MOSTRARLOS y editarlos, un material en GR se expresa por
+// kg. El resto de las unidades no se toca.
+// ----------------------------------------------------------------------------
+
+/** Unidad en la que se expresa el precio de compra de un material. */
+function unidadPrecio(unidadMaterial) {
+  return normalizarUnidad(unidadMaterial) === 'GR' ? 'KG' : (unidadMaterial || '');
+}
+
+/** Precio por unidad de stock -> precio por unidad de compra (GR -> por KG). null/vacío -> null. */
+function precioDeCompra(precio, unidadMaterial) {
+  if (precio === null || precio === undefined || precio === '') return null;
+  const n = parseFloat(precio);
+  if (!isFinite(n)) return null;
+  if (normalizarUnidad(unidadMaterial) !== 'GR') return n;
+  // 6 decimales: 34,0335 * 1000 en coma flotante da 34033,50000000001
+  return Math.round(n * 1000 * 1e6) / 1e6;
+}
+
+/**
+ * Agrega a una fila los precios de compra y su unidad, sin tocar los campos
+ * originales (el valorizado y la factura siguen usando el precio por unidad de
+ * stock). `mapa` = { campo_nuevo: 'campo_origen' }.
+ */
+function agregarPrecioDeCompra(fila, mapa, unidadMaterial = fila.unidad_medida) {
+  for (const [nuevo, origen] of Object.entries(mapa)) {
+    fila[nuevo] = precioDeCompra(fila[origen], unidadMaterial);
+  }
+  fila.unidad_precio = unidadPrecio(unidadMaterial);
+  return fila;
+}
+
+module.exports = {
+  normalizarUnidad, factorAUnidadMaterial, sonIncompatibles,
+  unidadPrecio, precioDeCompra, agregarPrecioDeCompra
+};

@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin, adminYOperario } = require('../middlewares/auth');
 const { segunRol } = require('../services/vista-operario');
+const { agregarPrecioDeCompra } = require('../services/unidades');
 
 router.use(verificarToken);
 
@@ -113,8 +114,12 @@ router.get('/', LECTURA, async (req, res) => {
     query += ` ORDER BY mp.nombre`;
 
     const result = await pool.query(query, params);
+    // Precio por unidad de compra (por kg para el alambre, que se lleva en gramos).
+    const rows = result.rows.map(r => agregarPrecioDeCompra(r, {
+      precio_compra: 'ultimo_precio', variacion_precio_anterior_compra: 'variacion_precio_anterior'
+    }));
     // segunRol: al operario no le llegan precio, variación ni proveedor.
-    res.json(segunRol(result.rows, req.usuario.rol));
+    res.json(segunRol(rows, req.usuario.rol));
   } catch (err) {
     console.error('Error en GET /stock:', err);
     res.status(500).json({ error: err.message });
@@ -138,12 +143,12 @@ router.get('/actual', LECTURA, async (req, res) => {
       ORDER BY mp.nombre
     `);
 
-    const rows = result.rows.map(item => ({
+    const rows = result.rows.map(item => agregarPrecioDeCompra({
       ...item,
       valor_total: (item.stock_actual || 0) * (item.ultimo_precio || 0),
       estado_stock: item.stock_actual === 0 ? 'CRITICO' :
                     item.stock_actual <= item.stock_minimo ? 'BAJO' : 'NORMAL'
-    }));
+    }, { precio_compra: 'ultimo_precio' }));
 
     // El valor_total de arriba es justamente lo que el operario no tiene que
     // ver: segunRol lo saca, junto con el precio con el que se calculó.
