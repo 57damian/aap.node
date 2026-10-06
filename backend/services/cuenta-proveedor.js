@@ -219,8 +219,9 @@ async function cuentaCorrienteProveedor(pool, proveedorId, { desde, hasta } = {}
              0::numeric, 0::numeric, ROUND(ppi.monto, 2),
              CASE WHEN ${ESTADO_EFECTIVO_ITEM} = 'RECHAZADO'
                   THEN 'Rechazado: ' || COALESCE(ppi.cheque_motivo_rechazo, orig.cheque_motivo_rechazo, 'sin motivo')
-                  ELSE 'Entregado, se debita el ' ||
-                       to_char(COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro), 'DD/MM/YYYY') END,
+                  ELSE 'Entregado, fecha del cheque ' ||
+                       to_char(COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro), 'DD/MM/YYYY') ||
+                       ' (se debita 24-48 h después de que lo deposite)' END,
              pp.id
       FROM pago_proveedor_items ppi
       JOIN pagos_proveedores pp ON pp.id = ppi.pago_id

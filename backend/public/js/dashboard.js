@@ -76,7 +76,7 @@
           '<td class="num" data-label="Importe">' + Shell.money(f.saldo_pendiente) + '</td>' +
           '<td data-label="Estado">' + estadoPill(f.estado_alerta) + '</td>' +
           '</tr>';
-      }).join('') : '<tr><td colspan="5">' + Shell.vacio(
+      }).join('') : '<tr><td colspan="6">' + Shell.vacio(
         'Nada que requiera atención esta semana',
         'No hay facturas de compra vencidas ni por vencer en los próximos 7 días.'
       ) + '</td></tr>';
@@ -84,7 +84,7 @@
       Shell.badge('alertas', (r.vencidas || []).length);
     } catch (e) {
       Shell.error(e, 'No se pudieron cargar las facturas pendientes');
-      tb.innerHTML = '<tr><td colspan="5">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="6">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
     }
   }
 
@@ -97,7 +97,8 @@
           '<td><strong>' + c.proveedor_nombre + '</strong></td>' +
           '<td data-label="Cheque">' + (c.cheque_numero || '—') + '</td>' +
           '<td data-label="Banco">' + (c.cheque_banco || '—') + '</td>' +
-          '<td data-label="Fecha de débito">' + Shell.fecha(c.cheque_fecha_cobro) + '</td>' +
+          '<td data-label="Fecha del cheque">' + Shell.fecha(c.cheque_fecha_cobro) + '</td>' +
+          '<td data-label="Débito estimado">' + Shell.rangoDebito(c) + '</td>' +
           '<td class="num" data-label="Importe">' + Shell.money(c.monto) + '</td>' +
           '</tr>';
       }).join('') : '<tr><td colspan="5">' + Shell.vacio(

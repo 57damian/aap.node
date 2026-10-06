@@ -3,13 +3,49 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const {
-  CTE_FACTURAS_COMPRA, ESTADO_FACTURA_COMPRA, SUBQ_IMPUTADO
+  CTE_FACTURAS_COMPRA, ESTADO_FACTURA_COMPRA, ESTADO_EFECTIVO_ITEM, SUBQ_IMPUTADO
 } = require('../services/cuenta-proveedor');
+const { sqlDebitoDesde, sqlDebitoHasta } = require('../services/cheques-fechas');
 const { generarPdfFacturaCompra } = require('../services/pdf-factura-compra');
 const { factorAUnidadMaterial } = require('../services/unidades');
 const { nombreArchivo } = require('../services/pdf-base');
+const { r2, calcularRenglones } = require('../services/montos');
 
 router.use(verificarToken);
+
+/* Estado de pago de cada factura, con la MISMA definición que Pagos a
+   proveedores (CTE_FACTURAS_COMPRA / ESTADO_FACTURA_COMPRA), y los datos de
+   los cheques entregados que todavía no se debitaron. Antes el listado
+   mostraba el estado de registro de la factura (PENDIENTE aunque ya se la
+   hubiera pagado con un cheque) y no había forma de ver que el pago estaba
+   en proceso. `PAGADA_EN_VALORES` = saldo 0 pero con cheques sin debitar. */
+async function estadoPagoFacturas(ids) {
+  const mapa = new Map();
+  if (!ids.length) return mapa;
+  const { rows } = await pool.query(`
+    WITH ${CTE_FACTURAS_COMPRA}
+    SELECT fs.id, fs.pagado, fs.saldo, fs.en_valores,
+           ${ESTADO_FACTURA_COMPRA} AS estado_pago,
+           cd.debito_desde, cd.debito_hasta, COALESCE(cd.cheques, 0) AS cheques_en_proceso
+    FROM facturas_compra_saldo fs
+    LEFT JOIN LATERAL (
+      SELECT MIN(${sqlDebitoDesde('f.cobro')}) AS debito_desde,
+             MAX(${sqlDebitoHasta('f.cobro')}) AS debito_hasta,
+             COUNT(DISTINCT ppi.id)            AS cheques
+      FROM aplicacion_pagos_proveedores ap
+      JOIN pago_proveedor_items ppi ON ppi.id = ap.pago_item_id
+      JOIN pagos_proveedores    pp  ON pp.id  = ppi.pago_id
+      LEFT JOIN pago_items      orig ON orig.id = ppi.pago_item_origen_id
+      CROSS JOIN LATERAL (SELECT COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) AS cobro) f
+      WHERE ap.factura_compra_id = fs.id
+        AND ppi.tipo IN ('CHEQUE','CHEQUE_ENDOSADO')
+        AND ${ESTADO_EFECTIVO_ITEM} = 'ENTREGADO'
+    ) cd ON true
+    WHERE fs.id = ANY($1::int[])
+  `, [ids]);
+  rows.forEach(r => mapa.set(r.id, r));
+  return mapa;
+}
 
 /* =========================
    OBTENER FACTURAS DE COMPRA
@@ -89,7 +125,8 @@ router.get('/', soloAdmin, async (req, res) => {
            + ' imp.pagado, imp.en_valores ORDER BY fc.fecha_emision DESC, fc.id DESC';
     
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    const estadoPago = await estadoPagoFacturas(result.rows.map(f => f.id));
+    res.json(result.rows.map(f => ({ ...f, ...(estadoPago.get(f.id) || {}) })));
   } catch (err) {
     console.error('Error obteniendo facturas de compra:', err);
     res.status(500).json({ error: err.message });
@@ -170,6 +207,7 @@ router.get('/:id', soloAdmin, async (req, res) => {
     
     const factura = facturaResult.rows[0];
     factura.items = itemsResult.rows;
+    Object.assign(factura, (await estadoPagoFacturas([factura.id])).get(factura.id) || {});
     
     res.json(factura);
   } catch (err) {
@@ -249,10 +287,7 @@ router.get('/:id/pdf', soloAdmin, async (req, res) => {
     No toca la base; lanza Error con el mismo mensaje que antes tiraba
     el alta si algo es inválido. */
 function validarYCalcularItems(items) {
-  let subtotalCalculado = 0;
-  let ivaCalculado = 0;
-  let totalCalculado = 0;
-  const itemsValidados = [];
+  const renglones = [];
 
   for (const item of items) {
     if (!item.cantidad || !item.precio_unitario) {
@@ -267,26 +302,26 @@ function validarYCalcularItems(items) {
       throw new Error('Cantidad y precio unitario deben ser mayores a 0');
     }
 
-    const subtotalItem = cantidad * precioUnitario;
-    const ivaItem = subtotalItem * (ivaPorcentaje / 100);
-    const totalItem = subtotalItem + ivaItem;
-
-    subtotalCalculado += subtotalItem;
-    ivaCalculado += ivaItem;
-    totalCalculado += totalItem;
-
-    itemsValidados.push({
-      ...item,
-      cantidad,
-      precio_unitario: precioUnitario,
-      iva_porcentaje: ivaPorcentaje,
-      subtotal: subtotalItem,
-      iva: ivaItem,
-      total: totalItem
-    });
+    renglones.push({ ...item, cantidad, precio_unitario: precioUnitario, iva_porcentaje: ivaPorcentaje });
   }
 
-  return { itemsValidados, subtotalCalculado, ivaCalculado, totalCalculado };
+  // Importes redondeados a centavos como en la factura impresa (ver
+  // services/montos.js): sin esto el total podía quedar $0,01 distinto del
+  // papel del proveedor y de la suma de los renglones.
+  const { items: itemsValidados, subtotal, iva, total } = calcularRenglones(renglones);
+
+  return {
+    itemsValidados,
+    subtotalCalculado: subtotal,
+    ivaCalculado: iva,
+    totalCalculado: total
+  };
+}
+
+/** Total de la factura: renglones + percepciones + impuestos provinciales − retenciones. */
+function totalConAdicionales(totalItems, percepciones, impuestosProvinciales, retenciones) {
+  return r2(totalItems + (parseFloat(percepciones) || 0)
+    + (parseFloat(impuestosProvinciales) || 0) - (parseFloat(retenciones) || 0));
 }
 
 /** Revierte el efecto en stock de los ítems que tenía la factura ANTES de
@@ -628,10 +663,11 @@ router.post('/', soloAdmin, async (req, res) => {
     // Validar y calcular items (helper compartido con el PUT)
     const { itemsValidados, subtotalCalculado, ivaCalculado, totalCalculado } = validarYCalcularItems(items);
 
-    // Usar totales calculados si no se proporcionan
-    const subtotalFinal = subtotal !== undefined ? parseFloat(subtotal) : subtotalCalculado;
-    const ivaFinal = iva !== undefined ? parseFloat(iva) : ivaCalculado;
-    const totalFinal = total !== undefined ? parseFloat(total) : totalCalculado;
+    // Los totales se calculan acá a partir de los ítems (no se confía en los
+    // que manda el navegador): así la cabecera y los renglones siempre cierran.
+    const subtotalFinal = subtotalCalculado;
+    const ivaFinal = ivaCalculado;
+    const totalFinal = totalConAdicionales(totalCalculado, percepciones, impuestos_provinciales, retenciones);
 
     // Cotización del dólar para esta factura: campo opcional (diseño acordado
     // 12/09/2026). Si se informa, se registra una fila nueva en historial_dolar
@@ -854,14 +890,19 @@ router.put('/:id', soloAdmin, async (req, res) => {
       paramIndex++;
     }
     
-    // Si no vino subtotal/iva/total explícito pero sí items, se usa lo
-    // calculado a partir de ellos (mismo criterio que el alta).
-    const subtotalFinal = subtotal !== undefined ? parseFloat(subtotal)
-      : (totalesDeItems ? totalesDeItems.subtotalCalculado : undefined);
-    const ivaFinal = iva !== undefined ? parseFloat(iva)
-      : (totalesDeItems ? totalesDeItems.ivaCalculado : undefined);
-    const totalFinalCampo = total !== undefined ? parseFloat(total)
-      : (totalesDeItems ? totalesDeItems.totalCalculado : undefined);
+    // Con ítems, los totales salen de ellos (mismo criterio que el alta). Sin
+    // ítems se respetan los que vengan en el body.
+    const subtotalFinal = totalesDeItems ? totalesDeItems.subtotalCalculado
+      : (subtotal !== undefined ? parseFloat(subtotal) : undefined);
+    const ivaFinal = totalesDeItems ? totalesDeItems.ivaCalculado
+      : (iva !== undefined ? parseFloat(iva) : undefined);
+    const totalFinalCampo = totalesDeItems
+      ? totalConAdicionales(
+          totalesDeItems.totalCalculado,
+          percepciones !== undefined ? percepciones : facturaActual.percepciones,
+          impuestos_provinciales !== undefined ? impuestos_provinciales : facturaActual.impuestos_provinciales,
+          retenciones !== undefined ? retenciones : facturaActual.retenciones)
+      : (total !== undefined ? parseFloat(total) : undefined);
 
     if (subtotalFinal !== undefined) {
       updateFields.push(`subtotal = $${paramIndex}`);

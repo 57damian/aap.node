@@ -55,7 +55,7 @@ const CONFIG_PROVEEDOR = {
   notaACuenta: (monto) => `Pagos a cuenta sin imputar a ninguna factura: ${money(monto)}`,
   etiquetaEstado: {
     VENCIDA: 'Vencida', PARCIAL: 'Parcial', PENDIENTE: 'Pendiente',
-    SOBRE_PAGADA: 'Pagada de más', PAGADA_EN_VALORES: 'Pagada en valores', PAGADA: 'Pagada'
+    SOBRE_PAGADA: 'Pagada de más', PAGADA_EN_VALORES: 'Pago en proceso', PAGADA: 'Pagada'
   },
   notasCredito: false
 };

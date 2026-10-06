@@ -33,6 +33,7 @@ const {
   EXCESO_PAGADO, ESTADO_FACTURA_COMPRA,
   resumenProveedor, cuentaCorrienteProveedor, estadoCuentaProveedor
 } = require('../services/cuenta-proveedor');
+const { sqlDebitoDesde, sqlDebitoHasta } = require('../services/cheques-fechas');
 const { generarPdfEstadoCuentaProveedor } = require('../services/pdf-estado-cuenta');
 const { nombreArchivo, fecha: fmtFecha, money } = require('../services/pdf-base');
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
@@ -96,7 +97,7 @@ router.get('/resumen', soloAdmin, async (req, res) => {
         ROUND(COALESCE(SUM(ppi.monto), 0), 2)                        AS total,
         COUNT(*) FILTER (WHERE f.cobro <= CURRENT_DATE + 7)          AS vencen_7_dias,
         ROUND(COALESCE(SUM(ppi.monto) FILTER (WHERE f.cobro <= CURRENT_DATE + 7), 0), 2) AS total_7_dias,
-        COUNT(*) FILTER (WHERE f.cobro < CURRENT_DATE)               AS pasados_sin_debitar
+        COUNT(*) FILTER (WHERE ${sqlDebitoHasta('f.cobro')} < CURRENT_DATE) AS pasados_sin_debitar
       FROM pago_proveedor_items ppi
       JOIN pagos_proveedores pp ON pp.id = ppi.pago_id
       LEFT JOIN pago_items   orig ON orig.id = ppi.pago_item_origen_id
@@ -214,7 +215,9 @@ router.get('/proveedores/:id', soloAdmin, async (req, res) => {
              COALESCE(ppi.cheque_banco,  orig.cheque_banco)  AS cheque_banco,
              COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) AS cheque_fecha_cobro,
              ${ESTADO_EFECTIVO_ITEM} AS estado,
-             (COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) - CURRENT_DATE) AS dias_para_debito
+             ${sqlDebitoDesde('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} AS debito_desde,
+             ${sqlDebitoHasta('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} AS debito_hasta,
+             (${sqlDebitoHasta('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} - CURRENT_DATE) AS dias_para_debito
       FROM pago_proveedor_items ppi
       JOIN pagos_proveedores pp ON pp.id = ppi.pago_id
       LEFT JOIN pago_items   orig ON orig.id = ppi.pago_item_origen_id
@@ -918,7 +921,9 @@ router.get('/cheques', soloAdmin, async (req, res) => {
           pp.id AS pago_id, pp.fecha AS fecha_pago, pp.proveedor_id,
           pr.nombre AS proveedor_nombre,
           cli.nombre AS cliente_origen,
-          (COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) - CURRENT_DATE) AS dias_para_debito,
+          ${sqlDebitoDesde('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} AS debito_desde,
+          ${sqlDebitoHasta('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} AS debito_hasta,
+          (${sqlDebitoHasta('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} - CURRENT_DATE) AS dias_para_debito,
           COALESCE((SELECT SUM(ap.monto_aplicado) FROM aplicacion_pagos_proveedores ap
                     WHERE ap.pago_item_id = ppi.id), 0) AS imputado,
           (SELECT string_agg(fc.numero_factura, ', ' ORDER BY fc.numero_factura)
@@ -954,7 +959,9 @@ router.get('/cheques/alertas', soloAdmin, async (req, res) => {
              COALESCE(ppi.cheque_banco, orig.cheque_banco)   AS cheque_banco,
              COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) AS cheque_fecha_cobro,
              pr.nombre AS proveedor_nombre,
-             (COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro) - CURRENT_DATE) AS dias_para_debito
+             ${sqlDebitoDesde('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} AS debito_desde,
+             ${sqlDebitoHasta('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} AS debito_hasta,
+             (${sqlDebitoHasta('COALESCE(ppi.cheque_fecha_cobro, orig.cheque_fecha_cobro)')} - CURRENT_DATE) AS dias_para_debito
       FROM pago_proveedor_items ppi
       JOIN pagos_proveedores pp ON pp.id = ppi.pago_id
       JOIN proveedores       pr ON pr.id = pp.proveedor_id

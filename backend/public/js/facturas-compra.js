@@ -709,23 +709,29 @@ class FacturasCompra {
         }
     }
 
-    calculateItemTotals(index) {
-        const item = this.items[index];
-        item.subtotal = item.cantidad * item.precio_unitario;
-        item.iva = item.subtotal * (item.iva_porcentaje / 100);
-        item.total = item.subtotal + item.iva;
+    // Recalcula todos los renglones juntos: el IVA se redondea una vez por
+    // alícuota (como la factura impresa) y se reparte entre los renglones,
+    // así que el de uno depende de los demás. Ver js/montos.js.
+    calculateItemTotals() {
+        const { items } = Montos.calcularRenglones(this.items);
+        items.forEach((calc, i) => {
+            const item = this.items[i];
+            item.subtotal = calc.subtotal;
+            item.iva = calc.iva;
+            item.total = calc.total;
 
-        // Actualizar display en la fila utilizando data-index para evitar desfasajes
-        const row = document.querySelector(`.fc-item-row[data-index="${index}"]`);
-        if (row) {
-            const subtotalCell = row.querySelector('.item-subtotal');
-            const ivaCell = row.querySelector('.item-iva-calculo');
-            const totalCell = row.querySelector('.item-total');
-            if (subtotalCell) subtotalCell.textContent = Shell.money(item.subtotal);
-            if (ivaCell) ivaCell.textContent = Shell.money(item.iva);
-            if (totalCell) totalCell.textContent = Shell.money(item.total);
-            this.actualizarAvisoUnidad(row, item);
-        }
+            // Actualizar display en la fila utilizando data-index para evitar desfasajes
+            const row = document.querySelector(`.fc-item-row[data-index="${i}"]`);
+            if (row) {
+                const subtotalCell = row.querySelector('.item-subtotal');
+                const ivaCell = row.querySelector('.item-iva-calculo');
+                const totalCell = row.querySelector('.item-total');
+                if (subtotalCell) subtotalCell.textContent = Shell.money(item.subtotal);
+                if (ivaCell) ivaCell.textContent = Shell.money(item.iva);
+                if (totalCell) totalCell.textContent = Shell.money(item.total);
+                this.actualizarAvisoUnidad(row, item);
+            }
+        });
     }
     
     calculateTotals() {
@@ -742,12 +748,17 @@ class FacturasCompra {
             iva += Number(item.iva) || 0;
             total += Number(item.total) || 0;
         });
+        // Los renglones ya vienen en centavos: se suma y se vuelve a centavos
+        // para no arrastrar ruido de coma flotante.
+        subtotal = Montos.r2(subtotal);
+        iva = Montos.r2(iva);
+        total = Montos.r2(total);
         
         // Agregar percepciones e impuestos provinciales, restar retenciones
         const percepciones = parseFloat(document.getElementById('percepciones').value) || 0;
         const retenciones = parseFloat(document.getElementById('retenciones').value) || 0;
         const impuestosProvinciales = parseFloat(document.getElementById('impuestos_provinciales').value) || 0;
-        total = total + percepciones + impuestosProvinciales - retenciones;
+        total = Montos.r2(total + percepciones + impuestosProvinciales - retenciones);
 
         // Actualizar campos ocultos
         document.getElementById('subtotal').value = subtotal.toFixed(2);
@@ -1105,11 +1116,8 @@ class FacturasCompra {
             return;
         }
         
-        // Recalcular subtotal de cada ítem
-        this.items.forEach((item, index) => {
-            item.subtotal = item.cantidad * item.precio_unitario;
-            this.calculateItemTotals(index);
-        });
+        // Recalcular subtotal de cada ítem (el cálculo es uno solo, ver calculateItemTotals)
+        this.calculateItemTotals();
         
         this.calculateTotals();
         this.showAlert('Subtotal recalculado', 'success');
@@ -1123,11 +1131,7 @@ class FacturasCompra {
         }
         
         // Recalcular IVA de cada ítem
-        this.items.forEach((item, index) => {
-            item.iva = item.subtotal * (item.iva_porcentaje / 100);
-            item.total = item.subtotal + item.iva;
-            this.calculateItemTotals(index);
-        });
+        this.calculateItemTotals();
         
         this.calculateTotals();
         this.showAlert('IVA recalculado', 'success');

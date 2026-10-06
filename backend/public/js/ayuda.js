@@ -88,6 +88,11 @@
       d: 'De lo que figura como pagado, la parte que todavía no salió de la cuenta: cheques propios o endosados entregados pero no debitados.',
       n: 'La factura del proveedor ya figura cancelada (se la pagamos al entregarle el cheque), pero es un compromiso de caja que falta afrontar.'
     },
+    debito_cheque: {
+      t: 'Fecha del cheque y débito estimado',
+      d: 'La fecha del cheque es desde cuando el proveedor puede depositarlo. El banco lo debita de nuestra cuenta entre 24 y 48 horas después de que el proveedor lo deposite, en días hábiles.',
+      n: 'Si el proveedor lo deposita más tarde, el débito también se corre. La estimación no considera feriados. Cuando figura "revisar en el banco" ya pasó el plazo: conviene confirmar el débito y registrarlo.'
+    },
     entregado: {
       t: 'Entregado',
       d: 'El cheque ya está en manos del proveedor, pero todavía no se debitó de nuestra cuenta.',

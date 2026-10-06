@@ -109,7 +109,7 @@ async function cargarResumen() {
         <div class="kpi-k">Cheques a debitar <button type="button" class="ayuda" data-ayuda="en_valores">?</button></div>
         <div class="kpi-v">${Shell.money(c.total)}</div>
         <div class="kpi-sub">${c.cantidad} entregado(s) · ${Shell.money(c.total_7_dias)} en 7 días${
-          num(c.pasados_sin_debitar) > 0 ? ` · <span class="neg">${c.pasados_sin_debitar} con fecha pasada</span>` : ''}</div>
+          num(c.pasados_sin_debitar) > 0 ? ` · <span class="neg">${c.pasados_sin_debitar} sin debitar pasado el plazo</span>` : ''}</div>
       </div>
       <div class="kpi is-success">
         <div class="kpi-k">A favor nuestro</div>
@@ -259,13 +259,14 @@ async function verProveedor(id) {
             <div class="panel-head">Cheques entregados sin debitar</div>
             <div class="panel-body flush"><div class="table-wrap">
               <table class="t">
-                <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Importe</th><th>Fecha de débito</th></tr></thead>
+                <thead><tr><th>Cheque</th><th>Banco</th><th class="num">Importe</th><th>Fecha del cheque</th><th>Débito estimado <button type="button" class="ayuda" data-ayuda="debito_cheque">?</button></th></tr></thead>
                 <tbody>${ficha.cheques_a_debitar.map(c => `
                   <tr>
                     <td><strong>${esc(c.cheque_numero || 's/n')}</strong> ${c.tipo === 'CHEQUE_ENDOSADO' ? Shell.pill('ENTREGADO') : ''}</td>
                     <td data-label="Banco">${esc(c.cheque_banco || '—')}</td>
                     <td class="num" data-label="Importe">${Shell.money(c.monto)}</td>
-                    <td data-label="Fecha de débito">${Shell.fecha(c.cheque_fecha_cobro)}${c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
+                    <td data-label="Fecha del cheque">${Shell.fecha(c.cheque_fecha_cobro)}</td>
+                    <td data-label="Débito estimado">${Shell.rangoDebito(c)}${c.dias_para_debito < 0 ? ' <span class="neg">(revisar en el banco)</span>' : ''}</td>
                   </tr>`).join('')}</tbody>
               </table>
             </div></div>
@@ -970,7 +971,7 @@ async function cargarCheques() {
     const cheques = await apiFetch(`${API}/cheques?${qs}`);
 
     if (!cheques.length) {
-      tbody.innerHTML = '<tr><td colspan="9">' + Shell.vacio('No hay cheques con ese filtro', '') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No hay cheques con ese filtro', '') + '</td></tr>';
       return;
     }
 
@@ -990,8 +991,12 @@ async function cargarCheques() {
           <td data-label="Proveedor">${esc(c.proveedor_nombre)}</td>
           <td class="muted" data-label="Origen">${propio ? 'propio' : `endosado de ${esc(c.cliente_origen || 'cliente')}`}</td>
           <td class="num" data-label="Importe"><strong>${Shell.money(c.monto)}</strong></td>
-          <td data-label="Fecha de débito">${Shell.fecha(c.cheque_fecha_cobro)}${
-            c.estado === 'ENTREGADO' && c.dias_para_debito < 0 ? ' <span class="neg">(pasado)</span>' : ''}</td>
+          <td data-label="Fecha del cheque">${Shell.fecha(c.cheque_fecha_cobro)}</td>
+          <td data-label="Débito">${c.estado === 'DEBITADO'
+            ? 'Debitado el ' + Shell.fecha(c.fecha_debito)
+            : c.estado === 'ENTREGADO'
+              ? Shell.rangoDebito(c) + (c.dias_para_debito < 0 ? ' <span class="neg">(revisar en el banco)</span>' : '')
+              : '<span class="muted">—</span>'}</td>
           <td class="muted" data-label="Imputado a">${c.facturas || 'sin imputar'}</td>
           <td data-label="Estado">${Shell.pill(c.estado)}</td>
           <td data-label="Acciones">${acciones}</td>
@@ -999,7 +1004,7 @@ async function cargarCheques() {
     }).join('');
   } catch (err) {
     Shell.error(err, 'No se pudieron cargar los cheques');
-    tbody.innerHTML = '<tr><td colspan="9">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
   }
 }
 
@@ -1127,7 +1132,7 @@ async function verPago(id, desdeProveedorId) {
     const p = await apiFetch(`${API}/${id}`);
 
     const detalleItem = (i) => {
-      if (i.tipo === 'CHEQUE') return `N° ${esc(i.cheque_numero || '')} · ${esc(i.cheque_banco || '')} · se debita ${Shell.fecha(i.cheque_fecha_cobro)}`;
+      if (i.tipo === 'CHEQUE') return `N° ${esc(i.cheque_numero || '')} · ${esc(i.cheque_banco || '')} · fecha del cheque ${Shell.fecha(i.cheque_fecha_cobro)}`;
       if (i.tipo === 'CHEQUE_ENDOSADO') return `N° ${esc(i.origen_cheque_numero || '')} · ${esc(i.origen_cheque_banco || '')} · de ${esc(i.cliente_origen || 'cliente')} (cheque ${esc(i.origen_estado || '')})`;
       if (i.tipo === 'TRANSFERENCIA') return `Op. ${esc(i.transferencia_numero_operacion || 's/n')} · ${esc(i.transferencia_banco_destino || '')}`;
       if (i.tipo === 'RETENCION') return `${esc(i.retencion_tipo || '')} · cert. ${esc(i.retencion_certificado || 's/n')}`;

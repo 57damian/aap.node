@@ -435,6 +435,14 @@
       var d = new Date(v.length <= 10 ? v + 'T00:00:00' : v);
       return isNaN(d) ? '—' : d.toLocaleDateString('es-AR');
     },
+    /** Cuándo se espera que un cheque entregado salga de nuestra cuenta: el
+     *  proveedor lo deposita desde la fecha del cheque y el banco lo debita
+     *  24-48 h después (el servidor manda debito_desde / debito_hasta). */
+    rangoDebito: function (c) {
+      if (!c || !c.debito_desde) return '—';
+      var d = Shell.fecha(c.debito_desde), h = Shell.fecha(c.debito_hasta);
+      return d === h ? d : d + ' al ' + h;
+    },
     /** Badge de estado: un color por significado, igual en toda la app. */
     pill: function (estado) {
       var e = String(estado || '').toUpperCase();
@@ -446,7 +454,8 @@
       else if (/^(PENDIENTE|DEPOSITADO|ENTREGADO)$/.test(e)) clase = 'pill-info';
       var texto = e === 'SOBRE_COBRADA' ? 'COBRADA DE MÁS'
         : e === 'SOBRE_PAGADA' ? 'PAGADA DE MÁS'
-        : e === 'A_CUENTA' ? 'A FAVOR DEL CLIENTE' : e.replace(/_/g, ' ');
+        : e === 'A_CUENTA' ? 'A FAVOR DEL CLIENTE'
+        : e === 'PAGADA_EN_VALORES' ? 'PAGO EN PROCESO' : e.replace(/_/g, ' ');
       return '<span class="pill ' + clase + '">' + texto + '</span>';
     },
     /** Estado vacío que dice qué hacer, no solo que no hay nada. */

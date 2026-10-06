@@ -39,6 +39,17 @@ function getEstadoBadge(estado) {
     return Shell.pill(estado || 'SIN ESTADO');
 }
 
+// Aviso de "pago en proceso": parte del pago está en cheques ya entregados que
+// todavía no salieron de la cuenta. El servidor manda en_valores y el rango de
+// débito estimado (24-48 h después de que el proveedor deposite el cheque).
+function avisoPagoEnProceso(factura) {
+    const enValores = parseFloat(factura.en_valores) || 0;
+    if (enValores <= 0.005) return '';
+    const cheques = parseInt(factura.cheques_en_proceso, 10) || 0;
+    return `<div class="ec-gestion">${formatearMoneda(enValores)} en ${cheques === 1 ? 'un cheque' : 'cheques'} sin debitar` +
+        ` · débito estimado ${Shell.rangoDebito(factura)}</div>`;
+}
+
 // Función principal para cargar facturas
 async function cargarFacturas() {
     // Verificar autenticación
@@ -121,10 +132,12 @@ function renderizarTablaFacturas(facturas) {
 
             const total = parseFloat(factura.total) || 0;
             const pagado = parseFloat(factura.pagado) || 0;
-            const saldo = parseFloat(factura.saldo) || (total - pagado);
+            const saldo = isNaN(parseFloat(factura.saldo)) ? (total - pagado) : parseFloat(factura.saldo);
 
-            const estado = factura.estado || 'PENDIENTE';
-            const estadoBadge = getEstadoBadge(estado);
+            // Estado de pago real (el mismo que en Pagos a proveedores). El
+            // estado de registro solo se usa si el servidor no lo mandó.
+            const estado = factura.estado_pago || factura.estado || 'PENDIENTE';
+            const estadoBadge = getEstadoBadge(estado) + avisoPagoEnProceso(factura);
             const fechaEmision = Shell.fecha(factura.fecha_emision);
 
             return `
@@ -143,7 +156,7 @@ function renderizarTablaFacturas(facturas) {
                         <button class="b b-ghost b-sm" onclick="verDetalleFactura(${factura.id})">Ver</button>
                         <a class="b b-ghost b-sm" href="facturas-compra.html?id=${factura.id}">Editar</a>
                         <button class="b b-ghost b-sm" onclick="verFacturaPdf(${factura.id})">PDF</button>
-                        ${estado.toUpperCase() === 'PENDIENTE' ? `
+                        ${['PENDIENTE', 'PARCIAL', 'VENCIDA'].includes(estado.toUpperCase()) ? `
                             <button class="b b-ghost b-sm" onclick="registrarPago(${factura.id})">Pagar</button>
                         ` : ''}
                     </td>
@@ -178,6 +191,7 @@ async function verDetalleFactura(facturaId) {
         const total = parseFloat(factura.total) || 0;
         const pagado = parseFloat(factura.pagado) || 0;
         const saldo = total - pagado;
+        const estadoPago = factura.estado_pago || factura.estado;
 
         // Fecha de vencimiento: si no vino cargada, se estima desde la
         // condición de pago (30 o 60 días).
@@ -212,7 +226,7 @@ async function verDetalleFactura(facturaId) {
                 <div class="field"><label>Vencimiento</label><div>${fechaVencimiento}</div></div>
                 <div class="field"><label>Condición de pago</label><div>${esc(factura.condicion_pago || 'CONTADO')}</div></div>
                 <div class="field"><label>Cotización dólar</label><div>${factura.dolar ? formatearMoneda(factura.dolar) : '—'}</div></div>
-                <div class="field"><label>Estado</label><div>${getEstadoBadge(factura.estado)}</div></div>
+                <div class="field"><label>Estado</label><div>${getEstadoBadge(estadoPago)}${avisoPagoEnProceso(factura)}</div></div>
             </div>
             <div class="panel" style="margin-top:16px"><div class="panel-body">
                 <div class="totales-inline">
