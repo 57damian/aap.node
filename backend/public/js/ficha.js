@@ -46,36 +46,105 @@ document.addEventListener('DOMContentLoaded', () => {
     if (event.target == modal) closeDetailModal();
   };
 
-  // Vista previa de imagen
-  const fotoInput = document.getElementById('foto');
-  if (fotoInput) {
-    fotoInput.addEventListener('change', previewFoto);
-  }
-
   cargarClientes();
   cargarFichas();
 });
 
 /* =====================
-   PREVIEW FOTO
+   FOTO DEL MODELO
+   La foto elegida se valida y se reduce en el navegador (las de celular
+   suelen pasar de 5 MB o venir en HEIC, y antes eso hacía fallar el
+   guardado entero sin explicar nada). Lo que se manda al servidor es
+   `fotoLista`, no el archivo original del <input>.
 ===================== */
-function previewFoto() {
-  const fotoInput = document.getElementById('foto');
+const FOTO_MAX_BYTES = 5 * 1024 * 1024;
+const FOTO_LADO_MAX = 1600;       // px del lado más largo
+const FOTO_SIN_REDUCIR = 1.5 * 1024 * 1024;
+
+let fotoLista = null;      // File listo para subir (null = no se eligió una nueva)
+let quitarFoto = false;    // al editar: pidió sacar la foto actual
+
+function mostrarError(id, mensaje) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = mensaje || '';
+  el.hidden = !mensaje;
+}
+
+async function prepararFoto(archivo) {
+  if (archivo.type && !/^image\/(jpeg|png|webp|gif)$/.test(archivo.type)) {
+    throw new Error('La foto tiene que ser JPG, PNG, WEBP o GIF. Si viene de un iPhone (HEIC), sacala o guardala como JPG.');
+  }
+  let bmp;
+  try {
+    bmp = await createImageBitmap(archivo);
+  } catch (_) {
+    throw new Error('No se pudo leer la imagen. Probá con otra foto.');
+  }
+  const escala = Math.min(1, FOTO_LADO_MAX / Math.max(bmp.width, bmp.height));
+  if (escala === 1 && archivo.size <= FOTO_SIN_REDUCIR) {
+    bmp.close();
+    return archivo;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bmp.width * escala);
+  canvas.height = Math.round(bmp.height * escala);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; // el JPEG no tiene transparencia
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  bmp.close();
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+  if (!blob) throw new Error('No se pudo reducir la imagen. Probá con otra foto.');
+  if (blob.size > FOTO_MAX_BYTES) throw new Error('La foto sigue pesando más de 5 MB aun reducida. Probá con otra.');
+  return new File([blob], (archivo.name || 'foto').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
+
+function mostrarVistaPreviaFoto(src) {
   const preview = document.getElementById('fotoPreview');
   if (!preview) return;
-
-  if (fotoInput.files && fotoInput.files[0]) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      preview.src = e.target.result;
-      preview.classList.add('show');
-    };
-    reader.readAsDataURL(fotoInput.files[0]);
+  if (src) {
+    preview.src = src;
+    preview.classList.add('show');
   } else {
-    preview.src = '#';
+    preview.removeAttribute('src');
     preview.classList.remove('show');
   }
+  const acciones = document.getElementById('fotoAcciones');
+  if (acciones) acciones.hidden = !src;
 }
+
+async function onFotoElegida() {
+  const input = document.getElementById('foto');
+  const archivo = input.files && input.files[0];
+  mostrarError('fotoError', '');
+  if (!archivo) return;
+
+  try {
+    fotoLista = await prepararFoto(archivo);
+    quitarFoto = false;
+    mostrarVistaPreviaFoto(URL.createObjectURL(fotoLista));
+  } catch (err) {
+    fotoLista = null;
+    input.value = '';
+    mostrarError('fotoError', err.message);
+  }
+}
+
+function quitarFotoActual() {
+  fotoLista = null;
+  quitarFoto = editMode; // al crear no hay nada guardado que quitar
+  document.getElementById('foto').value = '';
+  mostrarError('fotoError', '');
+  mostrarVistaPreviaFoto(null);
+}
+
+// Delegación: el shell vuelve a armar el body, así que no se enganchan
+// listeners a elementos concretos al cargar el archivo.
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'foto') onFotoElegida();
+  else if (e.target.id === 'etiquetaInput') subirEtiqueta();
+});
 
 /* =====================
    CARGAR CLIENTES
@@ -275,7 +344,7 @@ async function verDetalles(id) {
     // Tarjeta de foto (si existe)
     if (ficha.foto_modelo) {
       html += `
-        <div class="detail-card" style="grid-column: span 2; display: flex; flex-direction: column; align-items: center;">
+        <div class="detail-card" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center;">
           <h4>📸 Imagen del Modelo</h4>
           <img data-foto="${escHtml(ficha.foto_modelo)}" alt="Foto del modelo" style="max-width: 250px; border-radius: 0.75rem; border: 2px solid #cbd5e0;">
         </div>
@@ -428,6 +497,7 @@ async function verDetalles(id) {
     content.innerHTML = html;
     // La foto está protegida: se pide con la sesión (ver cargarImagenProtegida en api.js).
     content.querySelectorAll('img[data-foto]').forEach(img => cargarImagenProtegida(img, img.dataset.foto));
+    mostrarError('etiquetaError', '');
     actualizarEtiquetasUI(ficha);
     document.getElementById('detailModal').showModal();
 
@@ -485,10 +555,15 @@ function actualizarEtiquetasUI(ficha) {
   `).join('');
 }
 
+// Los errores de esta ventana se muestran adentro del <dialog>: un toast
+// queda DETRÁS de un diálogo abierto con showModal() y no se veía.
+let etiquetaSubiendo = false;
+
 async function subirEtiqueta() {
   const input = document.getElementById('etiquetaInput');
   const archivo = input.files[0];
-  if (!archivo || !currentFicha) return;
+  if (!archivo || !currentFicha || etiquetaSubiendo) return;
+  mostrarError('etiquetaError', '');
 
   // Se valida por extensión, no por archivo.type: el navegador no siempre
   // reporta "application/pdf" para un PDF real (adjuntos de mail, escaneos,
@@ -496,7 +571,12 @@ async function subirEtiqueta() {
   // rechazando etiquetas válidas. La comprobación de verdad (la firma real
   // del archivo) la hace el servidor.
   if (!/\.pdf$/i.test(archivo.name)) {
-    showAlert('La etiqueta tiene que ser un archivo .pdf', 'error');
+    mostrarError('etiquetaError', 'La etiqueta tiene que ser un archivo .pdf');
+    input.value = '';
+    return;
+  }
+  if (archivo.size > FOTO_MAX_BYTES) {
+    mostrarError('etiquetaError', 'El PDF pesa más de 5 MB. Probá exportarlo con menos calidad o menos páginas.');
     input.value = '';
     return;
   }
@@ -504,6 +584,9 @@ async function subirEtiqueta() {
   const formData = new FormData();
   formData.append('etiqueta', archivo);
 
+  etiquetaSubiendo = true;
+  const btn = document.getElementById('btnAgregarEtiqueta');
+  if (btn) btn.disabled = true;
   try {
     const nueva = await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiquetas`, {
       method: 'POST',
@@ -511,11 +594,12 @@ async function subirEtiqueta() {
     });
     currentFicha.etiquetas = [...(currentFicha.etiquetas || []), nueva];
     actualizarEtiquetasUI(currentFicha);
-    showAlert('✅ Etiqueta agregada', 'success');
   } catch (err) {
     console.error('Error subiendo etiqueta:', err);
-    showAlert('No se pudo subir la etiqueta: ' + (err.error || err.message), 'error');
+    mostrarError('etiquetaError', 'No se pudo subir la etiqueta: ' + (err.error || err.message));
   } finally {
+    etiquetaSubiendo = false;
+    if (btn) btn.disabled = false;
     input.value = '';
   }
 }
@@ -524,28 +608,52 @@ async function verEtiqueta(id) {
   if (!currentFicha) return;
   const etiqueta = (currentFicha.etiquetas || []).find(e => e.id === id);
   if (!etiqueta) return;
+  mostrarError('etiquetaError', '');
 
   try {
     await verArchivoProtegido(etiqueta.archivo);
   } catch (err) {
     console.error('Error abriendo etiqueta:', err);
-    showAlert('No se pudo abrir la etiqueta: ' + err.message, 'error');
+    mostrarError('etiquetaError', 'No se pudo abrir la etiqueta: ' + err.message);
   }
 }
 
 async function borrarEtiqueta(id) {
   if (!currentFicha) return;
-  if (!confirm('¿Quitar esta etiqueta del modelo?')) return;
+  mostrarError('etiquetaError', '');
+  if (!await confirmarFicha('Quitar etiqueta', '¿Quitar esta etiqueta del modelo?', 'Quitar')) return;
 
   try {
     await apiFetch(`/api/ficha-transformador/${currentFicha.id}/etiquetas/${id}`, { method: 'DELETE' });
     currentFicha.etiquetas = (currentFicha.etiquetas || []).filter(e => e.id !== id);
     actualizarEtiquetasUI(currentFicha);
-    showAlert('Etiqueta eliminada', 'success');
   } catch (err) {
     console.error('Error borrando etiqueta:', err);
-    showAlert('No se pudo eliminar la etiqueta: ' + (err.error || err.message), 'error');
+    mostrarError('etiquetaError', 'No se pudo eliminar la etiqueta: ' + (err.error || err.message));
   }
+}
+
+/* Confirmación en un <dialog class="panel"> (no confirm(): ver CLAUDE.md).
+   Devuelve una Promise<boolean>. */
+function confirmarFicha(titulo, mensajeHtml, textoBoton) {
+  return new Promise((resolve) => {
+    document.getElementById('confirmarFichaTitulo').textContent = titulo;
+    document.getElementById('confirmarFichaMsg').innerHTML = mensajeHtml;
+    const modal = document.getElementById('confirmarFichaModal');
+    const btn = document.getElementById('btnConfirmarFicha');
+    btn.textContent = textoBoton || 'Confirmar';
+
+    function limpiar() {
+      btn.removeEventListener('click', onConfirmar);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onConfirmar() { limpiar(); modal.close(); resolve(true); }
+    function onCerrar() { limpiar(); resolve(false); }
+
+    btn.addEventListener('click', onConfirmar);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+  });
 }
 
 /* =====================
@@ -568,10 +676,13 @@ async function eliminarFicha(id) {
   }
 }
 
-function confirmarEliminar(id, modelo) {
-  if (confirm(`¿Está seguro de eliminar el modelo "${modelo}"?\n\nEsta acción no se puede deshacer.`)) {
-    eliminarFicha(id);
-  }
+async function confirmarEliminar(id, modelo) {
+  const ok = await confirmarFicha(
+    'Eliminar modelo',
+    `¿Está seguro de eliminar el modelo <strong>${escHtml(modelo)}</strong>?<br>Esta acción no se puede deshacer.`,
+    'Eliminar'
+  );
+  if (ok) eliminarFicha(id);
 }
 
 function rolPermiteEliminar() {
@@ -689,6 +800,14 @@ document.addEventListener('click', (e) => {
     agregarDevanadoExtra();
     return;
   }
+  if (e.target.closest('#btnQuitarFoto')) {
+    quitarFotoActual();
+    return;
+  }
+  if (e.target.closest('#btnEtiquetasEditor') && currentId) {
+    verDetalles(currentId);
+    return;
+  }
   const eliminar = e.target.closest('[data-eliminar]');
   if (eliminar) {
     confirmarEliminar(Number(eliminar.dataset.eliminar), eliminar.dataset.modelo);
@@ -742,10 +861,9 @@ async function handleSubmit(e) {
   // todos los devanados adicionales también se guarda.
   formData.append('devanados_extra', JSON.stringify(leerDevanadosExtra()));
 
-  const fotoInput = document.getElementById('foto');
-  if (fotoInput?.files[0]) {
-    formData.append('foto', fotoInput.files[0]);
-  }
+  // Se manda la foto ya validada y reducida (fotoLista), no la del <input>.
+  if (fotoLista) formData.append('foto', fotoLista);
+  else if (editMode && quitarFoto) formData.append('quitar_foto', '1');
 
   fichaEnviando = true;
   const btn = e.target.querySelector('button[type="submit"]');
@@ -791,6 +909,10 @@ async function editarFicha(id) {
     
     const ficha = await apiFetch(`/api/ficha-transformador/${id}`);
 
+    // Se parte de un formulario limpio: sin esto quedaba la foto elegida (o el
+    // aviso de error) de la ficha anterior, y se mandaba al guardar esta.
+    resetForm();
+
     // Llenar el formulario con los datos de la ficha
     Object.keys(ficha).forEach(key => {
       const el = document.getElementById(key);
@@ -805,13 +927,12 @@ async function editarFicha(id) {
     if (preview && ficha.foto_modelo) {
       cargarImagenProtegida(preview, ficha.foto_modelo);
       preview.classList.add('show');
-    } else if (preview) {
-      preview.src = '#';
-      preview.classList.remove('show');
+      document.getElementById('fotoAcciones').hidden = false;
     }
 
     editMode = true;
     currentId = id;
+    actualizarPanelEtiquetasEditor();
     showTab('crear');
     
     showAlert('Editando ficha ID: ' + id, 'success');
@@ -828,39 +949,40 @@ async function editarFicha(id) {
 function resetForm() {
   document.getElementById('fichaForm').reset();
   limpiarDevanadosExtra();
-  const preview = document.getElementById('fotoPreview');
-  if (preview) {
-    preview.src = '#';
-    preview.classList.remove('show');
-  }
+  fotoLista = null;
+  quitarFoto = false;
+  mostrarError('fotoError', '');
+  mostrarVistaPreviaFoto(null);
   editMode = false;
   currentId = null;
+  actualizarPanelEtiquetasEditor();
+}
+
+// En el editor las etiquetas se administran desde la ventana de detalle
+// (la ficha tiene que existir para poder subirle un archivo).
+function actualizarPanelEtiquetasEditor() {
+  const msg = document.getElementById('etiquetasEditorMsg');
+  const btn = document.getElementById('btnEtiquetasEditor');
+  if (!msg || !btn) return;
+  btn.hidden = !editMode;
+  msg.textContent = editMode
+    ? 'Las etiquetas de este modelo se agregan, descargan y quitan desde la ventana de detalle.'
+    : 'Guardá la ficha y después agregá las etiquetas desde «Ver».';
 }
 
 /* =====================
    MOSTRAR TAB
 ===================== */
 function showTab(tabName, event) {
-  const createView = document.getElementById('createView');
-  const listView = document.getElementById('listView');
-
-  if (createView && listView) {
-    if (tabName === 'crear') {
-      createView.style.display = 'block';
-      listView.style.display = 'none';
-    } else if (tabName === 'listar') {
-      createView.style.display = 'none';
-      listView.style.display = 'block';
-      cargarFichas();
-    }
-    return;
-  }
+  // Tocar "Nueva ficha" (viene con `event`) arranca un formulario limpio. Antes
+  // quedaba el modo edición de la ficha anterior y "Guardar" hacía un PUT
+  // sobre ella en vez de crear una nueva. editarFicha() llama sin `event`.
+  if (tabName === 'crear' && event) resetForm();
 
   document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
   const tab = document.getElementById(tabName);
   if (tab) tab.classList.add('active');
-  if (event?.target) event.target.classList.add('active');
+  document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabName));
   if (tabName === 'listar') cargarFichas();
 }
 

@@ -248,6 +248,17 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-ficha-archivos.sql (06/10): tabla ficha_archivos (fotos y
+  // etiquetas de la ficha guardadas en la base).
+  {
+    const tieneTabla = await existeTabla('ficha_archivos');
+    resultados.push({
+      migracion: 'migracion-ficha-archivos.sql',
+      aplicada: tieneTabla,
+      falta: tieneTabla ? '' : 'falta la tabla ficha_archivos'
+    });
+  }
+
   // migracion-impuestos-provinciales-compra.sql (24/09): columna
   // facturas_compra.impuestos_provinciales.
   {

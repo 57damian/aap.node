@@ -5,10 +5,8 @@
  * membretado, igual que el resto de los PDF del sistema (22/09/2026).
  * ===================================================================== */
 
-const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const { MARGEN, ANCHO_UTIL, dibujarLinea, dibujarMembrete, piePagina } = require('./pdf-base');
-const { rutaFisica } = require('../config/uploads');
 
 const NOMBRE_DEVANADO = ['Terciario', 'Cuarto', 'Quinto', 'Sexto', 'Séptimo', 'Octavo', 'Noveno', 'Décimo'];
 const ALTO_DEVANADO_ESTIMADO = 100; // título + 5 campos, para decidir salto de página
@@ -39,8 +37,8 @@ function dibujarDevanado(doc, titulo, d) {
 /**
  * `ficha` trae las columnas de ficha_transformador + cliente_nombre +
  * devanados_extra: [{ orden, alambre, diametro_mm, espiras, pines, peso_kg }].
- * `ficha.foto_modelo` es la ruta relativa a backend/public (ej.
- * "uploads/modelos/xxx.png"); si no existe el archivo, el PDF sale igual.
+ * `ficha.foto_buffer` es el contenido de la foto (viene de ficha_archivos);
+ * si no hay foto, el PDF sale igual.
  */
 function generarPdfFicha(ficha, res) {
   const doc = new PDFDocument({ size: 'A4', margin: MARGEN });
@@ -58,13 +56,14 @@ function generarPdfFicha(ficha, res) {
   // La foto (si existe) va arriba a la derecha; el texto de al lado se
   // angosta para no meterse debajo de la imagen.
   const yInicio = doc.y;
-  const fotoPath = ficha.foto_modelo ? rutaFisica(ficha.foto_modelo) : null;
-  const hayFoto = !!(fotoPath && fs.existsSync(fotoPath));
+  let hayFoto = !!ficha.foto_buffer;
   if (hayFoto) {
     try {
-      doc.image(fotoPath, MARGEN + ANCHO_UTIL - 140, doc.y, { fit: [140, 140] });
+      doc.image(ficha.foto_buffer, MARGEN + ANCHO_UTIL - 140, doc.y, { fit: [140, 140] });
     } catch (e) {
+      // pdfkit no lee WEBP: el PDF sale igual, sin la foto.
       console.warn('No se pudo insertar la foto de la ficha en el PDF:', e.message);
+      hayFoto = false;
     }
   }
 

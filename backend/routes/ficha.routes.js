@@ -1,17 +1,56 @@
-const upload = require('../middlewares/uploadModelo');
-const uploadEtiqueta = require('../middlewares/uploadEtiqueta');
+const { imagen: subidaImagen, pdf: subidaPdf } = require('../middlewares/uploadFichaArchivo');
 const express = require('express');
 const router = express.Router();
-const fs = require('fs');
-const path = require('path');
 const pool = require('../db');
 const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/auth');
 const { segunRol } = require('../services/vista-operario');
 const { generarPdfFicha } = require('../services/pdf-ficha');
 const { nombreArchivo } = require('../services/pdf-base');
-const { rutaFisica } = require('../config/uploads');
 
 router.use(verificarToken);
+
+/* =========================
+   FOTO Y ETIQUETAS (06/10/2026)
+   Viven en la tabla ficha_archivos (binario en la base), no en disco: el
+   disco de Railway se vacía en cada deploy. La API sigue devolviendo
+   `foto_modelo` y `etiquetas[].archivo` como una ruta relativa que el
+   frontend pide con el token (cargarImagenProtegida / verArchivoProtegido),
+   pero ahora esa ruta es un endpoint de esta misma API.
+========================= */
+const rutaFoto = (fichaId) => `api/ficha-transformador/${fichaId}/foto`;
+const rutaEtiqueta = (fichaId, archivoId) => `api/ficha-transformador/${fichaId}/etiquetas/${archivoId}/archivo`;
+
+// Reemplaza la foto de la ficha (una sola por ficha).
+async function guardarFoto(client, fichaId, file, usuarioId) {
+  await client.query(
+    `INSERT INTO ficha_archivos (ficha_id, tipo, nombre_original, mime, tamano, contenido, creado_por)
+     VALUES ($1, 'FOTO', $2, $3, $4, $5, $6)
+     ON CONFLICT (ficha_id) WHERE tipo = 'FOTO' DO UPDATE SET
+       nombre_original = EXCLUDED.nombre_original, mime = EXCLUDED.mime, tamano = EXCLUDED.tamano,
+       contenido = EXCLUDED.contenido, creado_en = now(), creado_por = EXCLUDED.creado_por`,
+    [fichaId, sanitizarNombreOriginal(file.originalname), file.mimeDetectado, file.size, file.buffer, usuarioId]
+  );
+}
+
+// foto_modelo (columna vieja, ruta de disco) se pisa con la ruta del endpoint
+// nuevo si la ficha tiene foto en la base, o null si no la tiene.
+function conRutaDeFoto(ficha, tieneFoto) {
+  ficha.foto_modelo = tieneFoto ? rutaFoto(ficha.id) : null;
+  delete ficha.tiene_foto;
+  return ficha;
+}
+
+function enviarArchivo(res, fila, disposicion) {
+  res.setHeader('Content-Type', fila.mime);
+  res.setHeader('Content-Length', fila.contenido.length);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, no-cache');
+  if (disposicion) {
+    const nombre = (fila.nombre_original || 'archivo').replace(/[^\w.\- ]/g, '_');
+    res.setHeader('Content-Disposition', `${disposicion}; filename="${nombre}"`);
+  }
+  res.end(fila.contenido);
+}
 
 /* =========================
    DEVANADOS ADICIONALES (terciario, cuarto…)
@@ -136,11 +175,11 @@ async function leerExtras(cliente, fichaId) {
 
 async function leerEtiquetas(cliente, fichaId) {
   const r = await cliente.query(
-    `SELECT id, archivo, nombre_original, creado_en
-     FROM ficha_etiquetas WHERE ficha_id = $1 ORDER BY id`,
+    `SELECT id, nombre_original, creado_en
+     FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'ETIQUETA' ORDER BY id`,
     [fichaId]
   );
-  return r.rows;
+  return r.rows.map(e => ({ ...e, archivo: rutaEtiqueta(fichaId, e.id) }));
 }
 
 function responderError(res, err, contexto) {
@@ -151,7 +190,7 @@ function responderError(res, err, contexto) {
 /* =========================
    CREATE - Crear nueva ficha
 ========================= */
-router.post('/', adminYOperario, upload.single('foto'), async (req, res) => {
+router.post('/', adminYOperario, subidaImagen.single('foto'), async (req, res) => {
   const {
     modelo,
     cliente_id,
@@ -166,8 +205,6 @@ router.post('/', adminYOperario, upload.single('foto'), async (req, res) => {
     return res.status(400).json({ error: 'El nombre del modelo es obligatorio' });
   }
 
-  const foto = req.file ? `uploads/modelos/${req.file.filename}` : null;
-
   const client = await pool.connect();
   try {
     validarTextosFicha(req.body);
@@ -178,23 +215,22 @@ router.post('/', adminYOperario, upload.single('foto'), async (req, res) => {
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO ficha_transformador (
-        modelo, cliente_id, tipo_carretel, foto_modelo,
+        modelo, cliente_id, tipo_carretel,
         voltaje_entrada, voltaje_salida, amperaje_entrada, amperaje_salida,
         alambre_primario, diametro_primario_mm, espiras_primario, pines_primario, peso_primario_kg,
         alambre_secundario, diametro_secundario_mm, espiras_secundario, pines_secundario, peso_secundario_kg,
         laminacion, peso_laminacion_kg, observaciones
       ) VALUES (
-        $1,$2,$3,$4,
-        $5,$6,$7,$8,
-        $9,$10,$11,$12,$13,
-        $14,$15,$16,$17,$18,
-        $19,$20,$21
+        $1,$2,$3,
+        $4,$5,$6,$7,
+        $8,$9,$10,$11,$12,
+        $13,$14,$15,$16,$17,
+        $18,$19,$20
       ) RETURNING *`,
       [
         modelo,
         cliente_id || null,
         tipo_carretel,
-        foto,
         voltaje_entrada,
         voltaje_salida,
         req.body.amperaje_entrada,
@@ -217,12 +253,16 @@ router.post('/', adminYOperario, upload.single('foto'), async (req, res) => {
 
     const ficha = result.rows[0];
     if (extras && extras.length) await guardarExtras(client, ficha.id, extras);
+    if (req.file) await guardarFoto(client, ficha.id, req.file, req.usuario.id);
     await client.query('COMMIT');
 
     ficha.devanados_extra = extras || [];
-    res.json(ficha);
+    res.json(conRutaDeFoto(ficha, !!req.file));
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.code === '23505' && /modelo/.test(err.constraint || err.detail || '')) {
+      return res.status(400).json({ error: `Ya existe un modelo llamado "${modelo}"` });
+    }
     responderError(res, err, 'Error creando ficha:');
   } finally {
     client.release();
@@ -241,24 +281,28 @@ router.get('/', adminYOperario, async (req, res) => {
     // hallazgo D11: listar solo fichas activas (deleted_at IS NULL). Este es
     // el listado que alimenta los selectores de "elegir modelo" — una ficha
     // dada de baja no tiene que seguir apareciendo para elegirla de nuevo.
+    const TIENE_FOTO = `EXISTS (SELECT 1 FROM ficha_archivos fa
+                                WHERE fa.ficha_id = ft.id AND fa.tipo = 'FOTO') AS tiene_foto`;
     if (cliente_id) {
       result = await pool.query(
-        `SELECT * FROM ficha_transformador
-         WHERE (cliente_id IS NULL OR cliente_id = $1) AND deleted_at IS NULL
-         ORDER BY modelo`,
+        `SELECT ft.*, ${TIENE_FOTO} FROM ficha_transformador ft
+         WHERE (ft.cliente_id IS NULL OR ft.cliente_id = $1) AND ft.deleted_at IS NULL
+         ORDER BY ft.modelo`,
         [cliente_id]
       );
     } else {
       result = await pool.query(
-        `SELECT * FROM ficha_transformador
-         WHERE deleted_at IS NULL
-         ORDER BY modelo`
+        `SELECT ft.*, ${TIENE_FOTO} FROM ficha_transformador ft
+         WHERE ft.deleted_at IS NULL
+         ORDER BY ft.modelo`
       );
     }
 
+    const fichas = result.rows.map(f => conRutaDeFoto(f, f.tiene_foto));
+
     // Las fichas hoy no guardan precios, pero la consulta es SELECT *: si
     // mañana se agrega una columna de precio, al operario no le llega.
-    res.json(segunRol(result.rows, req.usuario.rol));
+    res.json(segunRol(fichas, req.usuario.rol));
   } catch (err) {
     console.error('Error listando fichas:', err);
     res.status(500).json({ error: err.message });
@@ -270,8 +314,15 @@ router.get('/', adminYOperario, async (req, res) => {
 ========================= */
 router.get('/:id', adminYOperario, async (req, res) => {
   try {
+    // El JOIN a clientes trae cliente_nombre: sin él el detalle mostraba
+    // siempre "Modelo genérico", aunque la ficha tuviera cliente.
     const result = await pool.query(
-      'SELECT * FROM ficha_transformador WHERE id = $1',
+      `SELECT ft.*, c.nombre AS cliente_nombre,
+              EXISTS (SELECT 1 FROM ficha_archivos fa
+                      WHERE fa.ficha_id = ft.id AND fa.tipo = 'FOTO') AS tiene_foto
+       FROM ficha_transformador ft
+       LEFT JOIN clientes c ON c.id = ft.cliente_id
+       WHERE ft.id = $1`,
       [req.params.id]
     );
 
@@ -280,6 +331,7 @@ router.get('/:id', adminYOperario, async (req, res) => {
     }
 
     const ficha = result.rows[0];
+    conRutaDeFoto(ficha, ficha.tiene_foto);
     ficha.devanados_extra = await leerExtras(pool, ficha.id);
     ficha.etiquetas = await leerEtiquetas(pool, ficha.id);
     res.json(ficha);
@@ -309,6 +361,12 @@ router.get('/:id/pdf', adminYOperario, async (req, res) => {
     const ficha = result.rows[0];
     ficha.devanados_extra = await leerExtras(pool, ficha.id);
 
+    const foto = await pool.query(
+      `SELECT contenido FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'FOTO'`,
+      [ficha.id]
+    );
+    ficha.foto_buffer = foto.rows.length ? foto.rows[0].contenido : null;
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition',
       `attachment; filename="Ficha-${nombreArchivo(ficha.modelo, ficha.id)}.pdf"`);
@@ -325,39 +383,47 @@ router.get('/:id/pdf', adminYOperario, async (req, res) => {
    llevan más de una (ej.: primario y secundario por separado); se suben
    acá para poder reimprimirlas más adelante sin rehacerlas.
 ========================= */
-router.post('/:id/etiquetas', adminYOperario, uploadEtiqueta.single('etiqueta'), async (req, res) => {
+router.post('/:id/etiquetas', adminYOperario, subidaPdf.single('etiqueta'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Falta el archivo de la etiqueta' });
   }
+  const client = await pool.connect();
   try {
-    const ficha = await pool.query('SELECT id FROM ficha_transformador WHERE id = $1', [req.params.id]);
+    await client.query('BEGIN');
+    // Se bloquea la fila de la ficha: dos subidas simultáneas no pasan del tope.
+    const ficha = await client.query(
+      'SELECT id FROM ficha_transformador WHERE id = $1 FOR UPDATE', [req.params.id]);
     if (!ficha.rows.length) {
-      fs.unlink(req.file.path, () => {});
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Ficha no encontrada' });
     }
 
-    const cantidad = await pool.query(
-      'SELECT COUNT(*)::int AS n FROM ficha_etiquetas WHERE ficha_id = $1',
+    const cantidad = await client.query(
+      `SELECT COUNT(*)::int AS n FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'ETIQUETA'`,
       [req.params.id]
     );
     if (cantidad.rows[0].n >= MAX_ETIQUETAS) {
-      fs.unlink(req.file.path, () => {});
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: `Esta ficha ya tiene el máximo de ${MAX_ETIQUETAS} etiquetas` });
     }
 
-    const rutaNueva = `uploads/etiquetas/${req.file.filename}`;
-    const r = await pool.query(
-      `INSERT INTO ficha_etiquetas (ficha_id, archivo, nombre_original, creado_por)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, archivo, nombre_original, creado_en`,
-      [req.params.id, rutaNueva, sanitizarNombreOriginal(req.file.originalname), req.usuario.id]
+    const r = await client.query(
+      `INSERT INTO ficha_archivos (ficha_id, tipo, nombre_original, mime, tamano, contenido, creado_por)
+       VALUES ($1, 'ETIQUETA', $2, $3, $4, $5, $6)
+       RETURNING id, nombre_original, creado_en`,
+      [req.params.id, sanitizarNombreOriginal(req.file.originalname), req.file.mimeDetectado,
+       req.file.size, req.file.buffer, req.usuario.id]
     );
+    await client.query('COMMIT');
 
-    res.status(201).json(r.rows[0]);
+    const fila = r.rows[0];
+    res.status(201).json({ ...fila, archivo: rutaEtiqueta(req.params.id, fila.id) });
   } catch (err) {
-    fs.unlink(req.file.path, () => {});
+    await client.query('ROLLBACK');
     console.error('Error subiendo etiqueta:', err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -367,12 +433,10 @@ router.post('/:id/etiquetas', adminYOperario, uploadEtiqueta.single('etiqueta'),
 router.delete('/:id/etiquetas/:etiquetaId', adminYOperario, async (req, res) => {
   try {
     const r = await pool.query(
-      'DELETE FROM ficha_etiquetas WHERE id = $1 AND ficha_id = $2 RETURNING archivo',
+      `DELETE FROM ficha_archivos WHERE id = $1 AND ficha_id = $2 AND tipo = 'ETIQUETA' RETURNING id`,
       [req.params.etiquetaId, req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Etiqueta no encontrada' });
-
-    fs.unlink(rutaFisica(r.rows[0].archivo), () => {});
     res.json({ ok: true });
   } catch (err) {
     console.error('Error borrando etiqueta:', err);
@@ -381,23 +445,51 @@ router.delete('/:id/etiquetas/:etiquetaId', adminYOperario, async (req, res) => 
 });
 
 /* =========================
+   ARCHIVOS - servir la foto y las etiquetas (solo con sesión)
+========================= */
+router.get('/:id/foto', adminYOperario, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT nombre_original, mime, contenido FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'FOTO'`,
+      [req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Esta ficha no tiene foto' });
+    enviarArchivo(res, r.rows[0], null);
+  } catch (err) {
+    console.error('Error sirviendo foto de ficha:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/etiquetas/:etiquetaId/archivo', adminYOperario, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT nombre_original, mime, contenido FROM ficha_archivos
+       WHERE id = $1 AND ficha_id = $2 AND tipo = 'ETIQUETA'`,
+      [req.params.etiquetaId, req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Etiqueta no encontrada' });
+    enviarArchivo(res, r.rows[0], 'inline');
+  } catch (err) {
+    console.error('Error sirviendo etiqueta:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
    UPDATE - Actualizar ficha
 ========================= */
-router.put('/:id', adminYOperario, upload.single('foto'), async (req, res) => {
+router.put('/:id', adminYOperario, subidaImagen.single('foto'), async (req, res) => {
   const client = await pool.connect();
   try {
-    // Obtener la ficha actual para mantener la foto si no se cambia
     const fichaActual = await client.query(
-      'SELECT foto_modelo FROM ficha_transformador WHERE id = $1',
+      'SELECT id FROM ficha_transformador WHERE id = $1',
       [req.params.id]
     );
 
     if (!fichaActual.rows.length) {
       return res.status(404).json({ error: 'No encontrado' });
     }
-
-    const fotoActual = fichaActual.rows[0].foto_modelo;
-    const nuevaFoto = req.file ? `uploads/modelos/${req.file.filename}` : fotoActual;
 
     validarTextosFicha(req.body);
     const espirasPrimario = textoCorto(req.body.espiras_primario, 40, 'Las espiras del primario');
@@ -407,18 +499,17 @@ router.put('/:id', adminYOperario, upload.single('foto'), async (req, res) => {
     await client.query('BEGIN');
     const result = await client.query(
       `UPDATE ficha_transformador SET
-        modelo=$1, cliente_id=$2, tipo_carretel=$3, foto_modelo=$4,
-        voltaje_entrada=$5, voltaje_salida=$6, amperaje_entrada=$7, amperaje_salida=$8,
-        alambre_primario=$9, diametro_primario_mm=$10, espiras_primario=$11, pines_primario=$12, peso_primario_kg=$13,
-        alambre_secundario=$14, diametro_secundario_mm=$15, espiras_secundario=$16, pines_secundario=$17, peso_secundario_kg=$18,
-        laminacion=$19, peso_laminacion_kg=$20, observaciones=$21
-       WHERE id=$22
+        modelo=$1, cliente_id=$2, tipo_carretel=$3,
+        voltaje_entrada=$4, voltaje_salida=$5, amperaje_entrada=$6, amperaje_salida=$7,
+        alambre_primario=$8, diametro_primario_mm=$9, espiras_primario=$10, pines_primario=$11, peso_primario_kg=$12,
+        alambre_secundario=$13, diametro_secundario_mm=$14, espiras_secundario=$15, pines_secundario=$16, peso_secundario_kg=$17,
+        laminacion=$18, peso_laminacion_kg=$19, observaciones=$20
+       WHERE id=$21
        RETURNING *`,
       [
         req.body.modelo,
         req.body.cliente_id || null,
         req.body.tipo_carretel,
-        nuevaFoto,
         req.body.voltaje_entrada,
         req.body.voltaje_salida,
         req.body.amperaje_entrada,
@@ -442,13 +533,26 @@ router.put('/:id', adminYOperario, upload.single('foto'), async (req, res) => {
 
     // Si el formulario mandó la lista (aunque esté vacía) reemplaza a la guardada.
     if (extras !== undefined) await guardarExtras(client, req.params.id, extras);
+
+    // Foto: una nueva reemplaza a la anterior; sin archivo se conserva la que
+    // había, salvo que el formulario pida quitarla (quitar_foto=1).
+    if (req.file) {
+      await guardarFoto(client, req.params.id, req.file, req.usuario.id);
+    } else if (req.body.quitar_foto === '1') {
+      await client.query(`DELETE FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'FOTO'`, [req.params.id]);
+    }
     await client.query('COMMIT');
 
     const ficha = result.rows[0];
     ficha.devanados_extra = await leerExtras(client, ficha.id);
-    res.json(ficha);
+    const foto = await client.query(
+      `SELECT 1 FROM ficha_archivos WHERE ficha_id = $1 AND tipo = 'FOTO'`, [ficha.id]);
+    res.json(conRutaDeFoto(ficha, foto.rows.length > 0));
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.code === '23505' && /modelo/.test(err.constraint || err.detail || '')) {
+      return res.status(400).json({ error: `Ya existe un modelo llamado "${req.body.modelo}"` });
+    }
     responderError(res, err, 'Error actualizando ficha:');
   } finally {
     client.release();

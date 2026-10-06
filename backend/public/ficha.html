@@ -196,14 +196,28 @@
 
               <div class="foto-upload" onclick="document.getElementById('foto').click()" style="margin-top:16px">
                 <p style="font-weight:500;margin:0 0 4px">Tocá para subir una foto</p>
-                <p class="muted" style="margin:0;font-size:.8rem">PNG, JPG hasta 5MB</p>
-                <input type="file" id="foto" name="foto" accept="image/*" hidden onchange="previewFoto()">
+                <p class="muted" style="margin:0;font-size:.8rem">JPG, PNG, WEBP o GIF. Si es muy grande se reduce sola.</p>
+                <input type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
               </div>
+              <div class="notice notice-err" id="fotoError" role="alert" hidden style="margin-top:8px"></div>
               <img id="fotoPreview" class="foto-preview" src="#" alt="Vista previa de la foto">
+              <div id="fotoAcciones" hidden style="margin-top:8px">
+                <button type="button" class="b b-ghost b-sm" id="btnQuitarFoto">Quitar foto</button>
+              </div>
 
               <p class="muted" style="margin-top:16px;font-size:.85rem">
                 Los campos con * son obligatorios. Dejá el cliente vacío para modelos genéricos.
               </p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Etiquetas (PDF)</h2></div>
+            <div class="panel-body">
+              <p class="muted" id="etiquetasEditorMsg" style="margin:0 0 8px;font-size:.85rem">
+                Guardá la ficha y después agregá las etiquetas desde «Ver».
+              </p>
+              <button type="button" class="b b-ghost" id="btnEtiquetasEditor" hidden>Administrar etiquetas</button>
             </div>
           </div>
         </div>
@@ -258,15 +272,29 @@
       <h4 style="margin:0 0 8px">Etiquetas del transformador</h4>
       <p class="muted" id="etiquetaEstado" style="margin:0 0 8px">Cargando…</p>
       <ul id="etiquetasLista" style="list-style:none;padding:0;margin:0 0 8px"></ul>
+      <!-- Los toasts quedan detrás de un <dialog> abierto con showModal():
+           los errores de esta ventana se muestran acá adentro. -->
+      <div class="notice notice-err" id="etiquetaError" role="alert" hidden style="margin-bottom:8px"></div>
       <div class="page-head-actions">
         <button class="b b-ghost" id="btnAgregarEtiqueta" onclick="document.getElementById('etiquetaInput').click()">＋ Agregar etiqueta (PDF)</button>
-        <input type="file" id="etiquetaInput" accept="application/pdf,.pdf" hidden onchange="subirEtiqueta()">
+        <input type="file" id="etiquetaInput" accept="application/pdf,.pdf" hidden>
       </div>
     </div>
 
     <div class="panel-body" style="padding-top:0">
       <div class="page-head-actions">
         <button class="b b-primary" onclick="verFichaPdf()">Ver PDF</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirmarFichaModal" class="panel">
+    <div class="panel-head"><h2 id="confirmarFichaTitulo">Confirmar</h2></div>
+    <div class="panel-body">
+      <div class="dialog-bloque" id="confirmarFichaMsg"></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="confirmarFichaModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarFicha">Confirmar</button>
       </div>
     </div>
   </dialog>
@@ -286,9 +314,18 @@
   // Preview del nombre de modelo en tiempo real.
   document.getElementById('modelo').addEventListener('input', function (e) {
     const preview = document.getElementById('previewModeloName');
-    preview.innerHTML = e.target.value
-      ? `<strong>${e.target.value}</strong><div class="muted">Vista previa del modelo</div>`
-      : 'Completá los datos para ver la vista previa';
+    // textContent y no innerHTML: lo tipeado no se interpreta como HTML.
+    preview.textContent = '';
+    if (e.target.value) {
+      const nombre = document.createElement('strong');
+      nombre.textContent = e.target.value;
+      const sub = document.createElement('div');
+      sub.className = 'muted';
+      sub.textContent = 'Vista previa del modelo';
+      preview.append(nombre, sub);
+    } else {
+      preview.textContent = 'Completá los datos para ver la vista previa';
+    }
   });
 
   document.addEventListener('DOMContentLoaded', function () {
