@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Informes — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Informes</h1>
+      <p>Balance, ventas contra compras, IVA a favor o en contra e impuestos del período.</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-ghost" id="btnCsv">Exportar CSV</button>
+      <button class="b b-primary" id="btnPdf">PDF</button>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="field">
+      <label for="iDesde">Desde</label>
+      <input class="input" type="date" id="iDesde">
+    </div>
+    <div class="field">
+      <label for="iHasta">Hasta</label>
+      <input class="input" type="date" id="iHasta">
+    </div>
+    <div class="field grow">
+      <label for="iCriterio">Contar las ventas y compras</label>
+      <select class="select" id="iCriterio">
+        <option value="factura">Por fecha de factura (como se liquida el IVA)</option>
+        <option value="percibido">Por fecha de cobro y de pago (flujo de plata)</option>
+      </select>
+    </div>
+    <div class="filters-actions">
+      <button class="b b-ghost b-sm" data-atajo="mes">Este mes</button>
+      <button class="b b-ghost b-sm" data-atajo="anterior">Mes anterior</button>
+      <button class="b b-ghost b-sm" data-atajo="anio">Este año</button>
+      <button class="b b-ghost b-sm" id="btnActualizar">Actualizar</button>
+    </div>
+  </div>
+
+  <div class="notice notice-err" id="informeError" role="alert" hidden></div>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="balance" id="tabBtnBalance">Balance</button>
+    <button class="tab" data-tab="vsc" id="tabBtnVsc">Ventas vs compras</button>
+    <button class="tab" data-tab="iva" id="tabBtnIva">IVA</button>
+    <button class="tab" data-tab="impuestos">Impuestos</button>
+  </div>
+
+  <div id="tab-balance" class="tab-content active"></div>
+  <div id="tab-vsc" class="tab-content"></div>
+  <div id="tab-iva" class="tab-content"></div>
+  <div id="tab-impuestos" class="tab-content"></div>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Informes', sub: 'Balance, IVA e impuestos' });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/informes.js"></script>
+</body>
+</html>

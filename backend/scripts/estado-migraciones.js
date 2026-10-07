@@ -397,6 +397,20 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-gastos.sql (07/10): tablas categorias_gasto y gastos (gastos varios e informes).
+  {
+    const tieneCategorias = await existeTabla('categorias_gasto');
+    const tieneGastos = await existeTabla('gastos');
+    const faltan = [];
+    if (!tieneCategorias) faltan.push('falta la tabla categorias_gasto');
+    if (!tieneGastos) faltan.push('falta la tabla gastos');
+    resultados.push({
+      migracion: 'migracion-gastos.sql',
+      aplicada: tieneCategorias && tieneGastos,
+      falta: faltan.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

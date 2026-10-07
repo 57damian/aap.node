@@ -32,6 +32,8 @@ const facturasCompraRoutes = require('./routes/facturas-compra.routes');   // Fa
 const pagosProveedoresRoutes = require('./routes/pagos-proveedores.routes'); // Pagos a proveedores (reemplaza pagos.routes.js)
 const pedidosProveedorRoutes = require('./routes/pedidos-proveedor.routes'); // Pedidos de materia prima a proveedores (PDF)
 const cobrosRoutes = require('./routes/cobros.routes');                   // Cobros a clientes (reemplaza pagos-clientes.routes.js)
+const gastosRoutes = require('./routes/gastos.routes');                   // Gastos varios (contador, sueldos, banco, caja chica…)
+const informesRoutes = require('./routes/informes.routes');               // Informes contables (balance, IVA, impuestos)
 // =====================================================================
 
 // ========== RUTAS ANTIGUAS QUE SERÁN REEMPLAZADAS (comentadas) ==========
@@ -279,6 +281,8 @@ app.use('/api/facturas-compra', facturasCompraRoutes);
 app.use('/api/pagos-proveedores', pagosProveedoresRoutes);
 app.use('/api/pedidos-proveedor', pedidosProveedorRoutes);
 app.use('/api/cobros', cobrosRoutes);
+app.use('/api/gastos', gastosRoutes);
+app.use('/api/informes', informesRoutes);
 // Alias del prefijo viejo: la pantalla anterior llamaba a /api/pagos/... y a
 // /api/pagos-clientes/..., que nunca estuvo montado del todo. Se deja el alias
 // para que nada quede en 404 mientras se termina de migrar el frontend.

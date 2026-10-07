@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gastos — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Gastos</h1>
+      <p>Contador, sueldos, banco, caja chica, impuestos y demás gastos que no son materia prima.</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-ghost" id="btnCategorias">Categorías</button>
+      <button class="b b-primary" id="btnNuevoGasto">Nuevo gasto</button>
+    </div>
+  </div>
+
+  <div class="kpi-row" id="kpis"></div>
+
+  <div class="filters">
+    <div class="field">
+      <label for="fDesde">Desde</label>
+      <input class="input" type="date" id="fDesde">
+    </div>
+    <div class="field">
+      <label for="fHasta">Hasta</label>
+      <input class="input" type="date" id="fHasta">
+    </div>
+    <div class="field grow">
+      <label for="fCategoria">Categoría</label>
+      <select class="select" id="fCategoria"><option value="">Todas</option></select>
+    </div>
+    <div class="field">
+      <label for="fEstado">Estado</label>
+      <select class="select" id="fEstado">
+        <option value="VIGENTE">Vigentes</option>
+        <option value="">Todos</option>
+        <option value="ANULADO">Anulados</option>
+      </select>
+    </div>
+    <div class="filters-actions">
+      <button class="b b-ghost b-sm" id="btnFiltrar">Filtrar</button>
+      <button class="b b-ghost b-sm" id="btnCsv">Exportar CSV</button>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:var(--space-3)"><div class="panel-body flush"><div class="table-wrap">
+    <table class="t">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Categoría</th>
+          <th>Descripción</th>
+          <th class="solo-escritorio">Forma de pago</th>
+          <th class="num solo-escritorio">Neto</th>
+          <th class="num solo-escritorio">IVA</th>
+          <th class="num">Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="listaGastos">
+        <tr><td colspan="8" class="muted">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div></div></div>
+
+  <!-- ================= Alta / edición de gasto ================= -->
+  <dialog id="gastoModal" class="panel" style="max-width:640px;width:100%">
+    <div class="panel-head"><h2 id="gastoTitulo">Nuevo gasto</h2></div>
+    <div class="panel-body">
+      <form id="gastoForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="g_fecha">Fecha</label>
+            <input class="input" type="date" id="g_fecha" required>
+          </div>
+          <div class="field">
+            <label for="g_categoria">Categoría</label>
+            <select class="select" id="g_categoria" required></select>
+          </div>
+          <div class="field ancho-total">
+            <label for="g_descripcion">Descripción</label>
+            <input class="input" type="text" id="g_descripcion" maxlength="200" required
+                   placeholder="Ej.: honorarios de septiembre, comisión del banco, IIBB…">
+          </div>
+          <div class="field">
+            <label for="g_neto">Importe (sin IVA)</label>
+            <input class="input" type="number" id="g_neto" min="0.01" step="0.01" required>
+          </div>
+          <div class="field">
+            <label for="g_iva">IVA <span class="muted">(opcional)</span></label>
+            <input class="input" type="number" id="g_iva" min="0" step="0.01" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="g_forma_pago">Forma de pago <span class="muted">(opcional)</span></label>
+            <select class="select" id="g_forma_pago">
+              <option value="">—</option>
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TRANSFERENCIA">Transferencia</option>
+              <option value="CHEQUE">Cheque</option>
+              <option value="DEBITO">Débito automático</option>
+              <option value="OTRO">Otro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="g_comprobante">N° de comprobante <span class="muted">(opcional)</span></label>
+            <input class="input" type="text" id="g_comprobante" maxlength="60">
+          </div>
+        </div>
+        <p class="muted" style="margin:var(--space-2) 0">Total del gasto: <strong id="g_total">$ 0,00</strong>
+          · Si el gasto tiene factura con IVA, cargalo en el campo IVA: se suma al IVA a favor del informe.</p>
+        <div class="notice notice-err" id="gastoError" role="alert" hidden></div>
+        <div class="page-head-actions">
+          <button type="button" class="b b-ghost" data-cerrar="gastoModal">Cancelar</button>
+          <button type="submit" class="b b-primary" id="btnGuardarGasto">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- ================= Anular gasto ================= -->
+  <dialog id="anularModal" class="panel">
+    <div class="panel-head"><h2>Anular gasto</h2></div>
+    <div class="panel-body">
+      <p id="anularResumen" class="dialog-bloque"></p>
+      <div class="field">
+        <label for="anularMotivo">Motivo <span class="muted">(obligatorio, al menos 5 caracteres)</span></label>
+        <textarea class="input" id="anularMotivo" rows="3" maxlength="500" placeholder="Ej.: se cargó dos veces, importe equivocado…"></textarea>
+      </div>
+      <div class="notice notice-err" id="anularError" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="anularModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnConfirmarAnular">Anular gasto</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ================= Categorías ================= -->
+  <dialog id="categoriasModal" class="panel" style="max-width:640px;width:100%">
+    <div class="panel-head"><h2>Categorías de gastos</h2></div>
+    <div class="panel-body">
+      <div class="table-wrap dialog-bloque">
+        <table class="t">
+          <thead><tr><th>Nombre</th><th class="num">Gastos</th><th>Tipo</th><th></th></tr></thead>
+          <tbody id="categoriasBody"></tbody>
+        </table>
+      </div>
+      <form id="categoriaForm" class="dialog-bloque">
+        <div class="form-grid">
+          <div class="field ancho-total">
+            <label for="c_nombre" id="c_label">Nueva categoría</label>
+            <input class="input" type="text" id="c_nombre" maxlength="60" required placeholder="Ej.: Seguros">
+          </div>
+          <div class="field ancho-total">
+            <label class="check"><input type="checkbox" id="c_impuesto"><span>Es un impuesto (se informa aparte en los informes)</span></label>
+          </div>
+        </div>
+        <div class="notice notice-err" id="categoriaError" role="alert" hidden></div>
+        <div class="page-head-actions">
+          <button type="button" class="b b-ghost" id="btnCancelarCategoria" hidden>Cancelar edición</button>
+          <button type="submit" class="b b-primary" id="btnGuardarCategoria">Agregar</button>
+          <button type="button" class="b b-ghost" data-cerrar="categoriasModal">Cerrar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Gastos', sub: 'Egresos que no son materia prima' });
+
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/gastos.js"></script>
+</body>
+</html>
