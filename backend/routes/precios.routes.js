@@ -45,6 +45,7 @@ router.get('/actuales', soloAdmin, async (req, res) => {
           LIMIT 1
         ) AS fecha_desde
       FROM ficha_transformador f
+      WHERE f.deleted_at IS NULL
       ORDER BY f.modelo;
     `);
 
