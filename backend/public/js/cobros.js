@@ -14,6 +14,8 @@ const estado = {
   formas: [],          // formas de cobro cargadas en el formulario
   facturas: [],        // facturas pendientes del cliente elegido
   imputaciones: {},    // { factura_id: monto }
+  seleccionadas: new Set(), // facturas tildadas (pueden tener 0 imputado si todavía no hay importes)
+  imputacionManual: false,  // true cuando se edita un "A imputar" a mano: deja de seguir el total del cobro
   seqForma: 0,
   historial: []        // último resultado de cargarHistorial(), para exportar
 };
@@ -613,6 +615,8 @@ function cobrarA(clienteId) {
 async function onCambiaClienteCobro() {
   const clienteId = $('cobroCliente').value;
   estado.imputaciones = {};
+  estado.seleccionadas = new Set();
+  estado.imputacionManual = false;
 
   if (!clienteId) {
     estado.facturas = [];
@@ -660,7 +664,7 @@ function pintarFacturasCobro() {
     const imputado = estado.imputaciones[f.id] || 0;
     return `
     <tr>
-      <td><input type="checkbox" ${imputado ? 'checked' : ''} ${disponible <= 0 ? 'disabled' : ''}
+      <td><input type="checkbox" ${estado.seleccionadas.has(f.id) ? 'checked' : ''} ${disponible <= 0 ? 'disabled' : ''}
                  onchange="toggleFactura(${f.id}, this.checked)"></td>
       <td data-label="Factura"><strong>${f.numero_factura}</strong> <span class="muted">${f.tipo_factura || ''}</span></td>
       <td data-label="Vencimiento">${Shell.fecha(f.fecha_vencimiento)} ${textoAtraso(f.dias_atraso)}</td>
@@ -684,17 +688,49 @@ function pintarFacturasCobro() {
 function toggleFactura(facturaId, marcado) {
   const f = estado.facturas.find(x => x.id === facturaId);
   if (!f) return;
+  // Tildar o destildar vuelve a hacer que lo imputado siga el total del cobro.
+  estado.imputacionManual = false;
   if (marcado) {
+    estado.seleccionadas.add(facturaId);
+    // Sin importes cargados todavía no hay total que repartir: se precarga el
+    // saldo disponible y se ajusta apenas se escribe un importe.
     const disponible = num(f.saldo) - num(f.en_gestion);
-    const restante = totalCobro() - totalImputado();
-    estado.imputaciones[facturaId] = Math.max(0, Math.min(disponible, restante > 0 ? restante : disponible));
+    estado.imputaciones[facturaId] = Math.max(0, disponible);
   } else {
+    estado.seleccionadas.delete(facturaId);
     delete estado.imputaciones[facturaId];
   }
+  sincronizarImputaciones();
+  pintarFacturasCobro();
+}
+
+/* Reparte el total del cobro entre las facturas tildadas, en el orden en que
+   se listan (más viejas primero), cada una hasta su saldo disponible. Lo que
+   sobra queda a favor del cliente. No hace nada si se editó un importe a mano
+   o si todavía no hay importes de cobro cargados. */
+function sincronizarImputaciones() {
+  const total = totalCobro();
+  if (estado.imputacionManual || total <= 0) return;
+
+  estado.imputaciones = {};
+  let restante = Math.round(total * 100);
+  for (const f of estado.facturas) {
+    if (!estado.seleccionadas.has(f.id)) continue;
+    const disponible = Math.max(0, Math.round((num(f.saldo) - num(f.en_gestion)) * 100));
+    const usar = Math.min(restante, disponible);
+    if (usar > 0) estado.imputaciones[f.id] = usar / 100;
+    restante -= usar;
+  }
+}
+
+/* Cambió un importe de cobro (o se quitó una forma): la imputación lo sigue. */
+function onCambiaImporteCobro() {
+  sincronizarImputaciones();
   pintarFacturasCobro();
 }
 
 function cambiarImputacion(facturaId, valor) {
+  estado.imputacionManual = true;
   const v = parseFloat(valor);
   if (!v || v <= 0) delete estado.imputaciones[facturaId];
   else estado.imputaciones[facturaId] = v;
@@ -703,6 +739,8 @@ function cambiarImputacion(facturaId, valor) {
 
 function limpiarImputacion() {
   estado.imputaciones = {};
+  estado.seleccionadas = new Set();
+  estado.imputacionManual = false;
   pintarFacturasCobro();
 }
 
@@ -712,6 +750,8 @@ function imputarAutomatico() {
   if (total <= 0) { Shell.toast('warn', 'Cargá primero las formas de cobro y sus importes.'); return; }
 
   estado.imputaciones = {};
+  estado.seleccionadas = new Set();
+  estado.imputacionManual = false;
   let restante = Math.round(total * 100);
 
   for (const f of estado.facturas) {
@@ -720,6 +760,7 @@ function imputarAutomatico() {
     if (disponible <= 0) continue;
     const usar = Math.min(restante, disponible);
     estado.imputaciones[f.id] = usar / 100;
+    estado.seleccionadas.add(f.id);
     restante -= usar;
   }
 
@@ -745,7 +786,7 @@ function agregarForma() {
       <option value="CHEQUE">Cheque</option>
       <option value="RETENCION">Retención</option>
     </select>
-    <input class="input" type="number" id="f-monto-${i}" step="0.01" min="0" placeholder="Importe" oninput="recalcularTotales()">
+    <input class="input" type="number" id="f-monto-${i}" step="0.01" min="0" placeholder="Importe" oninput="onCambiaImporteCobro()">
     <div class="detalle" id="f-detalle-${i}"></div>
     <button type="button" class="forma-quitar" onclick="quitarForma(${i})">×</button>`;
 
@@ -791,7 +832,7 @@ function pintarDetalleForma(i) {
 function quitarForma(i) {
   estado.formas = estado.formas.filter(x => x !== i);
   $(`forma-${i}`).remove();
-  recalcularTotales();
+  onCambiaImporteCobro();
   $('avisoCheques').hidden =
     !estado.formas.some(j => $(`f-tipo-${j}`) && $(`f-tipo-${j}`).value === 'CHEQUE');
 }
@@ -910,6 +951,8 @@ async function guardarCobro() {
 function resetFormularioCobro() {
   estado.formas = [];
   estado.imputaciones = {};
+  estado.seleccionadas = new Set();
+  estado.imputacionManual = false;
   estado.facturas = [];
   $('formasCobro').innerHTML = '';
   $('cobroCliente').value = '';
