@@ -18,7 +18,10 @@ router.use(verificarToken);
      numero_factura, tipo_factura, fecha, dias_credito
      tipo_cambio      (opcional) cotización usada al facturar
      precios          (opcional) [{ ficha_id, precio_unitario_usd,
-                                    precio_unitario_pesos }]
+                                    precio_unitario_pesos,
+                                    total_con_iva (opcional) }]
+                      `total_con_iva` fija el importe final del modelo (con
+                      IVA) tal cual está en la factura en papel.
    El precio puede haber cambiado entre la entrega y la factura: si viene
    `precios`, se factura cada modelo a ese precio (sin IVA, en pesos); si
    no, al precio de la entrega. venta_items NO se modifica: queda como
@@ -137,7 +140,14 @@ router.post('/', soloAdmin, async (req, res) => {
         if (!pesos || isNaN(pesos) || pesos <= 0 || (usd !== null && (isNaN(usd) || usd < 0))) {
           throw new Error('Hay un precio inválido en la factura');
         }
-        precioPorFicha.set(Number(p.ficha_id), { pesos, usd });
+        // Importe final con IVA de ese modelo, escrito a mano (opcional).
+        const totalConIva = p.total_con_iva === undefined || p.total_con_iva === null || p.total_con_iva === ''
+          ? null
+          : Number(p.total_con_iva);
+        if (totalConIva !== null && (isNaN(totalConIva) || totalConIva <= 0)) {
+          throw new Error('Hay un total con IVA inválido en la factura');
+        }
+        precioPorFicha.set(Number(p.ficha_id), { pesos, usd, totalConIva });
       }
 
       const sinPrecio = ventaItems.filter(i => !precioPorFicha.has(Number(i.ficha_id)));
@@ -155,6 +165,30 @@ router.post('/', soloAdmin, async (req, res) => {
     let ivaTotal = 0;
     let total = 0;
 
+    // Modelos con el importe final (con IVA) escrito a mano, p. ej. al cargar
+    // una factura vieja cuyo total no sale de cantidad × precio de lista. El
+    // total, el IVA y el subtotal del modelo se reparten entre sus ítems de
+    // remito según la cantidad; el último se queda con lo que sobra, así la
+    // suma da exactamente el importe pedido.
+    const repartoFijo = new Map();
+    if (precioPorFicha) {
+      for (const [fichaId, p] of precioPorFicha) {
+        if (p.totalConIva === null) continue;
+        const cantidadTotal = ventaItems
+          .filter(i => Number(i.ficha_id) === fichaId)
+          .reduce((acc, i) => acc + Number(i.cantidad), 0);
+        const subModelo = parseFloat((p.totalConIva / (1 + ivaPorcentaje)).toFixed(2));
+        repartoFijo.set(fichaId, {
+          cantidadRestante: cantidadTotal,
+          cantidadTotal,
+          subTotal: subModelo,
+          subRestante: subModelo,
+          ivaTotal: parseFloat((p.totalConIva - subModelo).toFixed(2)),
+          ivaRestante: parseFloat((p.totalConIva - subModelo).toFixed(2))
+        });
+      }
+    }
+
     const calculos = ventaItems.map(item => {
       const precio = precioPorFicha
         ? precioPorFicha.get(Number(item.ficha_id))
@@ -163,9 +197,28 @@ router.post('/', soloAdmin, async (req, res) => {
       // factura_venta_items.precio_unitario es numeric(15,2): se redondea
       // antes de multiplicar para que cantidad × precio guardado = subtotal.
       precio.pesos = parseFloat(precio.pesos.toFixed(2));
-      const sub = parseFloat((item.cantidad * precio.pesos).toFixed(2));
-      const ivaItem = parseFloat((sub * ivaPorcentaje).toFixed(2));
-      const tot = parseFloat((sub + ivaItem).toFixed(2));
+
+      let sub;
+      let ivaItem;
+      let tot;
+      const fijo = repartoFijo.get(Number(item.ficha_id));
+      if (fijo) {
+        const ultimo = Number(item.cantidad) === fijo.cantidadRestante;
+        sub = ultimo
+          ? fijo.subRestante
+          : parseFloat((fijo.subTotal * item.cantidad / fijo.cantidadTotal).toFixed(2));
+        ivaItem = ultimo
+          ? fijo.ivaRestante
+          : parseFloat((fijo.ivaTotal * item.cantidad / fijo.cantidadTotal).toFixed(2));
+        fijo.cantidadRestante -= Number(item.cantidad);
+        fijo.subRestante = parseFloat((fijo.subRestante - sub).toFixed(2));
+        fijo.ivaRestante = parseFloat((fijo.ivaRestante - ivaItem).toFixed(2));
+        tot = parseFloat((sub + ivaItem).toFixed(2));
+      } else {
+        sub = parseFloat((item.cantidad * precio.pesos).toFixed(2));
+        ivaItem = parseFloat((sub * ivaPorcentaje).toFixed(2));
+        tot = parseFloat((sub + ivaItem).toFixed(2));
+      }
 
       subtotal += sub;
       ivaTotal += ivaItem;

@@ -78,13 +78,20 @@
             <thead>
               <tr>
                 <th>Modelo</th><th class="num">Cantidad</th><th class="num">Precio USD</th>
-                <th class="num">Precio ARS s/IVA</th><th class="num">Subtotal</th>
+                <th class="num">Precio ARS s/IVA</th><th class="num">Subtotal</th><th class="num">Total c/IVA</th>
               </tr>
             </thead>
             <tbody id="facturarRenglones"></tbody>
           </table>
         </div>
-        <small class="muted">El precio en pesos se calcula como USD × cotización. Si lo escribís a mano, ese renglón deja de recalcularse.</small>
+        <small class="muted">El precio en pesos se calcula como USD × cotización. Si lo escribís a mano, ese renglón deja de recalcularse. Si ya tenés el importe final de la factura (con IVA), escribilo en "Total c/IVA": el precio unitario se despeja solo y la factura queda por ese total exacto.</small>
+        <div class="form-grid" style="margin-top:16px">
+          <div class="field">
+            <label for="facturar_total_final">Total final de la factura (con IVA)</label>
+            <input class="input" type="number" id="facturar_total_final" step="0.01" min="0.01">
+            <small class="muted">Para cargar una factura ya emitida: escribí el importe que figura en ella y los precios se ajustan solos (se reparte entre los modelos en proporción a su importe). Vacío = precios calculados.</small>
+          </div>
+        </div>
         <div class="totales-inline" style="margin-top:16px">
           <div><span>Subtotal sin IVA</span><strong id="facturarSubtotal">$0.00</strong></div>
           <div><span id="facturarIvaLabel">IVA</span><strong id="facturarIva">$0.00</strong></div>
@@ -123,7 +130,7 @@
         <div class="table-wrap">
           <table class="t">
             <thead>
-              <tr><th>Modelo</th><th class="num">Cantidad</th><th class="num">Precio USD</th><th class="num">Precio ARS s/IVA</th><th class="num">Subtotal</th></tr>
+              <tr><th>Modelo</th><th class="num">Cantidad</th><th class="num">Precio USD</th><th class="num">Precio ARS s/IVA</th><th class="num">Subtotal</th><th class="num">Total c/IVA</th></tr>
             </thead>
             <tbody id="facturarRevisionRenglones"></tbody>
           </table>
@@ -168,14 +175,28 @@
     return Math.round(Number(n) * 100) / 100;
   }
 
-  function totales() {
+  // Importes de un renglón. Con `totalFijado` (importe final con IVA escrito a
+  // mano) el total es exactamente ese y el subtotal se despeja de él; si no,
+  // sale de cantidad × precio unitario. Mismo criterio que POST /api/facturas.
+  function montosRenglon(r) {
     const iva = Number(pendiente?.iva) || 0;
+    if (r.totalFijado > 0) {
+      const tot = redondear2(r.totalFijado);
+      const sub = redondear2(tot / (1 + iva));
+      return { sub, iva: redondear2(tot - sub), tot };
+    }
+    const sub = redondear2(r.cantidad * redondear2(r.pesos));
+    const ivaMonto = redondear2(sub * iva);
+    return { sub, iva: ivaMonto, tot: redondear2(sub + ivaMonto) };
+  }
+
+  function totales() {
     let subtotal = 0;
     let ivaTotal = 0;
     renglones.forEach((r) => {
-      const sub = redondear2(r.cantidad * redondear2(r.pesos));
-      subtotal += sub;
-      ivaTotal += redondear2(sub * iva);
+      const m = montosRenglon(r);
+      subtotal += m.sub;
+      ivaTotal += m.iva;
     });
     return { subtotal, ivaTotal, total: subtotal + ivaTotal };
   }
@@ -260,7 +281,8 @@
             preciosEntrega: new Map(),
             usd,
             pesos: previo ? previo.pesos : redondear2(usd * cot),
-            pesosManual: previo ? previo.pesosManual : false
+            pesosManual: previo ? previo.pesosManual : false,
+            totalFijado: previo ? previo.totalFijado : 0
           };
           renglones.set(key, renglon);
         }
@@ -271,14 +293,21 @@
       });
     });
 
+    // Si cambió la cantidad (se marcaron o desmarcaron remitos), el precio
+    // unitario de un renglón con total fijado se despeja de nuevo.
+    renglones.forEach((r) => {
+      if (r.totalFijado > 0 && r.cantidad > 0) r.pesos = pesosDeTotal(r);
+    });
+
     const tbody = $('facturarRenglones');
     if (!renglones.size) {
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">Marcá al menos un remito.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">Marcá al menos un remito.</td></tr>';
       actualizarTotales();
       return;
     }
 
     tbody.innerHTML = [...renglones.values()].map((r) => {
+      const m = montosRenglon(r);
       const preciosEntrega = [...r.preciosEntrega.entries()];
       // Si el mismo modelo se entregó a distinto precio en distintos remitos,
       // avisar en vez de mostrar en silencio el último que se procesó.
@@ -300,11 +329,52 @@
           <span class="pill pill-info" data-manual-ficha="${r.ficha_id}"
             title="Precio fijado a mano: no sigue la cotización"${r.pesosManual ? '' : ' hidden'}>Manual</span>
         </td>
-        <td class="num" data-label="Subtotal" data-subtotal-ficha="${r.ficha_id}">${Shell.money(r.cantidad * r.pesos)}</td>
+        <td class="num" data-label="Subtotal" data-subtotal-ficha="${r.ficha_id}">${Shell.money(m.sub)}</td>
+        <td class="num" data-label="Total c/IVA">
+          <input class="input facturar-total" type="number" step="0.01" min="0.01" data-ficha-id="${r.ficha_id}"
+            value="${m.tot.toFixed(2)}" style="max-width:150px"
+            title="Importe final de este modelo con IVA. Si lo escribís, el precio unitario se despeja solo.">
+        </td>
       </tr>`;
     }).join('');
 
     actualizarTotales();
+  }
+
+  // Reparte un total final (con IVA) entre los renglones en proporción a su
+  // importe actual; el último se queda con lo que sobra para que la suma sea
+  // exacta. Total vacío o 0: vuelve a los precios calculados.
+  function distribuirTotalFinal(total) {
+    const lista = [...renglones.values()];
+    if (!(total > 0)) {
+      lista.forEach((r) => {
+        r.totalFijado = 0;
+        r.pesosManual = false;
+        document.querySelector(`[data-manual-ficha="${r.ficha_id}"]`)?.setAttribute('hidden', '');
+      });
+      recalcularPesos();
+      return;
+    }
+    const pesoTotal = lista.reduce((acc, r) => acc + montosRenglon(r).tot, 0);
+    let restante = redondear2(total);
+    lista.forEach((r, i) => {
+      const esUltimo = i === lista.length - 1;
+      const parte = esUltimo
+        ? restante
+        : redondear2(total * (pesoTotal > 0 ? montosRenglon(r).tot / pesoTotal : 1 / lista.length));
+      r.totalFijado = parte;
+      restante = redondear2(restante - parte);
+      if (r.cantidad > 0 && parte > 0) r.pesos = pesosDeTotal(r);
+      r.pesosManual = true;
+      document.querySelector(`[data-manual-ficha="${r.ficha_id}"]`)?.removeAttribute('hidden');
+    });
+    actualizarTotales();
+  }
+
+  // Precio unitario s/IVA que da el total fijado de un renglón.
+  function pesosDeTotal(r) {
+    const iva = Number(pendiente?.iva) || 0;
+    return redondear2(r.totalFijado / (1 + iva) / r.cantidad);
   }
 
   function recalcularPesos() {
@@ -320,10 +390,23 @@
 
   function actualizarTotales() {
     renglones.forEach((r) => {
+      const m = montosRenglon(r);
       const celda = document.querySelector(`[data-subtotal-ficha="${r.ficha_id}"]`);
-      if (celda) celda.textContent = Shell.money(redondear2(r.cantidad * redondear2(r.pesos)));
+      if (celda) celda.textContent = Shell.money(m.sub);
+      // No pisar el campo que se está escribiendo.
+      const total = document.querySelector(`.facturar-total[data-ficha-id="${r.ficha_id}"]`);
+      if (total && total !== document.activeElement) total.value = m.tot.toFixed(2);
+      const pesos = document.querySelector(`.facturar-pesos[data-ficha-id="${r.ficha_id}"]`);
+      if (pesos && pesos !== document.activeElement) pesos.value = r.pesos.toFixed(2);
     });
     const t = totales();
+    const totalFinal = $('facturar_total_final');
+    if (totalFinal !== document.activeElement) {
+      // Solo se muestra el total vigente si hay algún precio tocado a mano;
+      // con los precios calculados el campo queda vacío.
+      const hayManual = [...renglones.values()].some((r) => r.pesosManual);
+      totalFinal.value = hayManual ? redondear2(t.total).toFixed(2) : '';
+    }
     $('facturarSubtotal').textContent = Shell.money(t.subtotal);
     $('facturarIva').textContent = Shell.money(t.ivaTotal);
     $('facturarTotal').textContent = Shell.money(t.total);
@@ -372,15 +455,18 @@
   function pintarRevision() {
     $('facturarRevisionRemitos').textContent = `Remitos incluidos: ${textoRemitosSeleccionados()}`;
 
-    $('facturarRevisionRenglones').innerHTML = [...renglones.values()].map((r) => `
+    $('facturarRevisionRenglones').innerHTML = [...renglones.values()].map((r) => {
+      const m = montosRenglon(r);
+      return `
       <tr>
         <td>${r.modelo}</td>
         <td class="num">${r.cantidad}</td>
         <td class="num">US$ ${r.usd.toFixed(2)}</td>
         <td class="num">${Shell.money(r.pesos)}</td>
-        <td class="num">${Shell.money(r.cantidad * r.pesos)}</td>
-      </tr>
-    `).join('');
+        <td class="num">${Shell.money(m.sub)}</td>
+        <td class="num">${Shell.money(m.tot)}</td>
+      </tr>`;
+    }).join('');
 
     const tipo = $('facturar_tipo').value;
     $('facturarRevisionDatos').innerHTML = `
@@ -430,6 +516,7 @@
     $('facturar_fecha').value = '';
     $('facturar_dias_credito').value = '0';
     $('facturar_cotizacion').value = '';
+    $('facturar_total_final').value = '';
     document.querySelectorAll('#facturarModal .is-invalid').forEach((el) => el.classList.remove('is-invalid'));
     pasoActual = 1;
     irAPaso(1);
@@ -447,7 +534,9 @@
     const precios = [...renglones.values()].map((r) => ({
       ficha_id: r.ficha_id,
       precio_unitario_usd: r.usd,
-      precio_unitario_pesos: redondear2(r.pesos)
+      precio_unitario_pesos: redondear2(r.pesos),
+      // Importe final con IVA escrito a mano: el servidor lo respeta exacto.
+      ...(r.totalFijado > 0 ? { total_con_iva: redondear2(r.totalFijado) } : {})
     }));
 
     enviando = true;
@@ -510,6 +599,10 @@
       recalcularPesos();
       actualizarBotonesNav();
     });
+    $('facturar_total_final').addEventListener('input', (e) => {
+      distribuirTotalFinal(Number(e.target.value) || 0);
+      actualizarBotonesNav();
+    });
     $('facturarRenglones').addEventListener('input', (e) => {
       const renglon = renglones.get(String(e.target.dataset.fichaId));
       if (!renglon) return;
@@ -518,12 +611,23 @@
         renglon.usd = Number(e.target.value) || 0;
         // Cambiar el USD vuelve a calcular el precio en pesos del renglón.
         renglon.pesosManual = false;
+        renglon.totalFijado = 0;
         badge?.setAttribute('hidden', '');
         recalcularPesos();
       } else if (e.target.classList.contains('facturar-pesos')) {
         renglon.pesos = Number(e.target.value) || 0;
         renglon.pesosManual = true;
+        renglon.totalFijado = 0;
         badge?.removeAttribute('hidden');
+        actualizarTotales();
+      } else if (e.target.classList.contains('facturar-total')) {
+        // Importe final con IVA: el precio unitario se despeja de él.
+        renglon.totalFijado = Number(e.target.value) || 0;
+        if (renglon.totalFijado > 0 && renglon.cantidad > 0) {
+          renglon.pesos = pesosDeTotal(renglon);
+          renglon.pesosManual = true;
+          badge?.removeAttribute('hidden');
+        }
         actualizarTotales();
       }
       actualizarBotonesNav();
