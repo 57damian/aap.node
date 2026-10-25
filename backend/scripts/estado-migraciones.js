@@ -411,6 +411,29 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-aplicacion-pagos-unique-item.sql (25/10): el UNIQUE (pago_id, factura_id) de
+  // aplicacion_pagos impedía imputar un cobro con varias formas a una misma factura.
+  {
+    const r = await pool.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'aplicacion_pagos'::regclass
+                    AND conname = 'aplicacion_pagos_pago_id_factura_id_key') AS tiene_viejo,
+         EXISTS (SELECT 1 FROM pg_indexes
+                  WHERE tablename = 'aplicacion_pagos'
+                    AND indexname = 'uq_aplicacion_pagos_item_factura') AS tiene_nuevo`
+    );
+    const { tiene_viejo, tiene_nuevo } = r.rows[0];
+    const faltan = [];
+    if (tiene_viejo) faltan.push('sigue el UNIQUE (pago_id, factura_id)');
+    if (!tiene_nuevo) faltan.push('falta el índice uq_aplicacion_pagos_item_factura');
+    resultados.push({
+      migracion: 'migracion-aplicacion-pagos-unique-item.sql',
+      aplicada: faltan.length === 0,
+      falta: faltan.join('; ')
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;
