@@ -70,6 +70,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('btnConfirmarCancelar').addEventListener('click', () => $('confirmarModal').close());
   $('drawerCuerpo').addEventListener('change', (e) => {
     if (e.target.matches('#ecDesde, #ecHasta, #ecSoloPend')) cargarEstadoCuenta();
+    // El orden se aplica sobre lo ya cargado: no hace falta ir al servidor.
+    if (e.target.matches('#ecOrden') && ec.datos) {
+      ec.orden = ORDENES_EC[e.target.value] ? e.target.value : 'urgencia';
+      pintarEstadoCuenta();
+    }
   });
 
   await cargarClientes();
@@ -209,8 +214,37 @@ async function cargarDeuda() {
 const ec = {
   clienteId: null,
   datos: null,
+  orden: 'urgencia',    // cómo se ordenan las facturas en pantalla (ver ORDENES_EC)
   abiertas: new Set()   // ids de factura con los pagos desplegados
 };
+
+/* Órdenes del estado de cuenta. Se ordena en el navegador sobre lo ya cargado:
+ * el servidor siempre manda "por urgencia". El desempate es el id (orden de alta). */
+const ORDENES_EC = {
+  urgencia:      { texto: 'Urgencia (lo vencido primero)', nota: 'por urgencia: primero lo vencido' },
+  fecha_desc:    { texto: 'Últimas facturas primero', nota: 'de la más nueva a la más vieja (por fecha de factura)',
+                   cmp: (a, b) => fechaMs(b.fecha) - fechaMs(a.fecha) || b.id - a.id },
+  fecha_asc:     { texto: 'Facturas más viejas primero', nota: 'de la más vieja a la más nueva (por fecha de factura)',
+                   cmp: (a, b) => fechaMs(a.fecha) - fechaMs(b.fecha) || a.id - b.id },
+  cargadas_desc: { texto: 'Últimas cargadas en el sistema', nota: 'de la última factura cargada en el sistema a la primera',
+                   cmp: (a, b) => b.id - a.id },
+  saldo_desc:    { texto: 'Mayor saldo primero', nota: 'por saldo, de mayor a menor',
+                   cmp: (a, b) => num(b.saldo) - num(a.saldo) || a.id - b.id },
+  vence_asc:     { texto: 'Vencimiento más antiguo primero', nota: 'por vencimiento, del más antiguo al más lejano',
+                   cmp: (a, b) => fechaMs(a.fecha_vencimiento) - fechaMs(b.fecha_vencimiento) || a.id - b.id }
+};
+
+function fechaMs(v) {
+  const t = new Date(v).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/* Facturas del estado de cuenta en el orden elegido (sin tocar ec.datos). */
+function facturasOrdenadasEC() {
+  const facturas = ec.datos.facturas;
+  const cmp = ORDENES_EC[ec.orden]?.cmp;
+  return cmp ? [...facturas].sort(cmp) : facturas;
+}
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -250,6 +284,9 @@ async function verCliente(clienteId) {
           <div class="ec-filtros">
             <label class="field"><span>Facturas desde</span><input type="date" id="ecDesde"></label>
             <label class="field"><span>Hasta</span><input type="date" id="ecHasta"></label>
+            <label class="field"><span>Ordenar por</span>
+              <select class="select" id="ecOrden">${Object.entries(ORDENES_EC).map(([k, o]) =>
+                `<option value="${k}"${k === ec.orden ? ' selected' : ''}>${o.texto}</option>`).join('')}</select></label>
             <label class="ec-check"><input type="checkbox" id="ecSoloPend"> Solo pendientes de cobro</label>
             <div class="ec-acciones">
               <button type="button" class="b b-ghost b-sm" id="ecLimpiar">Limpiar</button>
@@ -403,14 +440,14 @@ function pintarEstadoCuenta() {
 
     ${num(a_cuenta) > 0 ? `<div class="muted" style="font-size:13px">Cobros a favor del cliente, sin imputar a ninguna factura: <strong>${Shell.money(a_cuenta)}</strong></div>` : ''}
     <div class="muted" style="font-size:12px">
-      Ordenado por urgencia: primero lo vencido. Tocá "pagos" para ver qué cobro se imputó a cada factura y por cuánto.
+      Ordenado ${ORDENES_EC[ec.orden].nota}. Tocá "pagos" para ver qué cobro se imputó a cada factura y por cuánto.
     </div>`;
 
   pintarFilasEstadoCuenta();
 }
 
 function pintarFilasEstadoCuenta() {
-  const { facturas } = ec.datos;
+  const facturas = facturasOrdenadasEC();
   const cuerpo = $('ecCuerpo');
   if (!facturas.length) {
     cuerpo.innerHTML = `<tr><td colspan="8">${Shell.vacio('Sin facturas', 'No hay facturas para este filtro.')}</td></tr>`;
@@ -479,7 +516,7 @@ function exportarEstadoCuentaCSV() {
   const filas = [['Factura', 'Fecha', 'Vencimiento', 'Total', 'Cobrado', 'En gestión', 'Saldo', 'Estado',
     'Cobro', 'Fecha de cobro', 'Importe imputado', 'Forma de pago']];
 
-  ec.datos.facturas.forEach(f => {
+  facturasOrdenadasEC().forEach(f => {
     const base = [q(f.numero_factura), f.fecha, f.fecha_vencimiento, f.total, f.cobrado, f.en_gestion, f.saldo, f.estado];
     if (!f.pagos.length) filas.push([...base, '', '', '', '']);
     f.pagos.forEach(p => filas.push([...base, `#${p.pago_id}`, p.fecha_recepcion, p.monto_aplicado,
