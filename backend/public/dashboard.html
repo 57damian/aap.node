@@ -44,6 +44,61 @@
     </div>
   </div>
 
+  <div class="panel" id="panelTareas" data-roles="admin">
+    <div class="panel-head">Tareas y notas</div>
+    <div class="panel-body">
+      <form id="tareaForm" class="tarea-form" autocomplete="off">
+        <input class="input" id="tareaTexto" maxlength="300" placeholder="Anotar una tarea o nota…" aria-label="Tarea o nota">
+        <input class="input tarea-limite" type="date" id="tareaLimite" title="Fecha límite (opcional)" aria-label="Fecha límite (opcional)">
+        <button type="submit" class="b b-primary" id="btnTareaAgregar">Agregar</button>
+      </form>
+      <div class="notice notice-err" id="tareaError" role="alert" hidden></div>
+
+      <div class="dtabs-bar">
+        <div class="tabs">
+          <button type="button" class="dtab active" data-tarea-tab="PENDIENTE">Pendientes <span class="muted" id="tareaCantPendientes"></span></button>
+          <button type="button" class="dtab" data-tarea-tab="COMPLETADA">Completadas <span class="muted" id="tareaCantCompletadas"></span></button>
+        </div>
+      </div>
+      <ul class="tarea-lista" id="tareaLista"></ul>
+    </div>
+  </div>
+
+  <dialog id="tareaEditarModal" class="panel" style="max-width:520px;width:100%">
+    <div class="panel-head"><h2>Editar tarea</h2></div>
+    <div class="panel-body">
+      <form id="tareaEditarForm">
+        <div class="form-grid">
+          <div class="field ancho-total">
+            <label for="tareaEditarTexto">Tarea</label>
+            <input class="input" id="tareaEditarTexto" maxlength="300">
+          </div>
+          <div class="field">
+            <label for="tareaEditarLimite">Fecha límite (opcional)</label>
+            <input class="input" type="date" id="tareaEditarLimite">
+          </div>
+        </div>
+        <div class="notice notice-err" id="tareaEditarError" role="alert" hidden></div>
+        <div class="page-head-actions">
+          <button type="button" class="b b-ghost" data-cerrar="tareaEditarModal">Cancelar</button>
+          <button type="submit" class="b b-primary" id="btnTareaEditar">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="tareaEliminarModal" class="panel" style="max-width:460px;width:100%">
+    <div class="panel-head"><h2>Eliminar tarea</h2></div>
+    <div class="panel-body">
+      <p id="tareaEliminarTexto" class="dialog-bloque"></p>
+      <div class="notice notice-err" id="tareaEliminarError" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="tareaEliminarModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="btnTareaEliminar">Eliminar</button>
+      </div>
+    </div>
+  </dialog>
+
   <div class="panel">
     <div class="panel-head">
       Requiere atención
@@ -99,6 +154,7 @@
 </script>
 <script>Shell.montar({ titulo: 'Panel de control' });</script>
 <script src="js/dashboard.js"></script>
+<script src="js/tareas.js"></script>
 <script src="js/roleGuard.js"></script>
 <script>verificarRolPagina(['admin']);</script>
 </body>

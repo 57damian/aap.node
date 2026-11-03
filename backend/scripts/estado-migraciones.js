@@ -434,6 +434,16 @@ async function existeIndice(nombre) {
     });
   }
 
+  // migracion-tareas.sql (03/11): tabla tareas (tareas y notas informales del panel de inicio).
+  {
+    const tieneTareas = await existeTabla('tareas');
+    resultados.push({
+      migracion: 'migracion-tareas.sql',
+      aplicada: tieneTareas,
+      falta: tieneTareas ? '' : 'falta la tabla tareas'
+    });
+  }
+
   // ---------------- imprimir tabla ----------------
   const colMigracion = Math.max('MIGRACIÓN'.length, ...resultados.map(r => r.migracion.length));
   const colAplicada = 'APLICADA'.length;

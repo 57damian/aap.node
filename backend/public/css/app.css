@@ -823,3 +823,23 @@ tr.clickable:hover td { background: var(--gray-50); }
 .item-unidad-aviso { display: block; margin-top: 2px; font-size: 11px; line-height: 1.25; }
 .item-unidad-aviso.muted { color: var(--text-secondary); }
 .item-unidad-aviso.neg { color: var(--money-debe); }
+
+/* Tareas y notas del panel de inicio */
+.tarea-form { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.tarea-form .input:first-child { flex: 1 1 260px; min-width: 0; }
+.tarea-form .tarea-limite { flex: 0 0 auto; width: auto; }
+.tarea-lista { list-style: none; margin: 0; padding: 0; }
+.tarea { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--border-color); }
+.tarea:last-child { border-bottom: none; }
+.tarea.fijada { background: var(--gray-50); }
+.tarea-check { flex: 0 0 auto; padding-top: 2px; cursor: pointer; }
+.tarea-check input { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+.tarea-cuerpo { flex: 1 1 auto; min-width: 0; }
+.tarea-texto { overflow-wrap: anywhere; }
+.tarea.hecha .tarea-texto { text-decoration: line-through; color: var(--text-secondary); }
+.tarea-meta { font-size: 12px; margin-top: 2px; }
+.tarea-acciones { flex: 0 0 auto; display: flex; gap: var(--space-1); flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 760px) {
+  .tarea { flex-wrap: wrap; }
+  .tarea-acciones { flex-basis: 100%; justify-content: flex-start; padding-left: 30px; }
+}
