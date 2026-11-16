@@ -134,10 +134,22 @@
             <small class="muted">Se cambia con un ajuste, no desde acá</small>
           </div>
 
-          <div class="field ancho-total">
-            <label for="precio_referencia" id="precioReferenciaLabel">Precio de referencia</label>
+          <div class="field">
+            <label for="cotizacion_dolar">Cotización del dólar</label>
+            <input class="input" type="number" id="cotizacion_dolar" step="0.01" min="0" placeholder="Ej: 1415">
+            <small class="muted">Precargada con la de Precios. Cambiala si hace falta: recalcula el otro precio</small>
+          </div>
+
+          <div class="field">
+            <label for="precio_referencia" id="precioReferenciaLabel">Precio de referencia (ARS)</label>
             <input class="input" type="number" id="precio_referencia" step="any" min="0">
             <small class="muted" id="precioReferenciaAyuda">Se actualiza solo con cada factura de compra</small>
+          </div>
+
+          <div class="field">
+            <label for="precio_usd" id="precioUsdLabel">Precio de referencia (USD)</label>
+            <input class="input" type="number" id="precio_usd" step="any" min="0">
+            <small class="muted">Cargá uno de los dos: el otro se calcula con la cotización</small>
           </div>
 
           <div class="field ancho-total">

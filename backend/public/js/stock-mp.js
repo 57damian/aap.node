@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     cargarMateriasPrimas();
     document.getElementById('searchInput')?.addEventListener('input', buscarMateriasPrimas);
     document.getElementById('filtroCategoria')?.addEventListener('change', buscarMateriasPrimas);
+    iniciarCalculoPrecios();
     document.getElementById('unidad_medida')?.addEventListener('change', actualizarEtiquetaPrecio);
     document.getElementById('unidad_medida')?.addEventListener('change', actualizarCampoMetrosRollo);
     document.getElementById('categoriaNueva')?.addEventListener('keydown', e => {
@@ -243,10 +244,49 @@ function factorPrecioMaterial(unidad) {
     return unidad === 'GR' ? 1000 : 1;
 }
 
+// Precio en pesos <-> dólares dentro del formulario. Lo que se escribió último
+// manda: si se tipeó en pesos, el USD se calcula (y al revés); al cambiar la
+// cotización se recalcula el otro. Solo se guarda el precio en pesos.
+let origenPrecio = 'ARS';
+
+function redondearPrecio(n) {
+    return String(Math.round(n * 10000) / 10000);
+}
+
+function recalcularPrecios() {
+    const cotizacion = parseFloat(document.getElementById('cotizacion_dolar').value);
+    const campoArs = document.getElementById('precio_referencia');
+    const campoUsd = document.getElementById('precio_usd');
+    const origen = origenPrecio === 'USD' ? campoUsd : campoArs;
+    const destino = origenPrecio === 'USD' ? campoArs : campoUsd;
+    const valor = parseFloat(origen.value);
+    if (!(cotizacion > 0) || !(valor >= 0) || origen.value === '') {
+        if (origen.value === '') destino.value = '';
+        return;
+    }
+    destino.value = redondearPrecio(origenPrecio === 'USD' ? valor * cotizacion : valor / cotizacion);
+}
+
+function iniciarCalculoPrecios() {
+    document.getElementById('precio_referencia').addEventListener('input', () => { origenPrecio = 'ARS'; recalcularPrecios(); });
+    document.getElementById('precio_usd').addEventListener('input', () => { origenPrecio = 'USD'; recalcularPrecios(); });
+    document.getElementById('cotizacion_dolar').addEventListener('input', recalcularPrecios);
+}
+
+// Al abrir el formulario: cotización de Precios precargada y USD calculado desde el precio en pesos.
+function prepararPreciosFormulario() {
+    origenPrecio = 'ARS';
+    document.getElementById('cotizacion_dolar').value = dolarActual > 0 ? dolarActual : '';
+    document.getElementById('precio_usd').value = '';
+    recalcularPrecios();
+}
+
 function actualizarEtiquetaPrecio() {
     const porKg = factorPrecioMaterial(document.getElementById('unidad_medida').value) === 1000;
     document.getElementById('precioReferenciaLabel').textContent =
-        porKg ? 'Precio de referencia (por kg)' : 'Precio de referencia';
+        porKg ? 'Precio de referencia (ARS, por kg)' : 'Precio de referencia (ARS)';
+    document.getElementById('precioUsdLabel').textContent =
+        porKg ? 'Precio de referencia (USD, por kg)' : 'Precio de referencia (USD)';
     document.getElementById('precioReferenciaAyuda').textContent = porKg
         ? 'Por kg, como lo factura el proveedor (el stock se lleva en gramos). Se actualiza solo con cada factura de compra'
         : 'Se actualiza solo con cada factura de compra';
@@ -273,6 +313,7 @@ function abrirModalCrear() {
     document.getElementById('precio_referencia').value = '';
     document.getElementById('metros_por_rollo').value = '';
     actualizarEtiquetaPrecio();
+    prepararPreciosFormulario();
     actualizarCampoMetrosRollo();
     document.getElementById('activo').checked = true;
     // Al crear todavía no hay stock cargado (entra por factura de compra o ajuste manual)
@@ -299,6 +340,7 @@ async function abrirModalEditar(id) {
         document.getElementById('precio_referencia').value = materiaPrima.precio_compra || '';
         document.getElementById('metros_por_rollo').value = materiaPrima.metros_por_rollo || '';
         actualizarEtiquetaPrecio();
+        prepararPreciosFormulario();
         actualizarCampoMetrosRollo();
         document.getElementById('activo').checked = materiaPrima.activo !== false;
         // Al editar se muestra el stock actual solo como referencia (de solo lectura):
