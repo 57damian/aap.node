@@ -32,12 +32,13 @@ function formatearDolares(valor) {
 }
 
 // Inicializar página
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     verificarAuth();
     precargarFiltroMovFechas();
     cargarProveedores();
     cargarCategorias();
-    cargarDolar();
+    // El dólar tiene que estar antes de pintar la tabla: el precio en USD se calcula con él.
+    await cargarDolar();
     cargarStock();
 });
 
@@ -149,6 +150,18 @@ async function cargarStock() {
     }
 }
 
+// Precio en dólares al dólar actual (el mismo que usa el KPI de Valorizado).
+// Hasta 4 decimales: un precio por unidad chica en USD no entra en 2.
+function precioEnDolares(s) {
+    const pesos = Number(s.precio_compra ?? s.ultimo_precio ?? 0);
+    if (!(dolarActual > 0) || !isFinite(pesos) || pesos <= 0) return '—';
+    const texto = new Intl.NumberFormat('es-AR', {
+        style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4
+    }).format(pesos / dolarActual);
+    const conUnidad = String(s.unidad_precio || '').toUpperCase() === 'KG' ? texto + ' /kg' : texto;
+    return window.Shell && Shell.monto ? Shell.monto(conUnidad) : conUnidad;
+}
+
 // Indicador persistente de variación de precio respecto a la última compra
 // al mismo proveedor (diseño acordado 12/09/2026: toda suba o baja se avisa
 // directamente en el listado, no solo al abrir el historial de precios).
@@ -172,7 +185,7 @@ function renderizarTablaStock(stock) {
     const tbody = document.getElementById('stockTableBody');
 
     if (!stock || stock.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
             'No hay materias primas para este filtro',
             'Probá limpiar los filtros o cargá materias primas nuevas.',
             { txt: 'Administrar materias primas', url: 'stock-mp.html' })}</td></tr>`;
@@ -192,6 +205,7 @@ function renderizarTablaStock(stock) {
                 <td class="num ${actual === 0 ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')} ${unidad}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
                 <td class="num" data-label="Último precio">${Shell.precioCompra(s.precio_compra ?? s.ultimo_precio ?? 0, s.unidad_precio)}${renderizarVariacionPrecio(s)}</td>
+                <td class="num" data-label="Precio en USD">${precioEnDolares(s)}</td>
                 <td class="muted solo-escritorio" data-label="Proveedor">${s.proveedor_nombre || '—'}</td>
                 <td data-label="Estado">${Shell.pill(estado)}</td>
                 <td class="num">

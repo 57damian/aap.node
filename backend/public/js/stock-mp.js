@@ -13,10 +13,39 @@ function formatearMoneda(valor) {
     return window.Shell && Shell.monto ? Shell.monto(texto) : texto;
 }
 
+// Dólar actual: con él se calcula el precio en USD de cada material.
+let dolarActual = 0;
+
+async function cargarDolar() {
+    try {
+        const d = await apiFetch('/api/precios/parametros/dolar');
+        dolarActual = Number(d?.dolar) || 0;
+    } catch (err) {
+        console.error('Error cargando dólar:', err);
+        dolarActual = 0;
+    }
+}
+
+function tienePrecio(mp) {
+    return Number(mp.precio_compra ?? mp.precio_referencia) > 0;
+}
+
+// Precio en dólares al dólar actual (igual que en Stock); "/kg" si se compra por kg.
+function precioEnDolares(mp) {
+    const pesos = Number(mp.precio_compra ?? mp.precio_referencia);
+    if (!(dolarActual > 0) || !(pesos > 0)) return '—';
+    const texto = new Intl.NumberFormat('es-AR', {
+        style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4
+    }).format(pesos / dolarActual);
+    const conUnidad = String(mp.unidad_precio || '').toUpperCase() === 'KG' ? texto + ' /kg' : texto;
+    return window.Shell && Shell.monto ? Shell.monto(conUnidad) : conUnidad;
+}
+
 // Inicializar página
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     verificarAuth();
     cargarCategorias();
+    await cargarDolar();
     cargarMateriasPrimas();
     document.getElementById('searchInput')?.addEventListener('input', buscarMateriasPrimas);
     document.getElementById('filtroCategoria')?.addEventListener('change', buscarMateriasPrimas);
@@ -176,7 +205,7 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
     const tbody = document.getElementById('materiasPrimasTableBody');
 
     if (!materiasPrimas || materiasPrimas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8">${Shell.vacio(
+        tbody.innerHTML = `<tr><td colspan="10">${Shell.vacio(
             'No hay materiales para mostrar',
             'Cargá el primero con el botón "Nueva materia prima" o probá otro filtro.')}</td></tr>`;
         return;
@@ -194,6 +223,8 @@ function renderizarTablaMateriasPrimas(materiasPrimas) {
                 <td class="muted solo-escritorio" data-label="Unidad">${mp.unidad_medida || 'UNI'}</td>
                 <td class="num ${faltante ? 'neg' : ''}" data-label="Stock">${actual.toLocaleString('es-AR')}</td>
                 <td class="num muted solo-escritorio" data-label="Mínimo">${minimo.toLocaleString('es-AR')}</td>
+                <td class="num" data-label="Precio (ARS)">${tienePrecio(mp) ? Shell.precioCompra(mp.precio_compra ?? mp.precio_referencia, mp.unidad_precio) : '—'}</td>
+                <td class="num" data-label="Precio (USD)">${precioEnDolares(mp)}</td>
                 <td class="muted solo-escritorio" data-label="Ubicación">${mp.ubicacion || '—'}</td>
                 <td data-label="Estado">${Shell.pill(mp.activo ? 'ACTIVO' : 'INACTIVO')}</td>
                 <td class="num">
