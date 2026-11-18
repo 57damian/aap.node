@@ -7,6 +7,7 @@ const { segunRol } = require('../services/vista-operario');
 const { generarPdfFicha } = require('../services/pdf-ficha');
 const { nombreArchivo } = require('../services/pdf-base');
 const { unidadesPermitidas } = require('../services/unidades');
+const { normalizarItems, guardarItems } = require('../services/receta');
 
 router.use(verificarToken);
 
@@ -198,6 +199,16 @@ async function leerEtiquetas(cliente, fichaId) {
   return r.rows.map(e => ({ ...e, archivo: rutaEtiqueta(fichaId, e.id) }));
 }
 
+/**
+ * Renglones de receta que manda el formulario de la ficha (`receta_items`, JSON).
+ * Solo los admin la editan (igual que PUT /:id/receta): para un operario se
+ * ignora, sin error. Devuelve undefined si no vino: no se toca lo guardado.
+ */
+async function recetaDelFormulario(client, req) {
+  if (req.usuario.rol !== 'admin' || req.body.receta_items === undefined) return undefined;
+  return normalizarItems(client, req.body.receta_items);
+}
+
 function responderError(res, err, contexto) {
   // 23503 = clave foránea: el material elegido (alambre de un devanado) no existe.
   if (err.code === '23503' && /material/.test(err.constraint || '')) {
@@ -233,6 +244,7 @@ router.post('/', adminYOperario, subidaImagen.single('foto'), async (req, res) =
     const extras = normalizarExtras(req.body.devanados_extra);
     const materialPrimario = materialIdONull(req.body.material_primario_id, 'El material del primario');
     const materialSecundario = materialIdONull(req.body.material_secundario_id, 'El material del secundario');
+    const recetaItems = await recetaDelFormulario(client, req);
 
     await client.query('BEGIN');
     const result = await client.query(
@@ -279,6 +291,7 @@ router.post('/', adminYOperario, subidaImagen.single('foto'), async (req, res) =
 
     const ficha = result.rows[0];
     if (extras && extras.length) await guardarExtras(client, ficha.id, extras);
+    if (recetaItems && recetaItems.length) await guardarItems(client, ficha.id, recetaItems);
     if (req.file) await guardarFoto(client, ficha.id, req.file, req.usuario.id);
     await client.query('COMMIT');
 
@@ -554,6 +567,7 @@ router.put('/:id', adminYOperario, subidaImagen.single('foto'), async (req, res)
     const espirasPrimario = textoCorto(req.body.espiras_primario, 40, 'Las espiras del primario');
     const espirasSecundario = textoCorto(req.body.espiras_secundario, 40, 'Las espiras del secundario');
     const extras = normalizarExtras(req.body.devanados_extra);
+    const recetaItems = await recetaDelFormulario(client, req);
 
     await client.query('BEGIN');
     const result = await client.query(
@@ -595,6 +609,9 @@ router.put('/:id', adminYOperario, subidaImagen.single('foto'), async (req, res)
 
     // Si el formulario mandó la lista (aunque esté vacía) reemplaza a la guardada.
     if (extras !== undefined) await guardarExtras(client, req.params.id, extras);
+
+    // Lo mismo con la receta: si el formulario la mandó, reemplaza a la guardada.
+    if (recetaItems !== undefined) await guardarItems(client, req.params.id, recetaItems);
 
     // Foto: una nueva reemplaza a la anterior; sin archivo se conserva la que
     // había, salvo que el formulario pida quitarla (quitar_foto=1).

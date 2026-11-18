@@ -30,14 +30,14 @@ function materialPorId(id) {
 }
 
 /** <option>s de materiales para un renglón (agrupados por categoría). */
-function opcionesMaterialesReceta(seleccionadoId) {
+function opcionesMaterialesReceta(seleccionadoId, vacio = 'Elegí el material…') {
   const grupos = new Map();
   materialesCache.forEach(m => {
     const cat = m.categoria_nombre || 'Sin categoría';
     if (!grupos.has(cat)) grupos.set(cat, []);
     grupos.get(cat).push(m);
   });
-  let html = '<option value="">Elegí el material…</option>';
+  let html = `<option value="">${escHtml(vacio)}</option>`;
   [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es')).forEach(([cat, lista]) => {
     html += `<optgroup label="${escHtml(cat)}">` + lista.map(m =>
       `<option value="${m.id}" ${String(m.id) === String(seleccionadoId) ? 'selected' : ''}>${escHtml(m.nombre)} (${escHtml(m.unidad_medida)})</option>`
@@ -233,18 +233,215 @@ document.addEventListener('click', (e) => {
   const quitar = e.target.closest('[data-receta-quitar]');
   if (quitar) {
     quitar.closest('[data-receta-fila]').remove();
-    document.getElementById('recetaVacia').hidden = document.querySelectorAll('#recetaFilas [data-receta-fila]').length > 0;
+    const vacia = document.getElementById('recetaVacia');
+    if (vacia) vacia.hidden = document.querySelectorAll('#recetaFilas [data-receta-fila]').length > 0;
     return;
   }
   if (e.target.closest('#btnRecetaGuardar')) { guardarReceta(); return; }
-  if (e.target.closest('#btnRecetaCalcular')) { calcularNecesidadReceta(); }
+  if (e.target.closest('#btnRecetaCalcular')) { calcularNecesidadReceta(); return; }
+
+  // Receta dentro del formulario de la ficha.
+  if (e.target.closest('#btnFormRecetaAgregar')) {
+    document.getElementById('formRecetaFilas').insertAdjacentHTML('beforeend', filaRecetaFormHtml(null, null));
+    return;
+  }
+  const quitarForm = e.target.closest('[data-form-receta-quitar]');
+  if (quitarForm) { quitarForm.closest('[data-receta-fila]').remove(); return; }
+  if (e.target.closest('#btnGuardarConAvisos')) {
+    avisosRecetaConfirmados = true;
+    document.getElementById('avisosRecetaModal').close();
+    document.getElementById('fichaForm').requestSubmit();
+  }
 });
 
-// Al cambiar de material, la lista de unidades se rearma según lo que admite ese material.
+// Al cambiar de material, la lista de unidades se rearma según lo que admite ese material
+// (vale para la solapa Receta y para la receta del formulario de la ficha).
 document.addEventListener('change', (e) => {
-  if (!e.target.matches('#recetaFilas [data-r="materia_prima_id"]')) return;
+  if (!e.target.matches('[data-receta-fila] [data-r="materia_prima_id"]')) return;
   const tr = e.target.closest('[data-receta-fila]');
   const mat = materialPorId(e.target.value);
   const selUnidad = tr.querySelector('[data-r="unidad"]');
   selUnidad.innerHTML = opcionesUnidad(mat, unidadInicial(mat));
+  if (tr.dataset.recetaFija) sugerirCantidadFija(tr, mat);
 });
+
+/* =====================================================================
+ * Receta dentro del formulario de la ficha (alta y edición).
+ *
+ * Se guarda junto con la ficha: el formulario manda `receta_items` (JSON) y el
+ * servidor lo graba en la misma transacción (solo admin).
+ *
+ * Carretel y laminación tienen una fila fija cada una. Son renglones comunes de
+ * ficha_receta_items; se reconocen al volver a abrir la ficha porque su nota es
+ * exactamente "Carretel" / "Laminación" (sin migración). El alambre no se carga
+ * acá: sale del material y del peso de cada devanado.
+ * ===================================================================== */
+const FIJAS_RECETA = [
+  { tag: 'Carretel', campoTexto: 'tipo_carretel', campoPeso: null },
+  { tag: 'Laminación', campoTexto: 'laminacion', campoPeso: 'peso_laminacion_kg' }
+];
+
+let recetaFormCargada = true;          // false mientras se edita y no se pudo leer la receta guardada
+let recetaFormListo = Promise.resolve();
+let avisosRecetaConfirmados = false;   // "Guardar igual" en el diálogo de avisos
+
+function normTag(t) {
+  return String(t || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function valorCampo(id) {
+  const el = document.getElementById(id);
+  return el ? String(el.value || '').trim() : '';
+}
+
+function filaRecetaFormHtml(item, fija) {
+  let mat = item ? materialPorId(item.materia_prima_id) : null;
+  let opcionesMat = opcionesMaterialesReceta(item ? item.materia_prima_id : '', fija ? 'Sin material (no descuenta stock)' : 'Elegí el material…');
+  if (item && !mat) {
+    // El material ya no figura entre los activos: se conserva el renglón para que se vea y se pueda cambiar.
+    opcionesMat += `<option value="${escHtml(item.materia_prima_id)}" selected>${escHtml(item.material_nombre || 'Material')} (no disponible)</option>`;
+    mat = { unidades_permitidas: [item.unidad] };
+  }
+  const unidad = item ? item.unidad : '';
+  const concepto = fija ? `<strong>${escHtml(fija.tag)}</strong>` : '<span class="muted">Otro material</span>';
+  const nota = fija
+    ? '<span class="muted">—</span>'
+    : `<input class="input" type="text" maxlength="200" data-r="observaciones" value="${escHtml(item ? (item.observaciones || '') : '')}" placeholder="Ej: aislación entre capas">`;
+  const accion = fija ? '' : '<button type="button" class="b b-ghost b-sm" data-form-receta-quitar>Quitar</button>';
+  return `
+    <tr data-receta-fila ${fija ? `data-receta-fija="${escHtml(fija.tag)}"` : ''}>
+      <td>${concepto}</td>
+      <td><select class="input" data-r="materia_prima_id">${opcionesMat}</select></td>
+      <td><input class="input" type="number" step="any" min="0" data-r="cantidad" value="${escHtml(item ? item.cantidad : '')}" style="min-width:90px"></td>
+      <td><select class="input" data-r="unidad">${opcionesUnidad(mat, unidad)}</select></td>
+      <td>${nota}</td>
+      <td class="num">${accion}</td>
+    </tr>`;
+}
+
+/** Arma la tabla del formulario con los renglones dados (los de carretel y laminación van a su fila fija). */
+function renderRecetaForm(items) {
+  const fijas = document.getElementById('formRecetaFijas');
+  const filas = document.getElementById('formRecetaFilas');
+  if (!fijas || !filas) return;
+  const resto = (items || []).slice();
+  fijas.innerHTML = FIJAS_RECETA.map(f => {
+    const i = resto.findIndex(it => normTag(it.observaciones) === normTag(f.tag));
+    return filaRecetaFormHtml(i >= 0 ? resto.splice(i, 1)[0] : null, f);
+  }).join('');
+  filas.innerHTML = resto.map(it => filaRecetaFormHtml(it, null)).join('');
+  mostrarErrorRecetaForm('');
+}
+
+function mostrarErrorRecetaForm(texto) {
+  const el = document.getElementById('formRecetaError');
+  if (!el) return;
+  el.textContent = texto || '';
+  el.hidden = !texto;
+}
+
+/** Formulario de receta vacío (ficha nueva o "Limpiar formulario"). */
+function resetRecetaForm() {
+  recetaFormCargada = true;
+  recetaFormListo = Promise.resolve();
+  renderRecetaForm([]);
+}
+
+/**
+ * Al editar: trae la receta guardada. Si no se puede leer, el formulario NO manda
+ * `receta_items` al guardar (se conserva la que está guardada, no se borra).
+ */
+function cargarRecetaForm(fichaId) {
+  recetaFormCargada = false;
+  recetaFormListo = (async () => {
+    try {
+      await materialesListos;
+      const r = await apiFetch(`/api/ficha-transformador/${fichaId}/receta`);
+      if (currentId !== fichaId) return;   // mientras tanto se cambió de ficha
+      renderRecetaForm(r.items);
+      recetaFormCargada = true;
+    } catch (err) {
+      console.error('Error cargando la receta de la ficha:', err);
+      mostrarErrorRecetaForm('No se pudo cargar la receta guardada. Si guardás ahora, la receta no se modifica; podés editarla desde «Ver» → Receta.');
+    }
+  })();
+  return recetaFormListo;
+}
+
+/** Cantidad y unidad que se proponen al elegir el material de una fila fija. */
+function sugerirCantidadFija(tr, mat) {
+  const f = FIJAS_RECETA.find(x => x.tag === tr.dataset.recetaFija);
+  const cant = tr.querySelector('[data-r="cantidad"]');
+  if (!f || !mat || !cant || cant.value !== '') return;
+  // La laminación ya tiene su peso en gramos en la ficha: ese es el consumo.
+  const peso = f.campoPeso ? Number(valorCampo(f.campoPeso)) : 0;
+  if (peso > 0 && mat.unidades_permitidas.includes('GR')) {
+    cant.value = peso;
+    tr.querySelector('[data-r="unidad"]').value = 'GR';
+  }
+}
+
+/** Lee la tabla del formulario: { items, errores }. Una fila totalmente vacía se ignora. */
+function leerRecetaForm() {
+  const items = [];
+  const errores = [];
+  let otro = 0;
+  document.querySelectorAll('#formRecetaFijas [data-receta-fila], #formRecetaFilas [data-receta-fila]').forEach(tr => {
+    const v = (campo) => { const el = tr.querySelector(`[data-r="${campo}"]`); return el ? String(el.value).trim() : ''; };
+    const fija = tr.dataset.recetaFija || '';
+    if (!fija) otro++;
+    const cual = fija || `Otro material ${otro}`;
+    const material = v('materia_prima_id');
+    const cantidad = v('cantidad');
+    if (!material && cantidad === '') return;
+    if (!material) errores.push(`${cual}: elegí el material.`);
+    else if (!(Number(cantidad) > 0)) errores.push(`${cual}: cargá la cantidad que lleva un transformador (mayor a cero).`);
+    else if (!v('unidad')) errores.push(`${cual}: elegí la unidad.`);
+    else items.push({ materia_prima_id: material, cantidad, unidad: v('unidad'), observaciones: fija || v('observaciones') });
+  });
+  return { items, errores };
+}
+
+/** Los devanados del formulario (primario, secundario y los adicionales). */
+function devanadosDelFormulario() {
+  const lista = [
+    { nombre: 'primario', alambre: valorCampo('alambre_primario'), diametro: valorCampo('diametro_primario_mm'), peso: valorCampo('peso_primario_kg'), material: valorCampo('material_primario_id') },
+    { nombre: 'secundario', alambre: valorCampo('alambre_secundario'), diametro: valorCampo('diametro_secundario_mm'), peso: valorCampo('peso_secundario_kg'), material: valorCampo('material_secundario_id') }
+  ];
+  document.querySelectorAll('#devanadosExtra .devanado-extra').forEach((panel, i) => {
+    const g = (c) => { const el = panel.querySelector(`[data-campo="${c}"]`); return el ? el.value.trim() : ''; };
+    lista.push({ nombre: NOMBRES_DEVANADO[i] || `${i + 3}°`, alambre: g('alambre'), diametro: g('diametro_mm'), peso: g('peso_kg'), material: g('material_id') });
+  });
+  return lista;
+}
+
+/** Cosas de la ficha que no van a descontar stock aunque parezca que sí. Lista de textos (vacía = todo bien). */
+function avisosReceta(items) {
+  const avisos = [];
+  devanadosDelFormulario().forEach(d => {
+    if (!(d.alambre || d.diametro || d.material || Number(d.peso) > 0)) return;   // devanado sin datos
+    if (!d.material) avisos.push(`Devanado ${d.nombre}: no elegiste el «Material de alambre en stock», así que no se descuenta alambre.`);
+    else if (!(Number(d.peso) > 0)) avisos.push(`Devanado ${d.nombre}: tiene material pero falta el peso en gramos, así que no se descuenta alambre.`);
+  });
+  FIJAS_RECETA.forEach(f => {
+    const texto = valorCampo(f.campoTexto);
+    if (texto && !items.some(it => normTag(it.observaciones) === normTag(f.tag))) {
+      avisos.push(`${f.tag}: escribiste «${texto}» pero no elegiste el material en stock en la receta, así que no se descuenta.`);
+    }
+  });
+  return avisos;
+}
+
+/** Cuántos materiales va a descontar la ficha al producir (alambres con material y peso + renglones de receta). */
+function resumenReceta(items) {
+  const alambres = devanadosDelFormulario().filter(d => d.material && Number(d.peso) > 0).length;
+  const n = alambres + items.length;
+  return n > 0
+    ? `Receta: ${n} material${n === 1 ? '' : 'es'} que se descuenta${n === 1 ? '' : 'n'} al producir.`
+    : 'Sin receta: producir este modelo no descuenta materia prima.';
+}
+
+function mostrarAvisosReceta(avisos) {
+  document.getElementById('avisosRecetaLista').innerHTML = avisos.map(a => `<li style="margin-bottom:4px">${escHtml(a)}</li>`).join('');
+  document.getElementById('avisosRecetaModal').showModal();
+}

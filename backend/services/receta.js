@@ -258,4 +258,84 @@ async function devolverConsumo(client, produccionId, { observaciones, usuarioId 
   return { consumos, devueltos };
 }
 
-module.exports = { leerReceta, calcularNecesidad, aplicarConsumo, leerConsumos, devolverConsumo, normalizarUnidad };
+/* ---------------------------------------------------------------------------
+ * Alta/edición de los renglones de receta (ficha_receta_items).
+ *
+ * Los usa PUT /api/ficha-transformador/:id/receta (solapa Receta) y también el
+ * alta y la edición de la ficha (el formulario manda `receta_items` junto con
+ * el resto de la ficha, en la misma transacción).
+ * ------------------------------------------------------------------------- */
+const MAX_ITEMS = 40;
+const MAX_CANTIDAD = 99999999;
+const SIN_ROTURA = /[<>"\\`]/;
+
+function fallo(status, mensaje) {
+  const e = new Error(mensaje);
+  e.status = status;
+  return e;
+}
+
+/**
+ * Valida los renglones que manda el formulario y devuelve la lista limpia.
+ * `raw` puede ser un array o un JSON en texto (así llega en un multipart).
+ */
+async function normalizarItems(client, raw) {
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '[]'); }
+    catch (_) { throw fallo(400, 'La receta no tiene un formato válido'); }
+  }
+  if (!Array.isArray(raw)) throw fallo(400, 'La receta no tiene un formato válido');
+  if (raw.length > MAX_ITEMS) throw fallo(400, `La receta admite hasta ${MAX_ITEMS} renglones`);
+
+  const items = raw.map((it, i) => {
+    const cual = `Renglón ${i + 1}`;
+    const materialId = Number(it && it.materia_prima_id);
+    if (!Number.isInteger(materialId) || materialId <= 0) throw fallo(400, `${cual}: elegí el material`);
+
+    const cantidad = Number(String(it.cantidad ?? '').replace(',', '.'));
+    if (!isFinite(cantidad) || cantidad <= 0 || cantidad > MAX_CANTIDAD) {
+      throw fallo(400, `${cual}: la cantidad tiene que ser un número mayor a cero`);
+    }
+
+    // Que la unidad sea compatible con el material se comprueba más abajo
+    // (convertirAUnidadMaterial); acá solo que tenga forma de unidad.
+    const unidad = normalizarUnidad(it.unidad);
+    if (!/^[A-Z0-9]{1,10}$/.test(unidad)) throw fallo(400, `${cual}: elegí la unidad`);
+
+    let observaciones = String(it.observaciones ?? '').trim();
+    if (SIN_ROTURA.test(observaciones)) throw fallo(400, `${cual}: la nota tiene caracteres no permitidos (< > " \\ \`)`);
+    if (observaciones.length > 200) throw fallo(400, `${cual}: la nota es demasiado larga (máximo 200 caracteres)`);
+    observaciones = observaciones || null;
+
+    return { materia_prima_id: materialId, cantidad, unidad, observaciones, orden: i };
+  });
+
+  if (!items.length) return items;
+
+  const ids = [...new Set(items.map(i => i.materia_prima_id))];
+  const r = await client.query(
+    'SELECT id, nombre, unidad_medida, metros_por_rollo, activo FROM materias_primas WHERE id = ANY($1::int[])', [ids]);
+  const porId = new Map(r.rows.map(m => [m.id, m]));
+
+  items.forEach((it, i) => {
+    const mat = porId.get(it.materia_prima_id);
+    if (!mat || mat.activo === false) throw fallo(400, `Renglón ${i + 1}: el material no existe o está dado de baja`);
+    const c = convertirAUnidadMaterial(1, it.unidad, mat);
+    if (!c.ok) throw fallo(400, `Renglón ${i + 1} (${mat.nombre}): ${c.error}`);
+  });
+
+  return items;
+}
+
+/** Reemplaza todos los renglones de la receta de la ficha. Dentro de la transacción de quien llama. */
+async function guardarItems(client, fichaId, items) {
+  await client.query('DELETE FROM ficha_receta_items WHERE ficha_id = $1', [fichaId]);
+  for (const it of items) {
+    await client.query(
+      `INSERT INTO ficha_receta_items (ficha_id, materia_prima_id, cantidad, unidad, observaciones, orden)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [fichaId, it.materia_prima_id, it.cantidad, it.unidad, it.observaciones, it.orden]);
+  }
+}
+
+module.exports = { leerReceta, calcularNecesidad, aplicarConsumo, leerConsumos, devolverConsumo, normalizarUnidad, normalizarItems, guardarItems };

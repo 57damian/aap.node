@@ -182,6 +182,26 @@
             </div>
           </div>
 
+          <div class="panel" id="panelRecetaForm">
+            <div class="panel-head"><h2>Receta: materiales que se descuentan del stock</h2></div>
+            <div class="panel-body">
+              <p class="muted" style="margin:0 0 8px;font-size:.85rem">
+                El alambre se descuenta con el material y el peso de cada devanado (arriba).
+                Acá van el carretel, la laminación y el resto de los materiales, con la cantidad que lleva
+                <strong>un</strong> transformador. Al producir se descuenta del stock solo lo que esté cargado.
+              </p>
+              <div class="table-wrap"><table class="t">
+                <thead><tr><th>Concepto</th><th style="min-width:220px">Material en stock</th><th>Cantidad</th><th>Unidad</th><th>Nota</th><th></th></tr></thead>
+                <tbody id="formRecetaFijas"></tbody>
+                <tbody id="formRecetaFilas"></tbody>
+              </table></div>
+              <div class="notice notice-err" id="formRecetaError" role="alert" hidden style="margin:8px 0"></div>
+              <div class="page-head-actions" style="justify-content:flex-start;margin-top:8px">
+                <button type="button" class="b b-ghost" id="btnFormRecetaAgregar">＋ Agregar material (estaño, barniz, cinta, tornillos…)</button>
+              </div>
+            </div>
+          </div>
+
           <div class="panel">
             <div class="panel-head"><h2>Observaciones</h2></div>
             <div class="panel-body">
@@ -316,6 +336,19 @@
       </div>
     </div>
     </div><!-- /dtab-ficha -->
+  </dialog>
+
+  <!-- Avisos de la receta al guardar la ficha (no bloquean: se puede guardar igual) -->
+  <dialog id="avisosRecetaModal" class="panel" style="width:min(560px, calc(100% - 32px))">
+    <div class="panel-head"><h2>Revisá la receta antes de guardar</h2></div>
+    <div class="panel-body">
+      <p class="muted" style="margin:0 0 8px">Con lo que cargaste, producir este modelo <strong>no va a descontar</strong> todo el material:</p>
+      <ul id="avisosRecetaLista" style="margin:0 0 12px;padding-left:20px"></ul>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="avisosRecetaModal">Volver a editar</button>
+        <button type="button" class="b b-primary" id="btnGuardarConAvisos">Guardar igual</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="confirmarFichaModal" class="panel">

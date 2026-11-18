@@ -70,6 +70,8 @@ async function cargarMateriales() {
     sel.innerHTML = opcionesMateriales(elegido);
     sel.value = elegido;
   });
+  // La tabla de receta del formulario también arma sus desplegables con el catálogo.
+  if (!editMode && typeof resetRecetaForm === 'function') resetRecetaForm();
 }
 
 /** <option>s de materiales: primero los de la categoría Alambres, después el resto. */
@@ -888,8 +890,40 @@ let fichaEnviando = false;
 async function handleSubmit(e) {
   e.preventDefault();
   if (fichaEnviando) return;
-  console.log('Enviando formulario...');
+  fichaEnviando = true;
 
+  const btn = e.target.querySelector('button[type="submit"]');
+  const textoBoton = btn?.textContent;
+  const confirmado = avisosRecetaConfirmados;   // vino de "Guardar igual" en el diálogo de avisos
+  avisosRecetaConfirmados = false;
+
+  try {
+    // Al editar, la receta guardada se carga aparte: hay que esperarla (si no,
+    // se mandaría la tabla vacía y se borraría la receta).
+    await recetaFormListo;
+    const receta = leerRecetaForm();
+    if (receta.errores.length) {
+      mostrarErrorRecetaForm(receta.errores.join(' '));
+      document.getElementById('panelRecetaForm')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showAlert('Revisá la receta: ' + receta.errores[0], 'error');
+      return;
+    }
+    mostrarErrorRecetaForm('');
+
+    if (!confirmado) {
+      const avisos = avisosReceta(receta.items);
+      if (avisos.length) { mostrarAvisosReceta(avisos); return; }
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+    await enviarFicha(receta);
+  } finally {
+    fichaEnviando = false;
+    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
+  }
+}
+
+async function enviarFicha(receta) {
   const formData = new FormData();
 
   const fields = [
@@ -917,30 +951,30 @@ async function handleSubmit(e) {
   // todos los devanados adicionales también se guarda.
   formData.append('devanados_extra', JSON.stringify(leerDevanadosExtra()));
 
+  // La receta se guarda junto con la ficha. Si al editar no se pudo leer la
+  // guardada, no se manda: así no se pisa con una tabla vacía.
+  if (recetaFormCargada) formData.append('receta_items', JSON.stringify(receta.items));
+
   // Se manda la foto ya validada y reducida (fotoLista), no la del <input>.
   if (fotoLista) formData.append('foto', fotoLista);
   else if (editMode && quitarFoto) formData.append('quitar_foto', '1');
 
-  fichaEnviando = true;
-  const btn = e.target.querySelector('button[type="submit"]');
-  const textoBoton = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
-
   try {
+    const resumen = recetaFormCargada ? ' ' + resumenReceta(receta.items) : '';
     if (editMode) {
       console.log('Actualizando ficha ID:', currentId);
       await apiFetch(`/api/ficha-transformador/${currentId}`, {
         method: 'PUT',
         body: formData
       });
-      showAlert('✅ Ficha actualizada correctamente', 'success');
+      showAlert('✅ Ficha actualizada correctamente.' + resumen, 'success');
     } else {
       console.log('Creando nueva ficha');
       await apiFetch('/api/ficha-transformador', {
         method: 'POST',
         body: formData
       });
-      showAlert('✅ Ficha creada correctamente', 'success');
+      showAlert('✅ Ficha creada correctamente.' + resumen, 'success');
     }
 
     resetForm();
@@ -950,9 +984,6 @@ async function handleSubmit(e) {
   } catch (err) {
     console.error('Error guardando ficha:', err);
     showAlert(err.error || err.message || 'Error guardando ficha', 'error');
-  } finally {
-    fichaEnviando = false;
-    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
   }
 }
 
@@ -979,6 +1010,9 @@ async function editarFicha(id) {
       }
     });
     cargarDevanadosExtra(ficha.devanados_extra);
+
+    // La receta se trae aparte; handleSubmit espera a que termine de cargar.
+    cargarRecetaForm(id);
 
     // Mostrar foto actual si existe
     const preview = document.getElementById('fotoPreview');
@@ -1007,6 +1041,7 @@ async function editarFicha(id) {
 function resetForm() {
   document.getElementById('fichaForm').reset();
   limpiarDevanadosExtra();
+  resetRecetaForm();
   fotoLista = null;
   quitarFoto = false;
   mostrarError('fotoError', '');
