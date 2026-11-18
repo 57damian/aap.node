@@ -26,7 +26,7 @@ Notas de contexto detalladas por módulo y auditorías: `docs/claude/` (empezar 
 | `CORS_ORIGIN` | no | Orígenes extra separados por coma. El dominio público de Railway (`RAILWAY_PUBLIC_DOMAIN`) se autoriza solo. |
 | `DB_SSL_NO_VERIFY` | no | `true` solo si el proveedor de la base usa un certificado propio. |
 | `UPLOAD_PATH` | solo para las **fotos de OC** | Carpeta física de las fotos de OC de clientes (default `backend/uploads`). **El disco de Railway es efímero**: cada deploy/reinicio lo vacía y esos archivos desaparecen (la base sigue apuntando a ellos). Para persistirlas: crear un **Volume**, montarlo en `/data` y cargar `UPLOAD_PATH=/data/uploads`. Config en `config/uploads.js`. **Las fotos de modelos y las etiquetas de la ficha ya NO dependen de esto**: viven en la base (`ficha_archivos`, ver "Fotos y etiquetas de la ficha en la base" abajo). |
-| `RATE_LIMIT_WINDOW`, `RATE_LIMIT_MAX`, `PORT` | no | |
+| `RATE_LIMIT_WINDOW`, `RATE_LIMIT_MAX`, `PORT` | no | Límite general de `/api`: `RATE_LIMIT_MAX` pedidos por IP cada `RATE_LIMIT_WINDOW` minutos (default **1000** cada 15; con 100 se agotaba tras unas 10-15 pantallas y todo daba **429**, hallazgo 18/11/2026). La variable pisa el default del código: si en Railway está en 100, subirla o borrarla. El login y las contraseñas tienen límites propios más estrictos, fijos en `index.js`. |
 
 **Incidente 19/09/2026:** el deploy en Railway crasheó con `JWT_SECRET no está definido o es demasiado corto`. Causa: la variable no estaba cargada en Railway (sí en el `.env` local). Solución: cargar `JWT_SECRET` en Variables del servicio y redeployar.
 

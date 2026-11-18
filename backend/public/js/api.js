@@ -46,6 +46,16 @@ async function apiFetch(endpoint, options = {}) {
       throw new Error('Sesión expirada');
     }
 
+    if (response.status === 429) {
+      // Límite de pedidos del servidor: se avisa cuánto esperar en vez de dejar
+      // la pantalla vacía con un "Object" en la consola.
+      const espera = parseInt(response.headers.get('Retry-After'), 10);
+      const cuando = !isFinite(espera) ? 'un momento'
+        : espera >= 90 ? `${Math.ceil(espera / 60)} minutos`
+        : `${espera} segundos`;
+      throw new Error(`Hiciste muchas operaciones seguidas. Esperá ${cuando} y reintentá.`);
+    }
+
     if (response.status === 403) {
       // El backend responde así mientras la contraseña siga siendo la
       // temporal que entregó el administrador: no es falta de permisos, hay

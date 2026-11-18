@@ -234,8 +234,14 @@ app.get('/health', (req, res) => {
 // espera un number.
 const limiter = rateLimit({
     windowMs: Number(process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000,
-    max: Number(process.env.RATE_LIMIT_MAX || 100),
-    message: { error: 'Demasiadas peticiones, intenta más tarde' },
+    // 1000 por IP cada 15 min: con 100 se agotaba tras unas 10-15 pantallas abiertas
+    // (cada una dispara varios pedidos) y todo devolvía 429 (hallazgo 18/11/2026).
+    // El login y las contraseñas tienen sus propios límites, más estrictos, abajo.
+    max: Number(process.env.RATE_LIMIT_MAX || 1000),
+    // Retry-After para que el navegador sepa cuánto esperar (lo lee api.js).
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Hiciste muchas operaciones seguidas. Esperá un momento y reintentá.' },
     skip: (req) => req.path === '/health'
 });
 app.use('/api/', limiter);
