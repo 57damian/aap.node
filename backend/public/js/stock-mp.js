@@ -491,7 +491,7 @@ async function verHistorialPrecios(id) {
             tbody.innerHTML = historial.map(p => `
                 <tr>
                     <td>${Shell.fecha(p.fecha_cambio)}</td>
-                    <td class="num" data-label="Antes">${Shell.precioCompra(p.precio_anterior_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_anterior_usd_compra, p.unidad_precio)}</td>
+                    <td class="num" data-label="Antes">${p.precio_anterior_compra != null ? Shell.precioCompra(p.precio_anterior_compra, p.unidad_precio) : '—'}${renderPrecioUsd(p.precio_anterior_usd_compra, p.unidad_precio)}</td>
                     <td class="num" data-label="Después">${Shell.precioCompra(p.precio_nuevo_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_nuevo_usd_compra, p.unidad_precio)}</td>
                     <td class="num" data-label="Variación">${renderVariacionHistorial(p)}</td>
                     <td class="muted solo-escritorio" data-label="Factura">${p.factura_numero || '—'}</td>
@@ -531,7 +531,7 @@ async function verHistorialPreciosModal() {
             tbody.innerHTML = historial.map(p => `
                 <tr>
                     <td>${Shell.fecha(p.fecha_cambio)}</td>
-                    <td class="num" data-label="Antes">${Shell.precioCompra(p.precio_anterior_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_anterior_usd_compra, p.unidad_precio)}</td>
+                    <td class="num" data-label="Antes">${p.precio_anterior_compra != null ? Shell.precioCompra(p.precio_anterior_compra, p.unidad_precio) : '—'}${renderPrecioUsd(p.precio_anterior_usd_compra, p.unidad_precio)}</td>
                     <td class="num" data-label="Después">${Shell.precioCompra(p.precio_nuevo_compra || 0, p.unidad_precio)}${renderPrecioUsd(p.precio_nuevo_usd_compra, p.unidad_precio)}</td>
                     <td class="num" data-label="Variación">${renderVariacionHistorial(p)}</td>
                     <td class="muted solo-escritorio" data-label="Factura">${p.factura_numero || '—'}</td>

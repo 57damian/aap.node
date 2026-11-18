@@ -119,18 +119,46 @@ router.get('/', soloAdmin, async (req, res) => {
    IMPORTANTE: va antes de GET /:id — si no, "historial-precios" matchea
    como si fuera un :id y esta ruta nunca se alcanza.
 ============================================ */
+// Fuente del historial de precios de compra de un material (hallazgo 18/11/2026).
+// `historial_precios_materias` solo guarda cuando el precio CAMBIA respecto de la
+// compra anterior al mismo proveedor: la primera compra de un material del
+// catálogo, y toda compra al mismo precio, no dejaban ninguna fila, así que
+// "Precios" mostraba el historial vacío o incompleto (en la base local, 7 de 18
+// compras con precio no figuraban). Se suman las compras de `stock_movimientos`
+// que no tienen fila de cambio (origen 'COMPRA', sin variación), con el dólar de
+// su factura. Cada fila lleva el mismo nombre de columnas que el historial.
+const HISTORIAL_PRECIOS_FUENTE = `(
+  SELECT hpm.id::text AS id, hpm.materia_prima_id, hpm.proveedor_id, hpm.factura_id,
+         hpm.precio_anterior, hpm.precio_nuevo, hpm.precio_anterior_usd, hpm.precio_nuevo_usd,
+         hpm.variacion_porcentaje, hpm.fecha_cambio::timestamp AS fecha_cambio,
+         hpm.created_at, hpm.created_by, 'CAMBIO' AS origen
+  FROM historial_precios_materias hpm
+  UNION ALL
+  SELECT 'c' || sm.id, sm.materia_prima_id, sm.proveedor_id, sm.factura_id,
+         NULL, sm.precio_unitario, NULL, sm.precio_unitario / NULLIF(hd.dolar, 0),
+         NULL, sm.fecha_movimiento::timestamp,
+         sm.created_at, sm.usuario_id, 'COMPRA'
+  FROM stock_movimientos sm
+  LEFT JOIN facturas_compra fcx ON fcx.id = sm.factura_id
+  LEFT JOIN historial_dolar hd ON hd.id = fcx.dolar_historial_id
+  WHERE sm.tipo_movimiento = 'ENTRADA' AND sm.precio_unitario > 0 AND sm.factura_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM historial_precios_materias h
+      WHERE h.materia_prima_id = sm.materia_prima_id AND h.factura_id = sm.factura_id)
+)`;
+
 function construirQueryHistorialPreciosMP(req) {
   const { materia_prima_id, proveedor_id, desde, hasta } = req.query;
   let query = `
     SELECT
       hpm.precio_nuevo, hpm.precio_anterior,
       hpm.precio_nuevo_usd, hpm.precio_anterior_usd,
-      hpm.variacion_porcentaje, hpm.fecha_cambio,
+      hpm.variacion_porcentaje, hpm.fecha_cambio, hpm.origen,
       mp.nombre as material_nombre, mp.codigo as material_codigo,
       mp.unidad_medida,
       fc.numero_factura as factura_numero,
       p.nombre as proveedor_nombre
-    FROM historial_precios_materias hpm
+    FROM ${HISTORIAL_PRECIOS_FUENTE} hpm
     JOIN materias_primas mp ON mp.id = hpm.materia_prima_id
     LEFT JOIN facturas_compra fc ON hpm.factura_id = fc.id
     LEFT JOIN proveedores p ON hpm.proveedor_id = p.id
@@ -141,7 +169,7 @@ function construirQueryHistorialPreciosMP(req) {
   if (proveedor_id) { params.push(proveedor_id); query += ` AND hpm.proveedor_id = $${params.length}`; }
   if (desde) { params.push(desde); query += ` AND hpm.fecha_cambio >= $${params.length}`; }
   if (hasta) { params.push(hasta); query += ` AND hpm.fecha_cambio <= $${params.length}`; }
-  query += ` ORDER BY hpm.fecha_cambio DESC, hpm.id DESC LIMIT 5000`;
+  query += ` ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC, hpm.id DESC LIMIT 5000`;
   return { query, params };
 }
 
@@ -347,17 +375,18 @@ router.delete('/:id', soloAdmin, async (req, res) => {
           hpm.precio_anterior_usd,
           hpm.variacion_porcentaje,
           hpm.fecha_cambio,
+          hpm.origen,
           fc.numero_factura as factura_numero,
           p.nombre as proveedor_nombre,
           u.nombre_completo as usuario_nombre,
           mp.unidad_medida
-        FROM historial_precios_materias hpm
+        FROM ${HISTORIAL_PRECIOS_FUENTE} hpm
         JOIN materias_primas mp ON mp.id = hpm.materia_prima_id
         LEFT JOIN facturas_compra fc ON hpm.factura_id = fc.id
         LEFT JOIN proveedores p ON hpm.proveedor_id = p.id
         LEFT JOIN usuarios u ON hpm.created_by = u.id
         WHERE hpm.materia_prima_id = $1 ${filtroFecha}
-        ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC
+        ORDER BY hpm.fecha_cambio DESC, hpm.created_at DESC, hpm.id DESC
       `, params);
 
       res.json(result.rows.map(r => agregarPrecioDeCompra(r, PRECIOS_HISTORIAL)));

@@ -545,22 +545,31 @@ async function verPrecios(articuloId) {
     try {
         const precios = await apiFetch(`/api/materias-primas/${articuloId}/historial-precios`);
         
+        const material = stockCache.find(s => String(s.articulo_id) === String(articuloId));
+        document.getElementById('preciosTitulo').textContent =
+            material ? `Historial de precios — ${material.nombre}` : 'Historial de precios';
+
         const tbody = document.getElementById('preciosTableBody');
         if (!precios || precios.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay historial de precios</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="7">${Shell.vacio(
+                'Todavía no hay compras con precio de este material',
+                'Aparecen solas al cargar facturas de compra.')}</td></tr>`;
         } else {
-            tbody.innerHTML = precios.map(p => `
+            tbody.innerHTML = precios.map(p => {
+                const variacion = p.variacion_porcentaje;
+                const claseVar = variacion > 0 ? 'neg' : (variacion < 0 ? 'pos' : '');
+                const usd = p.precio_nuevo_usd_compra;
+                return `
                 <tr>
-                    <td>${Shell.fecha(p.fecha_cambio)}</td>
-                    <td>${Shell.precioCompra(p.precio_anterior_compra || 0, p.unidad_precio)}</td>
-                    <td>${Shell.precioCompra(p.precio_nuevo_compra || 0, p.unidad_precio)}</td>
-                    <td class="${p.variacion_porcentaje > 0 ? 'neg' : (p.variacion_porcentaje < 0 ? 'pos' : '')}">
-                        ${p.variacion_porcentaje > 0 ? '+' : ''}${p.variacion_porcentaje || 0}%
-                    </td>
-                    <td>${p.proveedor_nombre || '-'}</td>
-                    <td>${p.factura_numero || '-'}</td>
-                </tr>
-            `).join('');
+                    <td data-label="Fecha">${Shell.fecha(p.fecha_cambio)}</td>
+                    <td class="num" data-label="Precio anterior">${p.precio_anterior_compra != null ? Shell.precioCompra(p.precio_anterior_compra, p.unidad_precio) : '—'}</td>
+                    <td class="num" data-label="Precio nuevo">${Shell.precioCompra(p.precio_nuevo_compra, p.unidad_precio)}</td>
+                    <td class="num" data-label="Precio nuevo (USD)">${usd != null && Number(usd) > 0 ? Shell.monto(`USD ${Number(usd).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}${String(p.unidad_precio || '').toUpperCase() === 'KG' ? ' /kg' : ''}`) : '—'}</td>
+                    <td class="num ${claseVar}" data-label="Variación">${variacion != null ? (variacion > 0 ? '+' : '') + Number(variacion).toFixed(1) + '%' : '—'}</td>
+                    <td class="solo-escritorio" data-label="Proveedor">${p.proveedor_nombre || '—'}</td>
+                    <td class="solo-escritorio" data-label="N° de factura">${p.factura_numero || '—'}</td>
+                </tr>`;
+            }).join('');
         }
         
         document.getElementById('preciosModal').showModal();
