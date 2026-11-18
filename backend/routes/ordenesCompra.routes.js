@@ -3,6 +3,9 @@ const router = express.Router();
 const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const { vistaPreviaAnulacionOC, anularOC } = require('../services/anulaciones');
+const { pendientesPorCliente } = require('../services/oc-pendientes');
+const { generarPdfPendientes } = require('../services/pdf-oc-pendientes');
+const { nombreArchivo } = require('../services/pdf-base');
 
 router.use(verificarToken);
 // La foto de la OC va a uploads/ordenes_compra (antes caía en uploads/modelos
@@ -46,7 +49,25 @@ router.get(
             SELECT COALESCE(json_agg(v.remito_numero ORDER BY v.remito_numero), '[]'::json)
             FROM ventas v
             WHERE v.orden_compra_id = oc.id AND v.anulada_en IS NULL AND v.remito_numero IS NOT NULL
-          ) AS remitos
+          ) AS remitos,
+          (
+            -- Qué modelos faltan entregar de esta OC y cuántas unidades de
+            -- cada uno (misma cuenta que services/oc-pendientes.js).
+            SELECT COALESCE(json_agg(json_build_object('modelo', m.modelo, 'pendiente', m.pend)
+                                     ORDER BY m.modelo), '[]'::json)
+            FROM (
+              SELECT ft.modelo,
+                     oci.cantidad_pedida - COALESCE((
+                       SELECT SUM(vi.cantidad) FROM ventas v
+                       JOIN venta_items vi ON vi.venta_id = v.id
+                       WHERE v.orden_compra_id = oc.id AND v.anulada_en IS NULL
+                         AND vi.ficha_id = oci.ficha_id), 0)::int AS pend
+              FROM orden_compra_items oci
+              JOIN ficha_transformador ft ON ft.id = oci.ficha_id
+              WHERE oci.orden_compra_id = oc.id
+            ) m
+            WHERE m.pend > 0
+          ) AS modelos_pendientes
          FROM ordenes_compra oc
          JOIN clientes c ON c.id = oc.cliente_id
          ${filtro}
@@ -60,6 +81,46 @@ router.get(
     }
   }
 );
+
+
+// Pendientes de entrega por cliente (18/11/2026): lo pedido y no entregado
+// de todas las OC vigentes, sumado por modelo y con el desglose por OC.
+// Va antes de las rutas con /:id. ?cliente_id= filtra por un cliente.
+function clienteIdDeQuery(req, res) {
+  if (!req.query.cliente_id) return null;
+  const id = Number.parseInt(req.query.cliente_id, 10);
+  if (Number.isNaN(id) || id <= 0) {
+    res.status(400).json({ error: 'cliente_id inválido' });
+    return undefined;
+  }
+  return id;
+}
+
+router.get('/pendientes', soloAdmin, async (req, res) => {
+  const clienteId = clienteIdDeQuery(req, res);
+  if (clienteId === undefined) return;
+  try {
+    res.json(await pendientesPorCliente(clienteId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/pendientes/pdf', soloAdmin, async (req, res) => {
+  const clienteId = clienteIdDeQuery(req, res);
+  if (clienteId === undefined) return;
+  try {
+    const clientes = await pendientesPorCliente(clienteId);
+    const hoy = new Date().toISOString().slice(0, 10);
+    const sufijo = clienteId && clientes.length ? `-${nombreArchivo(clientes[0].cliente)}` : '';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Pendientes${sufijo}-${hoy}.pdf"`);
+    generarPdfPendientes(clientes, res);
+  } catch (err) {
+    console.error('Error generando PDF de pendientes:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
 
 
 // El alta antes solo creaba la cabecera: los items del pedido se cargaban

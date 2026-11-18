@@ -75,6 +75,35 @@
     </div>
   </div>
 
+  <div class="tabs">
+    <button type="button" class="tab active" data-tab="ordenes">Órdenes</button>
+    <button type="button" class="tab" data-tab="pendientes">Pendientes por cliente</button>
+  </div>
+
+  <!-- ================= Pendientes por cliente =================
+       Lo pedido y no entregado de todas las OC vigentes, sumado por modelo
+       (si un modelo está en varias OC del cliente sale una sola fila) y con
+       el desglose de a qué OC pertenece cada parte. El PDF sale con el
+       mismo filtro de cliente. -->
+  <div id="tab-pendientes" class="tab-content">
+    <div class="filters">
+      <div class="field grow">
+        <label for="pendCliente">Cliente</label>
+        <select class="input" id="pendCliente">
+          <option value="">Todos los clientes</option>
+        </select>
+      </div>
+      <div class="filters-actions">
+        <button type="button" class="b b-ghost" id="btnPendToggle">Expandir todo</button>
+        <button type="button" class="b b-primary" id="btnPendPdf">Descargar PDF</button>
+      </div>
+    </div>
+    <div id="pendResultado" style="margin-top:var(--space-4)">
+      <p class="muted">Cargando…</p>
+    </div>
+  </div>
+
+  <div id="tab-ordenes" class="tab-content active">
   <!-- Búsqueda client-side: mismo patrón que las pestañas de Remitos/Órdenes
        de correcciones.html (un solo input, filtra en cada tecla sobre la
        lista ya cargada — no hace falta ir al servidor por esto). Busca por
@@ -95,15 +124,17 @@
           <th>Cliente</th>
           <th class="solo-escritorio">Fecha</th>
           <th>Estado</th>
+          <th>Pendiente de entregar</th>
           <th>Remitos</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="listaOC">
-        <tr><td colspan="6" class="muted">Cargando…</td></tr>
+        <tr><td colspan="7" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>
+  </div>
 
 </div>
 
