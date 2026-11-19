@@ -279,6 +279,7 @@ async function cargarFacturas() {
           · Total ${Shell.money(factura.total_factura)} (con IVA)
           · <a href="#" onclick="verFacturaPdf(${factura.factura_id}); return false;">PDF</a>
           ${anulada ? '' : `· Cobrado ${Shell.money(factura.total_cobrado)}
+          · <a href="cobros.html?factura=${encodeURIComponent(factura.factura_id)}" title="Ver el saldo, el vencimiento y los cobros de esta factura">Ver en Cobros</a>
           · <a href="correcciones.html?factura=${encodeURIComponent(factura.factura_id)}">Anular…</a>`}
         </td>
       `;

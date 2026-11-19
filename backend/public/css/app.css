@@ -575,6 +575,49 @@ table.t .muted { color: var(--text-muted); }
 .ec-gestion { font-size: 11px; color: #92400e; }
 .ec-total td { font-weight: 700; border-top: 2px solid var(--border-color); }
 
+/* Cuentas por cobrar navegables (Cobros): KPIs y tramos de antigüedad que
+   filtran, cliente que se despliega en sus facturas y factura que se despliega
+   en su origen (OC y remitos) y sus cobros. */
+#tab-deuda [hidden] { display: none !important; }
+button.kpi {
+  font: inherit; text-align: left; cursor: pointer; width: 100%; color: inherit;
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start;
+  box-shadow: none; text-transform: none; letter-spacing: normal;
+}
+button.kpi:hover { background: var(--gray-50, #f9fafb); }
+.kpi.is-activo, .aging .is-activo { outline: 2px solid var(--primary-600); outline-offset: -2px; }
+.aging > button {
+  all: unset; box-sizing: border-box; cursor: pointer; display: block;
+  padding: var(--space-3) var(--space-4); background: var(--bg-primary);
+}
+.aging > button:hover { background: var(--gray-50, #f9fafb); }
+.aging > button:focus-visible { outline: 2px solid var(--primary-600); outline-offset: -2px; }
+.vista-toggle { display: inline-flex; border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden; }
+.vista-toggle button {
+  background: var(--bg-primary); border: none; padding: 6px 14px; font: inherit; font-size: 13px;
+  color: var(--text-secondary); cursor: pointer;
+}
+.vista-toggle button + button { border-left: 1px solid var(--border-color); }
+.vista-toggle button.active { background: var(--primary-600); color: #fff; font-weight: 600; }
+.filtro-activo {
+  display: flex; align-items: center; gap: var(--space-2); font-size: 13px;
+  margin-top: var(--space-3); color: var(--text-secondary);
+}
+.filtro-activo button { font: inherit; font-size: 12px; }
+.fx-cliente > td { background: var(--gray-50, #f9fafb); padding: var(--space-3) var(--space-4); }
+.fx-cliente .t { background: var(--bg-primary); }
+.fx-fila.abierta > td { background: var(--gray-50, #f9fafb); }
+.fx-detalle > td { background: var(--gray-50, #f9fafb); padding: var(--space-3) var(--space-4) var(--space-4) 28px; font-size: 13px; }
+.fx-bloque + .fx-bloque { margin-top: var(--space-3); }
+.fx-titulo { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.fx-cadena { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.fx-cadena .sep { color: var(--text-muted); }
+.fx-items { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+.fx-pago { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 3px 0; border-top: 1px dashed var(--border-color); }
+.fx-pago:first-of-type { border-top: none; }
+.fx-pago .num { margin-left: auto; font-variant-numeric: tabular-nums; }
+.fx-chevron { font-size: 10px; display: inline-block; width: 12px; color: var(--text-muted); }
+
 /* =====================================================================
  * 17. FILA DE FORMA DE PAGO/COBRO — usada al registrar cobros y pagos
  * ===================================================================== */

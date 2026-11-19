@@ -229,9 +229,85 @@ async function estadoCuenta(pool, clienteId, { desde, hasta, soloPendientes } = 
     (new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)) ||
     (a.id - b.id));
 
+  await detalleFacturas(pool, facturas);
+
+  // Los totales salen de las mismas filas que se ven (respetan el filtro).
+  const positivas = facturas.filter(f => num(f.saldo) > 0.005);
+  const resumen = {
+    facturado: r2(facturas.reduce((s, f) => s + num(f.total), 0)),
+    notas_credito: r2(facturas.reduce((s, f) => s + num(f.notas_credito), 0)),
+    cobrado: r2(facturas.reduce((s, f) => s + num(f.cobrado), 0)),
+    en_gestion: r2(facturas.reduce((s, f) => s + num(f.en_gestion), 0)),
+    por_cobrar: r2(positivas.reduce((s, f) => s + num(f.saldo), 0)),
+    vencido: r2(positivas.filter(f => num(f.dias_atraso) > 0).reduce((s, f) => s + num(f.saldo), 0)),
+    exceso_cobrado: r2(facturas.filter(f => num(f.saldo) < -0.005).reduce((s, f) => s - num(f.saldo), 0))
+  };
+
+  const { rows: af } = await pool.query(`
+    WITH ${CTE_A_FAVOR}
+    SELECT ROUND(GREATEST(COALESCE((SELECT saldo_a_favor FROM a_favor WHERE cliente_id = $1), 0), 0), 2) AS saldo_a_favor
+  `, [clienteId]);
+
+  return { resumen, facturas, a_cuenta: num(af[0].saldo_a_favor) };
+}
+
+/**
+ * De dónde sale cada factura: la OC del cliente, los remitos que se
+ * facturaron juntos y lo que dice cada renglón (modelo × cantidad).
+ * Devuelve Map(factura_id → { orden_compra_id, numero_oc, remitos[], items[] }).
+ * Un remito con varios tramos (una fila de `ventas` por OC) sale una sola
+ * vez, con el id del tramo de esa factura para abrir su PDF.
+ */
+async function origenFacturas(pool, ids) {
+  const mapa = new Map();
+  if (!ids.length) return mapa;
+
+  const { rows } = await pool.query(`
+    SELECT fvi.factura_id,
+           f.orden_compra_id, oc.numero_oc,
+           v.id AS venta_id, v.remito_numero, COALESCE(v.remito_fecha, v.fecha) AS remito_fecha,
+           COALESCE(ft.modelo, '—') AS modelo,
+           SUM(fvi.cantidad) AS cantidad
+    FROM factura_venta_items fvi
+    JOIN facturas f           ON f.id = fvi.factura_id
+    JOIN venta_items vi       ON vi.id = fvi.venta_item_id
+    JOIN ventas v             ON v.id = vi.venta_id
+    LEFT JOIN ordenes_compra oc ON oc.id = f.orden_compra_id
+    LEFT JOIN ficha_transformador ft ON ft.id = fvi.ficha_id
+    WHERE fvi.factura_id = ANY($1::int[])
+    GROUP BY fvi.factura_id, f.orden_compra_id, oc.numero_oc,
+             v.id, v.remito_numero, v.remito_fecha, v.fecha, ft.modelo
+    ORDER BY fvi.factura_id, COALESCE(v.remito_fecha, v.fecha), v.id, ft.modelo
+  `, [ids]);
+
+  rows.forEach(r => {
+    if (!mapa.has(r.factura_id)) {
+      mapa.set(r.factura_id, {
+        orden_compra_id: r.orden_compra_id,
+        numero_oc: r.numero_oc,
+        remitos: [],
+        items: []
+      });
+    }
+    const o = mapa.get(r.factura_id);
+    const clave = r.remito_numero || `venta #${r.venta_id}`;
+    if (!o.remitos.some(x => x.numero_remito === clave)) {
+      o.remitos.push({ id: r.venta_id, numero_remito: clave, fecha: r.remito_fecha });
+    }
+    const it = o.items.find(x => x.modelo === r.modelo);
+    if (it) it.cantidad = r2(it.cantidad + num(r.cantidad));
+    else o.items.push({ modelo: r.modelo, cantidad: num(r.cantidad) });
+  });
+  return mapa;
+}
+
+/** Completa cada factura (fila de facturas_saldo) con sus cobros imputados,
+ * sus notas de crédito y su origen. Modifica `facturas` y la devuelve. */
+async function detalleFacturas(pool, facturas) {
   const ids = facturas.map(f => f.id);
   const pagosPorFactura = new Map();
   const ncPorFactura = new Map();
+  const origenes = await origenFacturas(pool, ids);
 
   if (ids.length) {
     // Un renglón por (factura, cobro): si el cobro tiene varias formas de
@@ -274,26 +350,50 @@ async function estadoCuenta(pool, clienteId, { desde, hasta, soloPendientes } = 
   facturas.forEach(f => {
     f.pagos = pagosPorFactura.get(f.id) || [];
     f.notas_credito_detalle = ncPorFactura.get(f.id) || [];
+    f.origen = origenes.get(f.id) || { orden_compra_id: null, numero_oc: null, remitos: [], items: [] };
   });
+  return facturas;
+}
 
-  // Los totales salen de las mismas filas que se ven (respetan el filtro).
-  const positivas = facturas.filter(f => num(f.saldo) > 0.005);
-  const resumen = {
-    facturado: r2(facturas.reduce((s, f) => s + num(f.total), 0)),
-    notas_credito: r2(facturas.reduce((s, f) => s + num(f.notas_credito), 0)),
-    cobrado: r2(facturas.reduce((s, f) => s + num(f.cobrado), 0)),
-    en_gestion: r2(facturas.reduce((s, f) => s + num(f.en_gestion), 0)),
-    por_cobrar: r2(positivas.reduce((s, f) => s + num(f.saldo), 0)),
-    vencido: r2(positivas.filter(f => num(f.dias_atraso) > 0).reduce((s, f) => s + num(f.saldo), 0)),
-    exceso_cobrado: r2(facturas.filter(f => num(f.saldo) < -0.005).reduce((s, f) => s - num(f.saldo), 0))
-  };
+/**
+ * Todas las facturas vigentes de todos los clientes, para la vista "Por
+ * factura" de Cobros. Sin detalle de cobros (se pide al desplegar una
+ * factura): solo lo que hace falta para la lista y el buscador, incluidos
+ * los remitos y la OC de origen. Por defecto, solo las que tienen saldo.
+ */
+async function listadoFacturas(pool, { soloPendientes = true } = {}) {
+  const { rows: facturas } = await pool.query(`
+    WITH ${CTE_FACTURAS}
+    SELECT fs.*, ${ESTADO_FACTURA} AS estado,
+           c.nombre AS cliente_nombre, c.cuit AS cliente_cuit
+    FROM facturas_saldo fs
+    JOIN clientes c ON c.id = fs.cliente_id
+    ${soloPendientes ? 'WHERE fs.saldo > 0.005' : ''}
+  `);
 
-  const { rows: af } = await pool.query(`
-    WITH ${CTE_A_FAVOR}
-    SELECT ROUND(GREATEST(COALESCE((SELECT saldo_a_favor FROM a_favor WHERE cliente_id = $1), 0), 0), 2) AS saldo_a_favor
-  `, [clienteId]);
+  facturas.sort((a, b) =>
+    (ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]) ||
+    (new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)) ||
+    (a.id - b.id));
 
-  return { resumen, facturas, a_cuenta: num(af[0].saldo_a_favor) };
+  const origenes = await origenFacturas(pool, facturas.map(f => f.id));
+  facturas.forEach(f => {
+    f.origen = origenes.get(f.id) || { orden_compra_id: null, numero_oc: null, remitos: [], items: [] };
+  });
+  return facturas;
+}
+
+/** Una factura puntual con su detalle completo (cobros, notas de crédito y
+ * origen). Devuelve null si no existe o está anulada. */
+async function facturaConDetalle(pool, facturaId) {
+  const { rows } = await pool.query(`
+    WITH ${CTE_FACTURAS}
+    SELECT fs.*, ${ESTADO_FACTURA} AS estado
+    FROM facturas_saldo fs WHERE fs.id = $1
+  `, [facturaId]);
+  if (!rows.length) return null;
+  await detalleFacturas(pool, rows);
+  return rows[0];
 }
 
 /** Saldo pendiente de una factura puntual (lo usa Notas de Crédito). */
@@ -313,5 +413,7 @@ module.exports = {
   resumenCliente,
   cuentaCorriente,
   estadoCuenta,
+  listadoFacturas,
+  facturaConDetalle,
   saldoFactura
 };

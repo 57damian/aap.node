@@ -17,7 +17,14 @@ const estado = {
   seleccionadas: new Set(), // facturas tildadas (pueden tener 0 imputado si todavía no hay importes)
   imputacionManual: false,  // true cuando se edita un "A imputar" a mano: deja de seguir el total del cobro
   seqForma: 0,
-  historial: []        // último resultado de cargarHistorial(), para exportar
+  historial: [],       // último resultado de cargarHistorial(), para exportar
+  // Cuentas por cobrar navegables
+  vista: 'cliente',         // 'cliente' | 'factura'
+  facturasPend: [],         // facturas con saldo de todos los clientes (con su origen)
+  filtroKpi: null,          // clave de FILTROS_KPI o null
+  clientesAbiertos: new Set(),
+  facturasAbiertas: new Set(),
+  detalles: new Map()       // factura_id → detalle completo (cobros, NC, origen), se pide al desplegar
 };
 
 /* ---------------------- utilidades ---------------------- */
@@ -50,9 +57,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('[data-tab-ir]').forEach(b => b.addEventListener('click', () =>
     document.querySelector(`.tab[data-tab="${b.dataset.tabIr}"]`).click()));
 
-  $('buscarCliente').addEventListener('input', debounce(cargarDeuda, 350));
+  // La búsqueda filtra sobre lo ya cargado, en cada tecla (sin ir al servidor).
+  $('buscarCliente').addEventListener('input', pintarPorCobrar);
   $('soloVencido').addEventListener('change', cargarDeuda);
   $('ordenDeuda').addEventListener('change', cargarDeuda);
+  $('tab-deuda').addEventListener('click', clicEnPorCobrar);
+  // Los filtros de Cheques e Historial se aplican al cambiarlos (el botón "Filtrar" sigue sirviendo).
+  ['filtroChequeEstado', 'filtroChequeCliente'].forEach(id => $(id).addEventListener('change', cargarCheques));
+  ['filtroHistCliente', 'filtroHistDesde', 'filtroHistHasta', 'filtroHistEstado']
+    .forEach(id => $(id).addEventListener('change', cargarHistorial));
+  $('tab-cheques').addEventListener('click', clicEnPdf);
+  $('tab-historial').addEventListener('click', clicEnPdf);
+  $('kpis').addEventListener('click', clicEnFiltroKpi);
+  $('aging').addEventListener('click', clicEnFiltroKpi);
   $('btnActualizarDeuda').addEventListener('click', cargarTodo);
   $('cobroCliente').addEventListener('change', onCambiaClienteCobro);
   $('btnAgregarForma').addEventListener('click', agregarForma);
@@ -79,7 +96,41 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await cargarClientes();
   await cargarTodo();
+  abrirDesdeLink();
 });
+
+/* Links desde otras pantallas: cobros.html?factura=ID abre esa factura en la
+ * vista "Por factura"; cobros.html?cliente=ID abre el cliente en "Por cliente". */
+async function abrirDesdeLink() {
+  const p = new URLSearchParams(location.search);
+  const facturaId = Number(p.get('factura'));
+  const clienteId = Number(p.get('cliente'));
+
+  if (facturaId) {
+    const f = estado.facturasPend.find(x => x.id === facturaId);
+    if (!f) {
+      // Sin saldo (ya cobrada): se muestra su estado de cuenta en el panel lateral.
+      try {
+        const d = await apiFetch(`${API}/facturas/${facturaId}`);
+        return verCliente(d.cliente_id);
+      } catch (err) {
+        return Shell.error(err, 'No se encontró la factura');
+      }
+    }
+    estado.vista = 'factura';
+    estado.clientesAbiertos.add(f.cliente_id);
+    pintarPorCobrar();
+    await alternarFactura(facturaId);
+    const fila = document.querySelector(`[data-fx-toggle="${facturaId}"]`);
+    if (fila) fila.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else if (clienteId) {
+    estado.vista = 'cliente';
+    estado.clientesAbiertos.add(clienteId);
+    pintarPorCobrar();
+    const fila = document.querySelector(`[data-cli-toggle="${clienteId}"]`);
+    if (fila) fila.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
 
 function debounce(fn, ms) {
   let t;
@@ -96,6 +147,7 @@ function mostrarTab(nombre, boton) {
 }
 
 async function cargarTodo() {
+  estado.detalles.clear();   // un cobro nuevo o deshecho cambia el detalle de las facturas
   await Promise.all([cargarResumen(), cargarDeuda()]);
 }
 
@@ -105,7 +157,7 @@ async function cargarClientes() {
   try {
     estado.clientes = await apiFetch('/api/clientes');
     const opciones = estado.clientes
-      .map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+      .map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
     ['cobroCliente', 'filtroChequeCliente', 'filtroHistCliente'].forEach(id => {
       const sel = $(id);
       const primera = sel.options[0].outerHTML;
@@ -123,22 +175,23 @@ async function cargarResumen() {
     const r = await apiFetch(`${API}/resumen`);
     const d = r.deuda, ch = r.cheques_en_cartera;
 
+    // Total, Vencido y En gestión son botones: un toque filtra la lista de facturas.
     $('kpis').innerHTML = `
-      <div class="kpi is-danger">
+      <button type="button" class="kpi is-danger" data-filtro="todas" title="Ver todas las facturas por cobrar">
         <div class="kpi-k">Total por cobrar</div>
         <div class="kpi-v">${Shell.money(d.deuda_total)}</div>
         <div class="kpi-sub">${d.facturas_con_saldo} facturas · ${d.clientes_con_deuda} clientes</div>
-      </div>
-      <div class="kpi is-warning">
-        <div class="kpi-k">Vencido <button type="button" class="ayuda" data-ayuda="vencido">?</button></div>
+      </button>
+      <button type="button" class="kpi is-warning" data-filtro="vencido" title="Ver solo las facturas vencidas">
+        <div class="kpi-k">Vencido <span class="ayuda" data-ayuda="vencido" role="button" tabindex="0">?</span></div>
         <div class="kpi-v">${Shell.money(d.vencido)}</div>
         <div class="kpi-sub">${porcentaje(d.vencido, d.deuda_total)} del total por cobrar</div>
-      </div>
-      <div class="kpi is-info">
-        <div class="kpi-k">En gestión <button type="button" class="ayuda" data-ayuda="en_gestion">?</button></div>
+      </button>
+      <button type="button" class="kpi is-info" data-filtro="en_gestion" title="Ver solo las facturas con cheques sin acreditar">
+        <div class="kpi-k">En gestión <span class="ayuda" data-ayuda="en_gestion" role="button" tabindex="0">?</span></div>
         <div class="kpi-v">${Shell.money(d.en_gestion)}</div>
         <div class="kpi-sub">${ch.cantidad} cheques · ${ch.vencen_7_dias} se cobran en 7 días</div>
-      </div>
+      </button>
       <div class="kpi is-success">
         <div class="kpi-k">A favor <button type="button" class="ayuda" data-ayuda="a_favor">?</button></div>
         <div class="kpi-v">${Shell.money(num(r.saldo_a_favor) + num(d.exceso_cobrado))}</div>
@@ -147,11 +200,12 @@ async function cargarResumen() {
       </div>`;
 
     $('aging').innerHTML = `
-      <div class="b0"><div class="t">Por vencer</div><div class="v">${Shell.money(d.por_vencer)}</div></div>
-      <div class="b1"><div class="t">1 a 30 días</div><div class="v">${Shell.money(d.atraso_1_30)}</div></div>
-      <div class="b2"><div class="t">31 a 60 días</div><div class="v">${Shell.money(d.atraso_31_60)}</div></div>
-      <div class="b3"><div class="t">61 a 90 días</div><div class="v">${Shell.money(d.atraso_61_90)}</div></div>
-      <div class="b4"><div class="t">Más de 90 días</div><div class="v">${Shell.money(d.atraso_90_mas)}</div></div>`;
+      <button type="button" class="b0" data-filtro="por_vencer" title="Ver las facturas que todavía no vencieron"><div class="t">Por vencer</div><div class="v">${Shell.money(d.por_vencer)}</div></button>
+      <button type="button" class="b1" data-filtro="a1_30" title="Ver las facturas vencidas hace 1 a 30 días"><div class="t">1 a 30 días</div><div class="v">${Shell.money(d.atraso_1_30)}</div></button>
+      <button type="button" class="b2" data-filtro="a31_60" title="Ver las facturas vencidas hace 31 a 60 días"><div class="t">31 a 60 días</div><div class="v">${Shell.money(d.atraso_31_60)}</div></button>
+      <button type="button" class="b3" data-filtro="a61_90" title="Ver las facturas vencidas hace 61 a 90 días"><div class="t">61 a 90 días</div><div class="v">${Shell.money(d.atraso_61_90)}</div></button>
+      <button type="button" class="b4" data-filtro="a90" title="Ver las facturas vencidas hace más de 90 días"><div class="t">Más de 90 días</div><div class="v">${Shell.money(d.atraso_90_mas)}</div></button>`;
+    marcarFiltroActivo();
 
     if (num(ch.vencidos_sin_depositar) > 0) {
       Shell.toast('warn', `Hay ${ch.vencidos_sin_depositar} cheque(s) con fecha de cobro pasada sin depositar.`);
@@ -165,27 +219,145 @@ async function cargarResumen() {
 
 async function cargarDeuda() {
   const params = new URLSearchParams({ orden: $('ordenDeuda').value });
-  if ($('buscarCliente').value.trim()) params.set('buscar', $('buscarCliente').value.trim());
   if ($('soloVencido').checked) params.set('solo_vencido', 'true');
 
-  const tbody = $('tablaDeuda');
   try {
-    estado.deuda = await apiFetch(`${API}/deuda?${params}`);
+    // Clientes (con sus totales) y facturas con saldo (con su origen) juntos:
+    // el buscador y los filtros trabajan sobre lo cargado, sin volver al servidor.
+    const [deuda, facturas] = await Promise.all([
+      apiFetch(`${API}/deuda?${params}`),
+      apiFetch(`${API}/facturas`)
+    ]);
+    estado.deuda = deuda;
+    estado.facturasPend = facturas;
+    pintarPorCobrar();
+  } catch (err) {
+    Shell.error(err, 'No se pudieron cargar las cuentas por cobrar');
+    $('tablaDeuda').innerHTML = '<tr><td colspan="8">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+    $('tablaPorFactura').innerHTML = '<tr><td colspan="9">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+  }
+}
 
-    if (!estado.deuda.length) {
-      tbody.innerHTML = '<tr><td colspan="8">' + Shell.vacio(
-        'No hay clientes con saldo por cobrar',
-        'Van a aparecer acá en cuanto emitas una factura de venta.',
-        { txt: 'Ver ventas', url: 'ventas.html' }
-      ) + '</td></tr>';
-      return;
-    }
+/* ---------------------- cuentas por cobrar navegables ---------------------- */
+/* Cadena que se abre de a un nivel, sin cambiar de pantalla:
+ *   cliente → factura → (origen: OC y remitos) y (cobros imputados).
+ * Se puede mirar por cliente o por factura; los KPIs y los tramos de
+ * antigüedad filtran la lista de facturas. */
 
-    tbody.innerHTML = estado.deuda.map(c => `
-      <tr class="clickable" onclick="verCliente(${c.cliente_id})">
+// Filtros que dispara un KPI o un tramo de antigüedad (mismas definiciones que /resumen).
+const FILTROS_KPI = {
+  vencido:    { texto: 'Vencido',               test: f => num(f.dias_atraso) > 0 },
+  en_gestion: { texto: 'En gestión',            test: f => num(f.en_gestion) > 0.005 },
+  por_vencer: { texto: 'Por vencer',            test: f => num(f.dias_atraso) <= 0 },
+  a1_30:      { texto: 'Vencido hace 1 a 30 días',  test: f => num(f.dias_atraso) >= 1 && num(f.dias_atraso) <= 30 },
+  a31_60:     { texto: 'Vencido hace 31 a 60 días', test: f => num(f.dias_atraso) >= 31 && num(f.dias_atraso) <= 60 },
+  a61_90:     { texto: 'Vencido hace 61 a 90 días', test: f => num(f.dias_atraso) >= 61 && num(f.dias_atraso) <= 90 },
+  a90:        { texto: 'Vencido hace más de 90 días', test: f => num(f.dias_atraso) > 90 }
+};
+
+// Para comparar sin mayúsculas ni tildes.
+const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+function textoDeFactura(f) {
+  const o = f.origen || {};
+  return norm([f.cliente_nombre, f.cliente_cuit, f.numero_factura, o.numero_oc,
+    (o.remitos || []).map(r => r.numero_remito).join(' ')].join(' '));
+}
+
+function clicEnFiltroKpi(e) {
+  if (e.target.closest('.ayuda')) return;   // el "?" de ayuda no filtra
+  const b = e.target.closest('[data-filtro]');
+  if (!b) return;
+  const clave = b.dataset.filtro;
+  // "Total por cobrar" quita el filtro; tocar de nuevo el activo también.
+  estado.filtroKpi = (clave === 'todas' || clave === estado.filtroKpi) ? null : clave;
+  if (estado.filtroKpi) estado.vista = 'factura';   // los filtros son de facturas
+  estado.facturasAbiertas = new Set();
+  pintarPorCobrar();
+  if (estado.filtroKpi) $('tab-deuda').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function marcarFiltroActivo() {
+  document.querySelectorAll('#kpis [data-filtro], #aging [data-filtro]').forEach(b =>
+    b.classList.toggle('is-activo', b.dataset.filtro === estado.filtroKpi));
+}
+
+/* Facturas que pasan el filtro del KPI (sin el buscador). */
+function facturasDelFiltro() {
+  const t = estado.filtroKpi && FILTROS_KPI[estado.filtroKpi].test;
+  return t ? estado.facturasPend.filter(t) : estado.facturasPend;
+}
+
+function pintarPorCobrar() {
+  const q = norm($('buscarCliente').value.trim());
+  const delFiltro = facturasDelFiltro();
+
+  // Estado de los controles
+  document.querySelectorAll('.vista-toggle [data-vista]').forEach(b =>
+    b.classList.toggle('active', b.dataset.vista === estado.vista));
+  $('vistaCliente').hidden = estado.vista !== 'cliente';
+  $('vistaFactura').hidden = estado.vista !== 'factura';
+  $('campoOrdenDeuda').hidden = estado.vista !== 'cliente';
+  marcarFiltroActivo();
+
+  // Facturas visibles: pasan el filtro y el buscador
+  const visibles = q ? delFiltro.filter(f => textoDeFactura(f).includes(q)) : delFiltro;
+
+  const chip = $('filtroActivo');
+  if (estado.filtroKpi) {
+    chip.hidden = false;
+    chip.innerHTML = `Mostrando solo: <strong>${esc(FILTROS_KPI[estado.filtroKpi].texto)}</strong>
+      (${delFiltro.length} ${delFiltro.length === 1 ? 'factura' : 'facturas'})
+      <button type="button" class="b b-ghost b-sm" data-quitar-filtro>Quitar filtro</button>`;
+  } else {
+    chip.hidden = true;
+    chip.innerHTML = '';
+  }
+
+  if (estado.vista === 'cliente') pintarVistaCliente(q, delFiltro);
+  else pintarVistaFactura(visibles);
+}
+
+/* Facturas con saldo agrupadas por cliente. */
+function facturasPorCliente(facturas) {
+  const m = new Map();
+  facturas.forEach(f => {
+    if (!m.has(f.cliente_id)) m.set(f.cliente_id, []);
+    m.get(f.cliente_id).push(f);
+  });
+  return m;
+}
+
+function pintarVistaCliente(q, delFiltro) {
+  const tbody = $('tablaDeuda');
+  const porCliente = facturasPorCliente(delFiltro);
+
+  let clientes = estado.deuda;
+  // Con un filtro de KPI, solo los clientes que tienen facturas de ese tipo.
+  if (estado.filtroKpi) clientes = clientes.filter(c => porCliente.has(c.cliente_id));
+  if (q) {
+    clientes = clientes.filter(c =>
+      norm(`${c.cliente_nombre} ${c.cuit || ''}`).includes(q) ||
+      (porCliente.get(c.cliente_id) || []).some(f => textoDeFactura(f).includes(q)));
+  }
+
+  if (!clientes.length) {
+    tbody.innerHTML = '<tr><td colspan="8">' + (q || estado.filtroKpi
+      ? Shell.vacio('Sin resultados', 'Ningún cliente coincide con la búsqueda o el filtro.')
+      : Shell.vacio('No hay clientes con saldo por cobrar',
+          'Van a aparecer acá en cuanto emitas una factura de venta.',
+          { txt: 'Ver entregas y remitos', url: 'ventas.html' })) + '</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = clientes.map(c => {
+    const abierto = estado.clientesAbiertos.has(c.cliente_id);
+    const aFavor = num(c.saldo_a_favor) + num(c.exceso_cobrado);
+    let html = `
+      <tr class="clickable${abierto ? ' abierta' : ''}" data-cli-toggle="${c.cliente_id}" aria-expanded="${abierto}">
         <td>
-          <strong>${c.cliente_nombre}</strong>
-          <div class="muted" style="font-size:12px">${c.cuit || 'sin CUIT'}${c.dias_max_pago ? ' · plazo ' + c.dias_max_pago + ' d' : ''}</div>
+          <span class="fx-chevron">${abierto ? '▼' : '▶'}</span><strong>${esc(c.cliente_nombre)}</strong>
+          <div class="muted" style="font-size:12px; padding-left:12px">${esc(c.cuit) || 'sin CUIT'}${c.dias_max_pago ? ' · plazo ' + c.dias_max_pago + ' d' : ''}</div>
         </td>
         <td class="num" data-label="Facturas">${c.facturas_pendientes}</td>
         <td class="num" data-label="Saldo"><strong>${Shell.money(c.saldo)}</strong></td>
@@ -193,17 +365,223 @@ async function cargarDeuda() {
         <td class="num muted" data-label="Por vencer">${Shell.money(c.por_vencer)}</td>
         <td class="num" data-label="En gestión">${num(c.en_gestion) > 0 ? Shell.money(c.en_gestion) : '<span class="muted">—</span>'}</td>
         <td class="num" data-label="Atraso">${textoAtraso(c.dias_atraso_max)}</td>
-        <td class="num ${num(c.saldo_a_favor) + num(c.exceso_cobrado) > 0 ? 'pos' : 'muted'}" data-label="A favor">
-          ${num(c.saldo_a_favor) + num(c.exceso_cobrado) > 0
-              ? Shell.money(num(c.saldo_a_favor) + num(c.exceso_cobrado)) : '—'}
+        <td class="num ${aFavor > 0 ? 'pos' : 'muted'}" data-label="A favor">
+          ${aFavor > 0 ? Shell.money(aFavor) : '—'}
           ${num(c.exceso_cobrado) > 0
               ? `<div class="muted" style="font-size:11px">incluye ${Shell.money(c.exceso_cobrado)} cobrado de más</div>` : ''}
         </td>
-      </tr>`).join('');
-  } catch (err) {
-    Shell.error(err, 'No se pudieron cargar las cuentas por cobrar');
-    tbody.innerHTML = '<tr><td colspan="8">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
+      </tr>`;
+
+    if (abierto) {
+      const facturas = porCliente.get(c.cliente_id) || [];
+      html += `
+      <tr class="fx-cliente"><td colspan="8">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; margin-bottom:8px">
+          <button type="button" class="b b-ghost b-sm" data-ver-ficha="${c.cliente_id}">Estado de cuenta completo</button>
+          <button type="button" class="b b-primary b-sm" data-cobrar-cliente="${c.cliente_id}">Registrar cobro</button>
+        </div>
+        ${facturas.length ? `
+        <div class="table-wrap"><table class="t">
+          <thead><tr>
+            <th>Factura</th><th>Vencimiento</th><th class="num">Total</th><th class="num">Cobrado</th>
+            <th class="num">Saldo</th><th>Estado</th><th>OC / Remitos</th><th></th>
+          </tr></thead>
+          <tbody>${filasFacturas(facturas, false)}</tbody>
+        </table></div>`
+        : '<div class="muted">Sin facturas pendientes de cobro' +
+          (aFavor > 0 ? ' · tiene plata a favor para imputar' : '') + '.</div>'}
+      </td></tr>`;
+    }
+    return html;
+  }).join('');
+}
+
+function pintarVistaFactura(facturas) {
+  const tbody = $('tablaPorFactura');
+  const pie = $('piePorFactura');
+
+  if (!facturas.length) {
+    tbody.innerHTML = '<tr><td colspan="9">' + (estado.filtroKpi || $('buscarCliente').value.trim()
+      ? Shell.vacio('Sin resultados', 'Ninguna factura coincide con la búsqueda o el filtro.')
+      : Shell.vacio('No hay facturas por cobrar', 'Van a aparecer acá en cuanto emitas una factura de venta.',
+          { txt: 'Ver entregas y remitos', url: 'ventas.html' })) + '</td></tr>';
+    pie.innerHTML = '';
+    return;
   }
+
+  tbody.innerHTML = filasFacturas(facturas, true);
+
+  const suma = (campo) => facturas.reduce((s, f) => s + num(f[campo]), 0);
+  pie.innerHTML = `
+    <tr class="ec-total">
+      <td colspan="3">${facturas.length} ${facturas.length === 1 ? 'factura' : 'facturas'}</td>
+      <td class="num">${Shell.money(suma('total'))}</td>
+      <td class="num">${Shell.money(suma('cobrado'))}</td>
+      <td class="num">${Shell.money(suma('saldo'))}</td>
+      <td colspan="3"></td>
+    </tr>`;
+}
+
+/* OC y remitos de una factura, en una línea (para la fila). */
+function origenCorto(f) {
+  const o = f.origen || {};
+  const partes = [];
+  if (o.orden_compra_id) {
+    partes.push(`<a href="oc_detalle.html?id=${o.orden_compra_id}&tab=facturas" class="ec-link" title="Abrir la orden de compra">OC ${esc(o.numero_oc)}</a>`);
+  }
+  const rem = o.remitos || [];
+  if (rem.length) {
+    partes.push(esc(rem.slice(0, 2).map(r => r.numero_remito).join(', ')) +
+      (rem.length > 2 ? ` +${rem.length - 2}` : ''));
+  }
+  return partes.length ? partes.join(' · ') : '<span class="muted">—</span>';
+}
+
+/* Filas de facturas (una por factura + el detalle si está desplegada).
+ * `conCliente`: la vista por factura muestra el cliente; dentro de un cliente no. */
+function filasFacturas(facturas, conCliente) {
+  const cols = conCliente ? 9 : 8;
+  return facturas.map(f => {
+    const abierta = estado.facturasAbiertas.has(f.id);
+    const gestion = num(f.en_gestion) > 0.005
+      ? `<div class="ec-gestion">+${Shell.money(f.en_gestion)} en gestión</div>` : '';
+    let html = `
+      <tr class="fx-fila clickable${abierta ? ' abierta' : ''}" data-fx-toggle="${f.id}" aria-expanded="${abierta}">
+        ${conCliente ? `<td data-label="Cliente"><strong>${esc(f.cliente_nombre)}</strong></td>` : ''}
+        <td data-label="Factura"><span class="fx-chevron">${abierta ? '▼' : '▶'}</span><a href="#" class="ec-link" data-pdf="api/facturas/${f.id}/pdf" title="Ver el PDF de la factura"><strong>${esc(f.numero_factura)}</strong></a>
+          <span class="muted">${esc(f.tipo_factura || '')}</span>
+          <div class="muted" style="font-size:12px; padding-left:12px">${Shell.fecha(f.fecha)}</div></td>
+        <td data-label="Vencimiento">${Shell.fecha(f.fecha_vencimiento)} ${textoAtraso(f.dias_atraso)}</td>
+        <td class="num" data-label="Total">${Shell.money(f.total)}</td>
+        <td class="num" data-label="Cobrado">${Shell.money(f.cobrado)}${gestion}</td>
+        <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
+        <td data-label="Estado">${Shell.pill(f.estado)}</td>
+        <td data-label="OC / Remitos">${origenCorto(f)}</td>
+        <td><button type="button" class="b b-primary b-sm" data-cobrar-fact="${f.id}" data-cliente="${f.cliente_id}"
+                    title="Registrar un cobro de esta factura">Cobrar</button></td>
+      </tr>`;
+    if (abierta) {
+      const d = estado.detalles.get(f.id);
+      html += `<tr class="fx-detalle"><td colspan="${cols}">${
+        d ? detalleFacturaHtml(d) : '<span class="muted">Cargando…</span>'}</td></tr>`;
+    }
+    return html;
+  }).join('');
+}
+
+/* Origen de una factura: OC → remitos → modelos facturados. Lo usan
+ * la lista de Por cobrar y el estado de cuenta del cliente. */
+function origenHtml(f) {
+  const o = f.origen || {};
+  const rem = o.remitos || [];
+  if (!o.orden_compra_id && !rem.length) {
+    return '<div class="fx-bloque"><div class="fx-titulo">Origen</div><span class="muted">Factura cargada manualmente, sin OC ni remitos asociados.</span></div>';
+  }
+  const oc = o.orden_compra_id
+    ? `<a href="oc_detalle.html?id=${o.orden_compra_id}&tab=facturas" class="ec-link" title="Abrir la orden de compra">OC ${esc(o.numero_oc)}</a>`
+    : '<span class="muted">sin OC</span>';
+  const remitos = rem.length
+    ? rem.map(r => `<a href="#" class="ec-link" data-pdf="api/ventas/${r.id}/pdf" title="Ver el PDF del remito">Remito ${esc(r.numero_remito)}</a>` +
+        (r.fecha ? ` <span class="muted">(${Shell.fecha(r.fecha)})</span>` : '')).join(', ')
+    : '<span class="muted">sin remitos</span>';
+  const items = (o.items || []).map(i => `${esc(i.modelo)} × ${Number(i.cantidad).toLocaleString('es-AR')}`).join(' · ');
+  return `
+    <div class="fx-bloque">
+      <div class="fx-titulo">Origen</div>
+      <div class="fx-cadena">${oc} <span class="sep">›</span> ${remitos} <span class="sep">›</span> <strong>Factura ${esc(f.numero_factura)}</strong></div>
+      ${items ? `<div class="fx-items">Facturado: ${items}</div>` : ''}
+    </div>`;
+}
+
+/* Detalle desplegado de una factura: origen y cobros imputados. */
+function detalleFacturaHtml(d) {
+  const pagos = (d.pagos || []).map(p => {
+    const forma = [p.numero_recibo ? 'Recibo ' + esc(p.numero_recibo) : null, esc(p.formas)].filter(Boolean).join(' · ');
+    return `
+      <div class="fx-pago">
+        <a href="#" class="ec-link" data-pdf="api/cobros/${p.pago_id}/pdf" title="Ver el recibo del cobro">Cobro #${p.pago_id}</a>
+        <span class="muted">${Shell.fecha(p.fecha_recepcion)}</span>
+        <span class="muted">${forma}</span>
+        ${Shell.pill(p.estado_forma)}
+        <span class="num">${Shell.money(p.monto_aplicado)}</span>
+        <button type="button" class="b b-ghost b-sm" data-desimputar="${p.pago_id}" data-factura="${d.id}"
+                title="Sacar este cobro de la factura (queda a favor del cliente)">Deshacer</button>
+      </div>`;
+  }).join('');
+  const ncs = (d.notas_credito_detalle || []).map(n => `
+      <div class="fx-pago">
+        <span>NC ${esc(n.numero_nota)}</span>
+        <span class="muted">${Shell.fecha(n.fecha)}</span>
+        <span class="muted">Nota de crédito</span>
+        <span class="num">−${Shell.money(n.total)}</span>
+      </div>`).join('');
+
+  return `
+    ${origenHtml(d)}
+    <div class="fx-bloque">
+      <div class="fx-titulo">Cobros imputados</div>
+      ${pagos || ncs ? pagos + ncs : '<span class="muted">Todavía no se le imputó ningún cobro.</span>'}
+    </div>`;
+}
+
+/* Un solo manejador para todo lo que se pinta en la solapa Por cobrar. */
+async function clicEnPorCobrar(e) {
+  const vista = e.target.closest('[data-vista]');
+  if (vista) {
+    estado.vista = vista.dataset.vista;
+    return pintarPorCobrar();
+  }
+  if (e.target.closest('[data-quitar-filtro]')) {
+    estado.filtroKpi = null;
+    return pintarPorCobrar();
+  }
+
+  // Links y botones primero: no deben desplegar la fila que los contiene.
+  const pdf = e.target.closest('[data-pdf]');
+  if (pdf) {
+    e.preventDefault();
+    verArchivoProtegido(pdf.dataset.pdf).catch(err => Shell.error(err, 'No se pudo abrir el PDF'));
+    return;
+  }
+  if (e.target.closest('a[href]')) return;   // links normales (OC): navegan
+  const cobrarFact = e.target.closest('[data-cobrar-fact]');
+  if (cobrarFact) return cobrarA(Number(cobrarFact.dataset.cliente), Number(cobrarFact.dataset.cobrarFact));
+  const cobrarCli = e.target.closest('[data-cobrar-cliente]');
+  if (cobrarCli) return cobrarA(Number(cobrarCli.dataset.cobrarCliente));
+  const ficha = e.target.closest('[data-ver-ficha]');
+  if (ficha) return verCliente(Number(ficha.dataset.verFicha));
+  const desimputar = e.target.closest('[data-desimputar]');
+  if (desimputar) {
+    return desimputarCobro(Number(desimputar.dataset.desimputar), Number(desimputar.dataset.factura));
+  }
+
+  const fx = e.target.closest('[data-fx-toggle]');
+  if (fx) return alternarFactura(Number(fx.dataset.fxToggle));
+  const cli = e.target.closest('[data-cli-toggle]');
+  if (cli) {
+    const id = Number(cli.dataset.cliToggle);
+    if (estado.clientesAbiertos.has(id)) estado.clientesAbiertos.delete(id);
+    else estado.clientesAbiertos.add(id);
+    pintarPorCobrar();
+  }
+}
+
+/* Despliega o pliega una factura; el detalle (cobros) se pide la primera vez. */
+async function alternarFactura(id) {
+  if (estado.facturasAbiertas.has(id)) {
+    estado.facturasAbiertas.delete(id);
+    return pintarPorCobrar();
+  }
+  estado.facturasAbiertas.add(id);
+  pintarPorCobrar();
+  if (estado.detalles.has(id)) return;
+  try {
+    estado.detalles.set(id, await apiFetch(`${API}/facturas/${id}`));
+  } catch (err) {
+    estado.facturasAbiertas.delete(id);
+    Shell.error(err, 'No se pudo cargar el detalle de la factura');
+  }
+  pintarPorCobrar();
 }
 
 /* ---------------------- ficha del cliente (panel lateral) ---------------------- */
@@ -440,7 +818,7 @@ function pintarEstadoCuenta() {
 
     ${num(a_cuenta) > 0 ? `<div class="muted" style="font-size:13px">Cobros a favor del cliente, sin imputar a ninguna factura: <strong>${Shell.money(a_cuenta)}</strong></div>` : ''}
     <div class="muted" style="font-size:12px">
-      Ordenado ${ORDENES_EC[ec.orden].nota}. Tocá "pagos" para ver qué cobro se imputó a cada factura y por cuánto.
+      Ordenado ${ORDENES_EC[ec.orden].nota}. Desplegá una factura para ver su origen (OC y remitos) y los cobros imputados.
     </div>`;
 
   pintarFilasEstadoCuenta();
@@ -471,13 +849,13 @@ function pintarFilasEstadoCuenta() {
         <td class="num" data-label="Cobrado">${Shell.money(f.cobrado)}${gestion}</td>
         <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
         <td data-label="Estado">${Shell.pill(f.estado)}</td>
-        <td data-label="Pagos">${nHijos
-          ? `<button type="button" class="ec-toggle" data-ec-toggle="${f.id}" aria-expanded="${abierta}">
-               <span class="ec-flecha">${abierta ? '▼' : '▶'}</span> ${nPagos ? nPagos + (nPagos === 1 ? ' pago' : ' pagos') : 'NC'}${nPagos && nHijos > nPagos ? ' + NC' : ''}</button>`
-          : '<span class="muted">—</span>'}</td>
+        <td data-label="Pagos"><button type="button" class="ec-toggle" data-ec-toggle="${f.id}" aria-expanded="${abierta}">
+               <span class="ec-flecha">${abierta ? '▼' : '▶'}</span> ${nPagos ? nPagos + (nPagos === 1 ? ' pago' : ' pagos') : (nHijos ? 'NC' : 'Origen')}${nPagos && nHijos > nPagos ? ' + NC' : ''}</button></td>
       </tr>`;
 
     if (abierta) {
+      // Origen de la factura (OC y remitos), antes de los cobros.
+      html += `<tr class="ec-hijo"><td colspan="8">${origenHtml(f)}</td></tr>`;
       f.pagos.forEach(p => {
         const forma = [p.numero_recibo ? 'Recibo ' + esc(p.numero_recibo) : null, esc(p.formas)].filter(Boolean).join(' · ');
         html += `
@@ -599,11 +977,74 @@ function confirmarCobro(titulo, mensajeHtml) {
   });
 }
 
+/* Diálogo que pide datos (motivo, gastos…) y los valida antes de cerrar.
+ * Reemplaza a prompt(), que queda bloqueado en algunos navegadores.
+ * campos: [{ id, label, tipo: 'texto'|'numero', valor, requerido, min }].
+ * Devuelve { [id]: valor } o null si se cancela. */
+function pedirDatos({ titulo, mensajeHtml, campos = [], textoBoton = 'Confirmar' }) {
+  return new Promise((resolve) => {
+    const modal = $('accionModal');
+    const form = $('accionForm');
+    $('accionTitulo').textContent = titulo;
+    $('accionMsg').innerHTML = mensajeHtml || '';
+    $('accionError').hidden = true;
+    $('btnAccionConfirmar').textContent = textoBoton;
+    $('accionCampos').innerHTML = campos.map(c => `
+      <div class="field" style="margin-top:var(--space-3)">
+        <label for="accion_${c.id}">${esc(c.label)}</label>
+        ${c.tipo === 'numero'
+          ? `<input class="input" type="number" id="accion_${c.id}" step="0.01" min="${c.min ?? 0}" value="${esc(c.valor ?? '')}">`
+          : `<textarea class="input" id="accion_${c.id}" rows="2">${esc(c.valor ?? '')}</textarea>`}
+      </div>`).join('');
+
+    let resultado = null;
+    function limpiar() {
+      form.removeEventListener('submit', onEnviar);
+      $('btnAccionCancelar').removeEventListener('click', onCancelar);
+      modal.removeEventListener('close', onCerrar);
+    }
+    function onEnviar(e) {
+      e.preventDefault();
+      const valores = {};
+      for (const c of campos) {
+        const bruto = $('accion_' + c.id).value.trim();
+        if (c.requerido && !bruto) return mostrarError(`Completá: ${c.label}.`);
+        if (c.tipo === 'numero') {
+          const n = bruto === '' ? 0 : Number(bruto.replace(',', '.'));
+          if (!Number.isFinite(n) || n < (c.min ?? 0)) return mostrarError(`${c.label}: ingresá un número válido.`);
+          valores[c.id] = n;
+        } else {
+          if (c.minLargo && bruto.length < c.minLargo) return mostrarError(`${c.label}: escribí al menos ${c.minLargo} caracteres.`);
+          valores[c.id] = bruto;
+        }
+      }
+      resultado = valores;
+      modal.close();
+    }
+    function mostrarError(msg) {
+      $('accionError').textContent = msg;
+      $('accionError').hidden = false;
+    }
+    function onCancelar() { modal.close(); }
+    function onCerrar() { limpiar(); resolve(resultado); }
+
+    form.addEventListener('submit', onEnviar);
+    $('btnAccionCancelar').addEventListener('click', onCancelar);
+    modal.addEventListener('close', onCerrar);
+    modal.showModal();
+    const primero = $('accionCampos').querySelector('input, textarea');
+    if (primero) primero.focus();
+  });
+}
+
 let desimputando = false;
 
 async function desimputarCobro(pagoId, facturaId) {
   if (desimputando) return;
-  const factura = ec.datos && ec.datos.facturas.find(f => f.id === facturaId);
+  // La factura puede estar en el estado de cuenta del panel lateral o
+  // desplegada en la lista de Por cobrar.
+  const factura = (ec.datos && ec.datos.facturas.find(f => f.id === facturaId)) ||
+    estado.detalles.get(facturaId);
   const pago = factura && factura.pagos.find(p => p.pago_id === pagoId);
   const ok = await confirmarCobro('Deshacer imputación',
     `¿Sacar el <strong>Cobro #${pagoId}</strong>${pago ? ` (${Shell.money(pago.monto_aplicado)})` : ''} de la factura ` +
@@ -617,7 +1058,9 @@ async function desimputarCobro(pagoId, facturaId) {
       method: 'POST', body: JSON.stringify({ factura_id: facturaId })
     });
     Shell.toast('ok', r.message);
-    await Promise.all([cargarEstadoCuenta(), cargarTodo()]);
+    // El panel lateral solo se recarga si está abierto.
+    const drawerAbierto = $('drawer').classList.contains('open') && $('ecResultado');
+    await Promise.all([drawerAbierto ? cargarEstadoCuenta() : null, cargarTodo()]);
   } catch (err) {
     Shell.error(err, 'No se pudo deshacer la imputación');
   } finally {
@@ -638,12 +1081,15 @@ function cerrarDrawer() {
   $('drawerBg').classList.remove('open');
 }
 
-function cobrarA(clienteId) {
+/* Abre "Registrar cobro" con el cliente elegido y, si viene, la factura ya
+ * tildada para imputarle el cobro. */
+async function cobrarA(clienteId, facturaId) {
   cerrarDrawer();
   const boton = document.querySelector('.tab[data-tab="cobrar"]');
   mostrarTab('cobrar', boton);
   $('cobroCliente').value = clienteId;
-  onCambiaClienteCobro();
+  await onCambiaClienteCobro();
+  if (facturaId && estado.facturas.some(f => f.id === facturaId)) toggleFactura(facturaId, true);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -703,7 +1149,7 @@ function pintarFacturasCobro() {
     <tr>
       <td><input type="checkbox" ${estado.seleccionadas.has(f.id) ? 'checked' : ''} ${disponible <= 0 ? 'disabled' : ''}
                  onchange="toggleFactura(${f.id}, this.checked)"></td>
-      <td data-label="Factura"><strong>${f.numero_factura}</strong> <span class="muted">${f.tipo_factura || ''}</span></td>
+      <td data-label="Factura"><strong>${esc(f.numero_factura)}</strong> <span class="muted">${esc(f.tipo_factura || '')}</span></td>
       <td data-label="Vencimiento">${Shell.fecha(f.fecha_vencimiento)} ${textoAtraso(f.dias_atraso)}</td>
       <td class="num" data-label="Total">${Shell.money(f.total)}</td>
       <td class="num" data-label="Saldo"><strong>${Shell.money(f.saldo)}</strong></td>
@@ -933,8 +1379,13 @@ function leerFormas() {
   return items;
 }
 
+let guardandoCobro = false;
+
 async function guardarCobro() {
+  if (guardandoCobro) return;   // doble clic: no registrar el cobro dos veces
   const boton = $('btnGuardarCobro');
+  guardandoCobro = true;
+  boton.disabled = true;
 
   try {
     const cliente_id = $('cobroCliente').value;
@@ -954,13 +1405,12 @@ async function guardarCobro() {
     if (imputado - total > 0.005) throw new Error('Estás imputando más de lo que cobrás.');
 
     if (total - imputado > 0.005 && estado.facturas.length && aplicaciones.length === 0) {
-      const seguir = confirm(
-        `El cliente tiene facturas pendientes y no imputaste nada.\n` +
-        `El cobro de ${Shell.money(total)} va a quedar a favor del cliente, sin asignar a ninguna factura. ¿Seguimos?`);
+      const seguir = await confirmarCobro('Cobro sin imputar',
+        `El cliente tiene facturas pendientes y no imputaste nada.<br>` +
+        `El cobro de <strong>${Shell.money(total)}</strong> va a quedar a favor del cliente, sin asignar a ninguna factura. ¿Seguimos?`);
       if (!seguir) return;
     }
 
-    boton.disabled = true;
     boton.textContent = 'Guardando...';
 
     const r = await apiFetch(API, {
@@ -980,6 +1430,7 @@ async function guardarCobro() {
   } catch (err) {
     Shell.error(err, 'No se pudo registrar el cobro');
   } finally {
+    guardandoCobro = false;
     boton.disabled = false;
     boton.textContent = 'Registrar cobro';
   }
@@ -1021,12 +1472,12 @@ async function cargarCheques() {
 
     tbody.innerHTML = cheques.map(c => `
       <tr>
-        <td><strong>${c.cheque_numero || 's/n'}</strong>${c.endosado ? `<div class="muted" style="font-size:11px">endosado a ${c.endosado_a || '—'}</div>` : ''}</td>
-        <td data-label="Banco">${c.cheque_banco || '—'}</td>
-        <td data-label="Cliente">${c.cliente_nombre}</td>
+        <td><strong>${esc(c.cheque_numero) || 's/n'}</strong>${c.endosado ? `<div class="muted" style="font-size:11px">endosado a ${esc(c.endosado_a) || '—'}</div>` : ''}</td>
+        <td data-label="Banco">${esc(c.cheque_banco) || '—'}</td>
+        <td data-label="Cliente">${esc(c.cliente_nombre)}</td>
         <td class="num" data-label="Importe"><strong>${Shell.money(c.monto)}</strong></td>
         <td data-label="Fecha de cobro">${Shell.fecha(c.cheque_fecha_cobro)}<div class="muted" style="font-size:11px">${textoVencimientoCheque(c)}</div></td>
-        <td class="muted" data-label="Imputado a">${c.facturas || 'sin imputar'}</td>
+        <td class="muted" data-label="Imputado a">${linksFacturas(c.facturas_detalle) || 'sin imputar'}</td>
         <td data-label="Estado">${Shell.pill(c.estado)}</td>
         <td data-label="Acciones">${accionesCheque(c)}</td>
       </tr>`).join('');
@@ -1034,6 +1485,21 @@ async function cargarCheques() {
     Shell.error(err, 'No se pudieron cargar los cheques');
     tbody.innerHTML = '<tr><td colspan="8">' + Shell.vacio('No se pudo cargar esta tabla', 'Probá recargar la página.') + '</td></tr>';
   }
+}
+
+/* Números de factura como links al PDF (para "Imputado a"). */
+function linksFacturas(lista) {
+  if (!Array.isArray(lista) || !lista.length) return '';
+  return lista.map(f =>
+    `<a href="#" class="ec-link" data-pdf="api/facturas/${f.id}/pdf" title="Ver el PDF de la factura">${esc(f.numero)}</a>`).join(', ');
+}
+
+/* Abre el PDF de cualquier link con data-pdf de las solapas Cheques e Historial. */
+function clicEnPdf(e) {
+  const pdf = e.target.closest('[data-pdf]');
+  if (!pdf) return;
+  e.preventDefault();
+  verArchivoProtegido(pdf.dataset.pdf).catch(err => Shell.error(err, 'No se pudo abrir el PDF'));
 }
 
 function textoVencimientoCheque(c) {
@@ -1060,19 +1526,28 @@ function accionesCheque(c) {
   return b.join(' ') || '<span class="muted">—</span>';
 }
 
+let accionChequeEnCurso = false;
+
 async function accionCheque(id, accion) {
+  if (accionChequeEnCurso) return;
   const cuerpo = {};
 
   if (accion === 'rechazar') {
-    const motivo = prompt('Motivo del rechazo:', 'Sin fondos');
-    if (motivo === null) return;
-    cuerpo.motivo = motivo;
-    const gasto = prompt('Gastos o comisión que nos cobró el banco (0 si no hubo):', '0');
-    if (gasto === null) return;
-    cuerpo.gasto_comision = parseFloat(gasto) || 0;
-    if (!confirm('Al rechazar el cheque, el saldo que cancelaba vuelve a quedar abierto. ¿Confirmás?')) return;
+    const datos = await pedirDatos({
+      titulo: 'Rechazar cheque',
+      mensajeHtml: 'Al rechazar el cheque, el saldo que cancelaba vuelve a quedar abierto.',
+      campos: [
+        { id: 'motivo', label: 'Motivo del rechazo', tipo: 'texto', valor: 'Sin fondos', requerido: true },
+        { id: 'gasto', label: 'Gastos o comisión que nos cobró el banco (0 si no hubo)', tipo: 'numero', valor: '0', min: 0 }
+      ],
+      textoBoton: 'Rechazar cheque'
+    });
+    if (!datos) return;
+    cuerpo.motivo = datos.motivo;
+    cuerpo.gasto_comision = datos.gasto;
   }
 
+  accionChequeEnCurso = true;
   try {
     const r = await apiFetch(`${API}/cheques/${id}/${accion}`, {
       method: 'POST', body: JSON.stringify(cuerpo)
@@ -1081,6 +1556,8 @@ async function accionCheque(id, accion) {
     await Promise.all([cargarCheques(), cargarTodo()]);
   } catch (err) {
     Shell.error(err, 'No se pudo actualizar el cheque');
+  } finally {
+    accionChequeEnCurso = false;
   }
 }
 
@@ -1112,10 +1589,12 @@ async function cargarHistorial() {
       <tr>
         <td>${p.id}</td>
         <td data-label="Fecha">${Shell.fecha(p.fecha_recepcion)}</td>
-        <td data-label="Cliente">${p.cliente_nombre || '—'}</td>
-        <td class="muted" data-label="Formas">${(p.formas || '').replace(/_/g, ' ').toLowerCase()}</td>
+        <td data-label="Cliente">${esc(p.cliente_nombre) || '—'}</td>
+        <td class="muted" data-label="Formas">${esc((p.formas || '').replace(/_/g, ' ').toLowerCase())}</td>
         <td class="num" data-label="Importe"><strong>${Shell.money(p.monto_total)}</strong></td>
-        <td class="num" data-label="Imputado">${Shell.money(p.imputado)}</td>
+        <td class="num" data-label="Imputado">${Shell.money(p.imputado)}
+          ${p.facturas_detalle && p.facturas_detalle.length
+            ? `<div class="muted" style="font-size:11px">a ${linksFacturas(p.facturas_detalle)}</div>` : ''}</td>
         <td class="num ${num(p.disponible) > 0 ? 'pos' : 'muted'}" data-label="Sin imputar">${Shell.money(p.disponible)}</td>
         <td data-label="Recibo">${p.numero_recibo || '<span class="muted">—</span>'}</td>
         <td data-label="Estado">${Shell.pill(p.estado)}
@@ -1189,27 +1668,44 @@ async function verCobroPdf(pagoId) {
   }
 }
 
+let cobroEnCurso = false;   // imputar / anular: una sola acción a la vez
+
 async function imputarPendiente(pagoId) {
-  if (!confirm('Se va a imputar lo que queda del cobro a las facturas más viejas del cliente. ¿Seguimos?')) return;
+  if (cobroEnCurso) return;
+  const ok = await confirmarCobro('Imputar lo que queda del cobro',
+    `Se va a imputar lo que queda del <strong>Cobro #${pagoId}</strong> a las facturas más viejas del cliente. ¿Seguimos?`);
+  if (!ok) return;
+  cobroEnCurso = true;
   try {
     const r = await apiFetch(`${API}/${pagoId}/imputar`, { method: 'POST', body: JSON.stringify({}) });
     Shell.toast('ok', r.message);
     await Promise.all([cargarHistorial(), cargarTodo()]);
   } catch (err) {
     Shell.error(err, 'No se pudo imputar el cobro');
+  } finally {
+    cobroEnCurso = false;
   }
 }
 
 async function anularCobro(pagoId) {
-  const motivo = prompt('¿Por qué se anula este cobro?');
-  if (motivo === null) return;
+  if (cobroEnCurso) return;
+  const datos = await pedirDatos({
+    titulo: `Anular el Cobro #${pagoId}`,
+    mensajeHtml: 'El cobro deja de contar y las facturas a las que estaba imputado vuelven a tener saldo.',
+    campos: [{ id: 'motivo', label: 'Motivo (queda registrado)', tipo: 'texto', requerido: true, minLargo: 10 }],
+    textoBoton: 'Anular cobro'
+  });
+  if (!datos) return;
+  cobroEnCurso = true;
   try {
     const r = await apiFetch(`${API}/${pagoId}/anular`, {
-      method: 'POST', body: JSON.stringify({ motivo })
+      method: 'POST', body: JSON.stringify({ motivo: datos.motivo })
     });
     Shell.toast('ok', r.message);
     await Promise.all([cargarHistorial(), cargarTodo()]);
   } catch (err) {
     Shell.error(err, 'No se pudo anular el cobro');
+  } finally {
+    cobroEnCurso = false;
   }
 }

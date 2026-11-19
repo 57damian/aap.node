@@ -34,11 +34,18 @@
   <!-- ============ TAB: DEUDA ============ -->
   <div id="tab-deuda" class="tab-content active">
     <div class="filters">
-      <div class="field grow">
-        <label for="buscarCliente">Buscar cliente</label>
-        <input class="input" type="search" id="buscarCliente" placeholder="Nombre o CUIT">
-      </div>
       <div class="field">
+        <label>Ver</label>
+        <div class="vista-toggle" role="group" aria-label="Forma de ver las cuentas por cobrar">
+          <button type="button" class="active" data-vista="cliente">Por cliente</button>
+          <button type="button" data-vista="factura">Por factura</button>
+        </div>
+      </div>
+      <div class="field grow">
+        <label for="buscarCliente">Buscar</label>
+        <input class="input" type="search" id="buscarCliente" placeholder="Cliente, CUIT, N° de factura, OC o remito">
+      </div>
+      <div class="field" id="campoOrdenDeuda">
         <label for="ordenDeuda">Ordenar por</label>
         <select class="select" id="ordenDeuda">
           <option value="vencido">Vencido</option>
@@ -53,7 +60,10 @@
       </div>
     </div>
 
-    <div class="panel" style="margin-top:var(--space-3)">
+    <div class="filtro-activo" id="filtroActivo" hidden></div>
+
+    <!-- Vista por cliente: una fila por cliente que se despliega en sus facturas -->
+    <div class="panel" id="vistaCliente" style="margin-top:var(--space-3)">
       <div class="panel-body flush">
         <div class="table-wrap">
           <table class="t">
@@ -70,6 +80,31 @@
               </tr>
             </thead>
             <tbody id="tablaDeuda"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vista por factura: todas las facturas con saldo, de todos los clientes -->
+    <div class="panel" id="vistaFactura" style="margin-top:var(--space-3)" hidden>
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Factura</th>
+                <th>Vencimiento</th>
+                <th class="num">Total</th>
+                <th class="num">Cobrado</th>
+                <th class="num">Saldo</th>
+                <th>Estado</th>
+                <th>OC / Remitos</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tablaPorFactura"></tbody>
+            <tfoot id="piePorFactura"></tfoot>
           </table>
         </div>
       </div>
@@ -286,6 +321,22 @@
         <button type="button" class="b b-danger" id="btnConfirmarConfirmar">Confirmar</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Acción que pide datos (motivo, gastos…): reemplaza a los prompt() nativos -->
+  <dialog id="accionModal" class="panel">
+    <form method="dialog" id="accionForm" novalidate>
+      <div class="panel-head"><h2 id="accionTitulo">Confirmar</h2></div>
+      <div class="panel-body">
+        <div class="dialog-bloque" id="accionMsg"></div>
+        <div id="accionCampos"></div>
+        <div class="notice notice-err" id="accionError" hidden style="margin-top:var(--space-3)"></div>
+        <div class="page-head-actions" style="margin-top:var(--space-4)">
+          <button type="button" class="b b-ghost" id="btnAccionCancelar">Cancelar</button>
+          <button type="submit" class="b b-danger" id="btnAccionConfirmar">Confirmar</button>
+        </div>
+      </div>
+    </form>
   </dialog>
 
 </div>

@@ -21,7 +21,7 @@ const pool = require('../db');
 const { verificarToken, authorize, soloAdmin } = require('../middlewares/auth');
 const {
   CTE_FACTURAS, CTE_A_FAVOR, EXCESO_COBRADO, ESTADO_FACTURA,
-  resumenCliente, cuentaCorriente, estadoCuenta
+  resumenCliente, cuentaCorriente, estadoCuenta, listadoFacturas, facturaConDetalle
 } = require('../services/cuenta-cliente');
 const { generarPdfEstadoCuenta } = require('../services/pdf-estado-cuenta');
 const { anularCobro } = require('../services/anulaciones');
@@ -169,6 +169,31 @@ router.get('/deuda', soloAdmin, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error en deuda por cliente:', err);
+    fallar(res, 500, err.message);
+  }
+});
+
+/* Vista "Por factura": las facturas de todos los clientes con su saldo,
+ * estado y origen (OC y remitos). `todas=true` incluye también las cobradas.
+ * Va antes de las rutas '/:id' para que 'facturas' no se tome como un id. */
+router.get('/facturas', soloAdmin, async (req, res) => {
+  try {
+    res.json(await listadoFacturas(pool, { soloPendientes: req.query.todas !== 'true' }));
+  } catch (err) {
+    console.error('Error en listado de facturas por cobrar:', err);
+    fallar(res, 500, err.message);
+  }
+});
+
+/* Una factura con todo su detalle: cobros imputados, notas de crédito y de
+ * qué OC y remitos sale. Se pide al desplegarla en la lista. */
+router.get('/facturas/:id', soloAdmin, async (req, res) => {
+  try {
+    const factura = await facturaConDetalle(pool, req.params.id);
+    if (!factura) return fallar(res, 404, 'Factura no encontrada');
+    res.json(factura);
+  } catch (err) {
+    console.error('Error en detalle de factura:', err);
     fallar(res, 500, err.message);
   }
 });
@@ -507,6 +532,13 @@ router.get('/', soloAdmin, async (req, res) => {
           ROUND(COALESCE(t.rechazado, 0), 2)  AS rechazado,
           COALESCE(t.rechazado, 0) > 0.005    AS tiene_rechazo,
           t.formas,
+          -- A qué facturas se imputó (para mostrarlas como links)
+          (SELECT json_agg(json_build_object('id', f.id, 'numero', f.numero_factura) ORDER BY f.numero_factura)
+             FROM (SELECT DISTINCT ap2.factura_id
+                     FROM aplicacion_pagos ap2
+                     JOIN pago_items pi2 ON pi2.id = ap2.pago_item_id
+                    WHERE pi2.pago_id = p.id) x
+             JOIN facturas f ON f.id = x.factura_id) AS facturas_detalle,
           CASE
             WHEN p.anulado                              THEN 'ANULADO'
             WHEN COALESCE(t.disponible, 0) <= 0.005     THEN 'IMPUTADO'
@@ -746,7 +778,10 @@ router.get('/cheques', soloAdmin, async (req, res) => {
                   WHERE ap.pago_item_id = pi.id), 0) AS imputado,
         (SELECT string_agg(f.numero_factura, ', ' ORDER BY f.numero_factura)
            FROM aplicacion_pagos ap JOIN facturas f ON f.id = ap.factura_id
-          WHERE ap.pago_item_id = pi.id) AS facturas
+          WHERE ap.pago_item_id = pi.id) AS facturas,
+        (SELECT json_agg(json_build_object('id', f.id, 'numero', f.numero_factura) ORDER BY f.numero_factura)
+           FROM aplicacion_pagos ap JOIN facturas f ON f.id = ap.factura_id
+          WHERE ap.pago_item_id = pi.id) AS facturas_detalle
       FROM pago_items pi
       JOIN pagos p        ON p.id = pi.pago_id
       JOIN clientes c     ON c.id = p.cliente_id
