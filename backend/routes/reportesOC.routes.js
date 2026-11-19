@@ -30,7 +30,7 @@ router.get(
       // precio de entrega, y "cobrado" se aproximaba por cliente — D1).
       const result = await pool.query(
         `SELECT
-          oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, c.nombre AS cliente,
+          oc.id, oc.numero_oc, oc.fecha_oc, oc.estado, oc.cliente_id, c.nombre AS cliente,
           COALESCE(f.total_facturado, 0) AS total_facturado,
           COALESCE(p.total_cobrado, 0)   AS total_cobrado,
           COALESCE(f.total_facturado, 0) - COALESCE(p.total_cobrado, 0) AS saldo

@@ -12,6 +12,7 @@
  * ===================================================================== */
 
 const { leerConsumos, devolverConsumo } = require('./receta');
+const { idsDelRemito } = require('./remitos');
 
 const MOTIVO_MIN = 10;
 
@@ -265,7 +266,11 @@ async function registrarAuditoria(client, entidad, entidadId, numero, motivo, us
  * REMITOS (filas de `ventas`)
  * ------------------------------------------------------------------- */
 
-/** Qué pasaría al anular un remito. Con `bloquear`, FOR UPDATE del remito. */
+/**
+ * Qué pasaría al anular un remito. Con `bloquear`, FOR UPDATE del remito.
+ * Un remito que se imputó a varias OC son varias filas de `ventas` con el
+ * mismo número (ver services/entregas.js): se anula todo junto.
+ */
 async function vistaPreviaAnulacionRemito(client, ventaId, { bloquear = false } = {}) {
   const r = await client.query(`
     SELECT v.*, c.nombre AS cliente_nombre, oc.numero_oc
@@ -279,13 +284,24 @@ async function vistaPreviaAnulacionRemito(client, ventaId, { bloquear = false } 
   const venta = r.rows[0];
   venta.identificador = venta.remito_numero || `venta #${venta.id}`;
 
+  const ids = await idsDelRemito(client, ventaId);
+  if (bloquear && ids.length > 1) {
+    await client.query('SELECT id FROM ventas WHERE id = ANY($1) ORDER BY id FOR UPDATE', [ids]);
+  }
+  venta.ids = ids;
+  venta.numeros_oc = (await client.query(`
+    SELECT DISTINCT oc.numero_oc
+    FROM ventas v JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
+    WHERE v.id = ANY($1) ORDER BY oc.numero_oc
+  `, [ids])).rows.map(x => x.numero_oc);
+
   const items = (await client.query(`
-    SELECT vi.id, vi.ficha_id, ft.modelo, vi.cantidad, vi.precio_unitario_usd, vi.precio_unitario_pesos
+    SELECT vi.id, vi.venta_id, vi.ficha_id, ft.modelo, vi.cantidad, vi.precio_unitario_usd, vi.precio_unitario_pesos
     FROM venta_items vi
     LEFT JOIN ficha_transformador ft ON ft.id = vi.ficha_id
-    WHERE vi.venta_id = $1
+    WHERE vi.venta_id = ANY($1)
     ORDER BY vi.id
-  `, [ventaId])).rows;
+  `, [ids])).rows;
 
   // Solo hay filas en factura_venta_items de facturas vigentes: al anular una
   // factura se borran (ver anularFactura).
@@ -294,9 +310,9 @@ async function vistaPreviaAnulacionRemito(client, ventaId, { bloquear = false } 
     FROM factura_venta_items fvi
     JOIN venta_items vi ON vi.id = fvi.venta_item_id
     JOIN facturas f ON f.id = fvi.factura_id
-    WHERE vi.venta_id = $1
+    WHERE vi.venta_id = ANY($1)
     ORDER BY f.numero_factura
-  `, [ventaId])).rows;
+  `, [ids])).rows;
 
   const bloqueos = [];
   if (venta.anulada_en) bloqueos.push('El remito ya está anulado.');
@@ -317,10 +333,10 @@ async function anularRemito(client, ventaId, { motivo, confirmar_numero, usuario
 
   // Las unidades vuelven al stock al borrar los ítems: stock_actual y el
   // "entregado" de la OC se calculan sumando venta_items.
-  await client.query('DELETE FROM venta_items WHERE venta_id = $1', [ventaId]);
+  await client.query('DELETE FROM venta_items WHERE venta_id = ANY($1)', [venta.ids]);
   await client.query(`
-    UPDATE ventas SET anulada_en = now(), anulada_por = $2, motivo_anulacion = $3 WHERE id = $1
-  `, [ventaId, usuario?.id || null, motivoLimpio]);
+    UPDATE ventas SET anulada_en = now(), anulada_por = $2, motivo_anulacion = $3 WHERE id = ANY($1)
+  `, [venta.ids, usuario?.id || null, motivoLimpio]);
 
   await registrarAuditoria(client, 'REMITO', ventaId, venta.identificador, motivoLimpio, usuario,
     { venta, items: prev.items });

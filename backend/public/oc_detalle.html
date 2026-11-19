@@ -74,59 +74,22 @@
     </div></div></div>
   </div>
 
-  <!-- ============ REGISTRAR ENTREGA ============ -->
+  <!-- ============ REGISTRAR ENTREGA ============
+       Las entregas se registran por cliente en "Entregas y remitos": ahí se ve
+       lo pendiente de TODAS las OC del cliente y el remito se reparte solo
+       entre ellas (la más vieja primero). Antes había un formulario acá, por
+       OC, que obligaba a entrar de a una. -->
   <div id="tab-entrega" class="tab-content">
-    <form id="entregaForm">
-      <div class="panel">
-        <div class="panel-head"><h2>Datos del remito</h2></div>
-        <div class="panel-body">
-          <div class="form-grid">
-            <div class="field">
-              <label for="remito_numero">N° de remito</label>
-              <input class="input" type="text" id="remito_numero" required placeholder="Ej: R-2026-001">
-            </div>
-            <div class="field">
-              <label for="remito_fecha">Fecha</label>
-              <input class="input" type="date" id="remito_fecha" required>
-            </div>
-            <div class="field">
-              <label for="entrega_cotizacion">Cotización del dólar (ARS por USD)</label>
-              <input class="input" type="number" id="entrega_cotizacion" step="0.01" min="0.01" required>
-              <small class="muted" id="entregaDolarActual"></small>
-            </div>
-            <div class="field ancho-total">
-              <label for="remito_observaciones">Observaciones <span class="muted">(opcional)</span></label>
-              <input class="input" type="text" id="remito_observaciones" placeholder="Observaciones del remito…">
-            </div>
-          </div>
-        </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Registrar entrega</h2></div>
+      <div class="panel-body">
+        <p>Las entregas se cargan por cliente, así lo que le falta de esta orden se puede
+          entregar junto con lo de sus otras órdenes en un solo remito.</p>
+        <p style="margin-top:var(--space-3)">
+          <a class="b b-primary" id="linkNuevaEntrega" href="ventas.html?nueva=1">Registrar entrega de este cliente</a>
+        </p>
       </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Ítems pendientes</h2>
-          <div class="page-head-actions">
-            <button type="button" id="btnRegistrarEntrega" class="b b-primary">Registrar entrega</button>
-          </div>
-        </div>
-        <div class="panel-body flush"><div class="table-wrap">
-          <table class="t">
-            <thead>
-              <tr>
-                <th>Modelo</th>
-                <th class="num">Pendiente</th>
-                <th class="num">Stock disponible</th>
-                <th class="num">Entregar ahora</th>
-                <th>Incluir</th>
-              </tr>
-            </thead>
-            <tbody id="entregaItems">
-              <tr><td colspan="5" class="muted">Cargando…</td></tr>
-            </tbody>
-          </table>
-        </div></div>
-      </div>
-    </form>
+    </div>
   </div>
 
   <!-- ============ REMITOS ============ -->

@@ -22,7 +22,9 @@ const pool = require('../db');
  *   { ficha_id, modelo, pedido, entregado, pendiente, ordenes: [
  *     { oc_id, numero_oc, fecha_oc, pedido, entregado, pendiente } ] } ] }]
  */
-async function pendientesPorCliente(clienteId = null) {
+async function pendientesPorCliente(clienteId = null, db = pool) {
+  // `db` permite correr la consulta dentro de una transacción (la entrega la
+  // usa para calcular el pendiente con las OC ya bloqueadas).
   const params = [];
   let filtroCliente = '';
   if (clienteId) {
@@ -30,7 +32,7 @@ async function pendientesPorCliente(clienteId = null) {
     filtroCliente = 'AND oc.cliente_id = $1';
   }
 
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT oc.id AS oc_id, oc.numero_oc, oc.fecha_oc, oc.cliente_id,
             c.nombre AS cliente,
             oci.ficha_id, ft.modelo,

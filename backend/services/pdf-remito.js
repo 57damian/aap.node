@@ -1,6 +1,8 @@
 /* =====================================================================
  * PDF del remito: comprobante de entrega para un cliente, generado desde
- * una venta (ver ventas.routes.js). No lleva precios — el remito prueba
+ * un remito (ver ventas.routes.js; si se imputó a varias OC, los ítems de todos
+ * sus tramos van juntos y no se muestra la OC: el remito lleva cliente, N°, fecha,
+ * modelos y cantidad). No lleva precios — el remito prueba
  * qué se entregó, no es un documento fiscal; eso lo hace la factura.
  * ===================================================================== */
 

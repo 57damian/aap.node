@@ -229,6 +229,9 @@ function pintarOC() {
         <td data-label="Pendiente de entregar">${celdaPendiente(oc)}</td>
         <td data-label="Remitos">${celdaRemitos}</td>
         <td class="num">
+          ${modelosPendientesOC(oc).length
+            ? `<a class="b b-primary b-sm" href="ventas.html?nueva=1&cliente=${Number(oc.cliente_id)}&oc=${Number(oc.id)}">Entregar</a>`
+            : ''}
           <button class="b b-ghost b-sm" onclick="verOC(${oc.id})">Ver</button>
         </td>
       </tr>`;
@@ -278,6 +281,7 @@ function pintarPendientes(clientes) {
       <div class="panel-head">
         <h2>${escOC(cli.cliente)}</h2>
         <span class="muted">${numOC(cli.total_pendiente)} unidades pendientes · ${cli.modelos.length} modelo${cli.modelos.length === 1 ? '' : 's'}</span>
+        <a class="b b-primary b-sm" href="ventas.html?nueva=1&cliente=${Number(cli.cliente_id)}">Entregar</a>
       </div>
       <div class="panel-body flush"><div class="table-wrap">
         <table class="t">

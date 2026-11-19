@@ -71,7 +71,7 @@
     { grupo: 'Comercial', items: [
       { id: 'clientes', txt: 'Clientes',           url: 'clientes.html', icon: 'clientes', roles: ['admin'] },
       { id: 'oc',       txt: 'Órdenes de compra',  url: 'oc.html',       icon: 'oc',       roles: ['admin'], alias: 'oc pedidos' },
-      { id: 'ventas',   txt: 'Remitos y facturación', url: 'ventas.html',   icon: 'ventas',   roles: ['admin'], alias: 'ventas remito entrega facturar' },
+      { id: 'ventas',   txt: 'Entregas y remitos', url: 'ventas.html',   icon: 'ventas',   roles: ['admin'], alias: 'ventas remito entrega facturar' },
       { id: 'cobros',   txt: 'Cobros',             url: 'cobros.html',   icon: 'cobros',   roles: ['admin'], alias: 'deuda por cobrar clientes cheques recibos quien me debe' },
       { id: 'correcciones', txt: 'Anulaciones',    url: 'correcciones.html', icon: 'correcciones', roles: ['admin'], alias: 'correcciones anular factura remito orden error borrar corregir auditoria' }
     ]},

@@ -7,6 +7,11 @@ const { vistaPreviaAnulacionRemito, anularRemito } = require('../services/anulac
 const { generarPdfRemito } = require('../services/pdf-remito');
 const { nombreArchivo, fecha: fmtFecha } = require('../services/pdf-base');
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
+const { listarRemitos, idsDelRemito } = require('../services/remitos');
+const { pendientesPorCliente } = require('../services/oc-pendientes');
+const {
+  crearEntrega, proximoNumeroRemito, insertarItemVenta, dolarVigente, pendienteDeItemOC
+} = require('../services/entregas');
 
 const COLS_PDF_VENTAS = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 55 },
@@ -22,87 +27,15 @@ const COLS_PDF_VENTAS = [
 router.use(verificarToken);
 
 /* =========================
-   LISTAR VENTAS
+   LISTAR REMITOS
+   Una fila por remito (un remito con material de varias OC se ve como uno
+   solo); con ?orden_compra_id= se ve solo el tramo de esa OC. Ver
+   services/remitos.js.
 ========================= */
 router.get('/', soloAdmin, async (req, res) => {
-
-  const { cliente_id, orden_compra_id, desde, hasta } = req.query;
-
   try {
-
-    let query = `
-      SELECT
-        v.id,
-        v.fecha,
-        v.tipo_cambio,
-        v.remito_numero,
-        v.remito_fecha,
-        v.remito_observaciones,
-        c.nombre AS cliente,
-        oc.numero_oc,
-        (
-          SELECT f.numero_factura
-          FROM factura_venta_items fi
-          JOIN facturas f ON f.id = fi.factura_id
-          JOIN venta_items vi ON vi.id = fi.venta_item_id
-          WHERE vi.venta_id = v.id
-          LIMIT 1
-        ) AS numero_factura,
-        (SELECT COALESCE(SUM(vi.cantidad), 0)::int FROM venta_items vi WHERE vi.venta_id = v.id) AS unidades,
-        (
-          -- Antes la pestaña "Remitos" de oc_detalle.html pedía este detalle
-          -- con un fetch por remito (N+1); único consumidor de este listado,
-          -- así que sale más simple traerlo agregado acá.
-          SELECT COALESCE(json_agg(json_build_object(
-            'modelo', ft.modelo, 'cantidad', vi.cantidad,
-            'precio_unitario_usd', vi.precio_unitario_usd,
-            'precio_unitario_pesos', vi.precio_unitario_pesos
-          ) ORDER BY ft.modelo), '[]'::json)
-          FROM venta_items vi
-          JOIN ficha_transformador ft ON ft.id = vi.ficha_id
-          WHERE vi.venta_id = v.id
-        ) AS items
-      FROM ventas v
-      JOIN clientes c ON c.id = v.cliente_id
-      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
-      WHERE v.anulada_en IS NULL
-    `;
-
-    const params = [];
-    let paramIndex = 1;
-
-    if (cliente_id) {
-      query += ` AND v.cliente_id = $${paramIndex}`;
-      params.push(cliente_id);
-      paramIndex++;
-    }
-
-    if (orden_compra_id) {
-      query += ` AND v.orden_compra_id = $${paramIndex}`;
-      params.push(orden_compra_id);
-      paramIndex++;
-    }
-
-    if (desde) {
-      query += ` AND v.fecha >= $${paramIndex}`;
-      params.push(desde);
-      paramIndex++;
-    }
-
-    if (hasta) {
-      query += ` AND v.fecha <= $${paramIndex}`;
-      params.push(hasta);
-      paramIndex++;
-    }
-
-    // Sin paginación real: el filtro por fecha acota el volumen en el uso
-    // normal (ver docs/claude/modulo-reportes.md). LIMIT es solo una
-    // salvaguarda, no un mecanismo de recorte.
-    query += ` ORDER BY v.id DESC LIMIT 5000`;
-
-    const result = await pool.query(query, params);
-    res.json(result.rows);
-
+    const { cliente_id, orden_compra_id, desde, hasta } = req.query;
+    res.json(await listarRemitos({ cliente_id, orden_compra_id, desde, hasta }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -116,42 +49,7 @@ router.get('/reporte/pdf', soloAdmin, async (req, res) => {
   const { cliente_id, orden_compra_id, desde, hasta } = req.query;
 
   try {
-    let query = `
-      SELECT
-        v.id, v.fecha, v.remito_numero, v.remito_observaciones,
-        c.nombre AS cliente,
-        oc.numero_oc,
-        (
-          SELECT f.numero_factura
-          FROM factura_venta_items fi
-          JOIN facturas f ON f.id = fi.factura_id
-          JOIN venta_items vi ON vi.id = fi.venta_item_id
-          WHERE vi.venta_id = v.id
-          LIMIT 1
-        ) AS numero_factura,
-        (SELECT COALESCE(SUM(vi.cantidad), 0)::int FROM venta_items vi WHERE vi.venta_id = v.id) AS unidades,
-        (
-          SELECT COALESCE(string_agg(ft.modelo || ' x' || vi.cantidad, ', ' ORDER BY ft.modelo), '—')
-          FROM venta_items vi
-          JOIN ficha_transformador ft ON ft.id = vi.ficha_id
-          WHERE vi.venta_id = v.id
-        ) AS modelos
-      FROM ventas v
-      JOIN clientes c ON c.id = v.cliente_id
-      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
-      WHERE v.anulada_en IS NULL
-    `;
-    const params = [];
-    let paramIndex = 1;
-
-    if (cliente_id) { query += ` AND v.cliente_id = $${paramIndex++}`; params.push(cliente_id); }
-    if (orden_compra_id) { query += ` AND v.orden_compra_id = $${paramIndex++}`; params.push(orden_compra_id); }
-    if (desde) { query += ` AND v.fecha >= $${paramIndex++}`; params.push(desde); }
-    if (hasta) { query += ` AND v.fecha <= $${paramIndex++}`; params.push(hasta); }
-
-    query += ` ORDER BY v.id DESC LIMIT 5000`;
-
-    const result = await pool.query(query, params);
+    const filas = await listarRemitos({ cliente_id, orden_compra_id, desde, hasta });
 
     const filtros = [];
     if (desde || hasta) filtros.push(`Período: ${desde ? fmtFecha(desde) : 'inicio'} a ${hasta ? fmtFecha(hasta) : 'hoy'}`);
@@ -162,13 +60,13 @@ router.get('/reporte/pdf', soloAdmin, async (req, res) => {
       titulo: 'Informe de entregas a clientes',
       filtrosTexto: filtros.join(' · ') || undefined,
       cols: COLS_PDF_VENTAS,
-      filas: result.rows,
+      filas,
       armarCelda: (r) => ({
         fecha: fmtFecha(r.fecha),
         cliente: r.cliente || '—',
         remito: r.remito_numero || '—',
         oc: r.numero_oc || '—',
-        modelos: r.modelos || '—',
+        modelos: r.items.length ? r.items.map(i => `${i.modelo} x${i.cantidad}`).join(', ') : '—',
         unidades: Number(r.unidades || 0).toLocaleString('es-AR'),
         factura: r.numero_factura || '—',
         observaciones: r.remito_observaciones || '—'
@@ -177,6 +75,57 @@ router.get('/reporte/pdf', soloAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error generando PDF de entregas:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* =========================
+   NUEVA ENTREGA POR CLIENTE
+   Ver services/entregas.js: lo entregado se reparte entre las OC del
+   cliente (la más vieja primero) y sale UN remito.
+========================= */
+// Lo pendiente del cliente por modelo (con el desglose por OC), el stock
+// disponible de cada modelo y el número de remito que se va a proponer.
+router.get('/entrega/pendientes', soloAdmin, asyncHandler(async (req, res) => {
+  const clienteId = Number.parseInt(req.query.cliente_id, 10);
+  if (!clienteId) return res.status(400).json({ error: 'Falta el cliente' });
+
+  const [pendientes, proximo, dolar] = await Promise.all([
+    pendientesPorCliente(clienteId),
+    proximoNumeroRemito(),
+    pool.query("SELECT valor FROM parametros WHERE clave = 'dolar_banco'")
+  ]);
+  const cli = pendientes[0] || { cliente_id: clienteId, total_pendiente: 0, modelos: [] };
+
+  const fichaIds = cli.modelos.map(m => m.ficha_id);
+  const stock = fichaIds.length
+    ? await pool.query('SELECT ficha_id, stock_actual FROM stock_actual WHERE ficha_id = ANY($1)', [fichaIds])
+    : { rows: [] };
+  const stockPorFicha = new Map(stock.rows.map(r => [r.ficha_id, Number(r.stock_actual) || 0]));
+
+  res.json({
+    cliente_id: clienteId,
+    total_pendiente: cli.total_pendiente,
+    modelos: cli.modelos.map(m => ({ ...m, stock_disponible: stockPorFicha.get(m.ficha_id) || 0 })),
+    proximo_remito: proximo,
+    dolar: dolar.rows.length ? Number(dolar.rows[0].valor) : null
+  });
+}));
+
+router.post('/entrega', soloAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await crearEntrega(client, req.body || {});
+    await client.query('COMMIT');
+    res.json(r);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    // P0001 = excepción levantada por el trigger de stock (stock insuficiente).
+    const status = err.status || (err.code === 'P0001' ? 400 : 500);
+    if (status === 500) console.error('Error registrando entrega:', err);
+    res.status(status).json({ error: status === 500 ? 'No se pudo registrar la entrega' : err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -232,25 +181,10 @@ router.post('/', soloAdmin, async (req, res) => {
 
     const cliente_id = clienteRes.rows[0].cliente_id;
 
-    // ✅ USAR EL TIPO DE CAMBIO RECIBIDO (DEL FRONTEND)
-    let tipoCambio = parseFloat(tipo_cambio);
-
-    // Si no viene tipo_cambio, obtener el último registrado. Antes había
-    // un fallback hardcodeado (1415.00) que dejaba cargar una venta con
-    // un dólar inventado de hace meses si no había cotización — ahora se
-    // rechaza explícitamente (hallazgo D8 de la auditoría).
-    if (!tipoCambio || isNaN(tipoCambio)) {
-      const dolarRes = await client.query(
-        "SELECT valor FROM parametros WHERE clave = 'dolar_banco'"
-      );
-      if (!dolarRes.rows.length || !parseFloat(dolarRes.rows[0].valor)) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: 'No hay cotización del dólar cargada. Cargala en Precios antes de registrar la venta.'
-        });
-      }
-      tipoCambio = parseFloat(dolarRes.rows[0].valor);
-    }
+    // Cotización recibida del frontend o, si no viene, la última cargada. Si
+    // no hay ninguna se rechaza (antes había un fallback hardcodeado que dejaba
+    // cargar una venta con un dólar inventado — hallazgo D8 de la auditoría).
+    const tipoCambio = await dolarVigente(client, tipo_cambio);
 
     const ventaRes = await client.query(
       `INSERT INTO ventas
@@ -280,35 +214,19 @@ router.post('/', soloAdmin, async (req, res) => {
           throw e;
         }
 
-        const precioRes = await client.query(
-          `SELECT precio FROM precios_modelo WHERE ficha_id = $1 ORDER BY fecha_desde DESC LIMIT 1`,
-          [fichaId]
-        );
-
-        if (!precioRes.rows.length) {
-          const modeloRes = await client.query(
-            `SELECT modelo FROM ficha_transformador WHERE id = $1`,
-            [fichaId]
-          );
-          const nombreModelo = modeloRes.rows[0]?.modelo || `ficha ${fichaId}`;
-          const e = new Error(`El modelo ${nombreModelo} no tiene precio cargado`);
+        // El servidor también controla el pendiente de la OC (antes solo lo
+        // topeaba el navegador y el trigger de stock).
+        const pendiente = await pendienteDeItemOC(client, orden_compra_id, fichaId);
+        if (cantidad > pendiente) {
+          const e = new Error(`La cantidad (${cantidad}) supera lo pendiente de la orden de compra (${pendiente})`);
           e.status = 400;
           throw e;
         }
 
-        const precio_usd = precioRes.rows[0].precio;
-        const precio_pesos = precio_usd * tipoCambio;
-
         // Si la cantidad supera el stock disponible, trigger_verificar_stock
         // (sobre venta_items) rechaza el INSERT con una excepción — el
         // ROLLBACK del catch se lleva puesta también la venta recién creada.
-        const itemRes = await client.query(
-          `INSERT INTO venta_items
-           (venta_id, ficha_id, cantidad, precio_unitario_usd, precio_unitario_pesos)
-           VALUES ($1,$2,$3,$4,$5)
-           RETURNING *`,
-          [venta.id, fichaId, cantidad, precio_usd, precio_pesos]
-        );
+        const itemRes = { rows: [await insertarItemVenta(client, venta.id, fichaId, cantidad, tipoCambio)] };
         venta.items.push(itemRes.rows[0]);
       }
     }
@@ -318,7 +236,7 @@ router.post('/', soloAdmin, async (req, res) => {
 
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(err.status || 500).json({ error: err.message });
+    res.status(err.status || (err.code === 'P0001' ? 400 : 500)).json({ error: err.message });
   } finally {
     client.release();
   }
@@ -542,11 +460,9 @@ router.get('/:id/pdf', soloAdmin, async (req, res) => {
       SELECT
         v.id, v.fecha, v.remito_numero, v.remito_fecha, v.remito_observaciones,
         v.anulada_en, v.motivo_anulacion,
-        c.nombre AS cliente_nombre, c.cuit AS cliente_cuit, c.direccion AS cliente_direccion,
-        oc.numero_oc
+        c.nombre AS cliente_nombre, c.cuit AS cliente_cuit, c.direccion AS cliente_direccion
       FROM ventas v
       JOIN clientes c ON c.id = v.cliente_id
-      LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
       WHERE v.id = $1
       `,
       [req.params.id]
@@ -554,15 +470,19 @@ router.get('/:id/pdf', soloAdmin, async (req, res) => {
 
     if (!ventaRes.rows.length) return res.status(404).json({ error: 'Venta no encontrada' });
 
+    // El remito es uno solo aunque se haya imputado a varias OC: se imprimen
+    // los ítems de todos sus tramos, un renglón por modelo.
+    const ids = await idsDelRemito(pool, req.params.id);
     const itemsRes = await pool.query(
       `
-      SELECT vi.cantidad, f.modelo
+      SELECT f.modelo, SUM(vi.cantidad)::int AS cantidad
       FROM venta_items vi
       JOIN ficha_transformador f ON f.id = vi.ficha_id
-      WHERE vi.venta_id = $1
+      WHERE vi.venta_id = ANY($1)
+      GROUP BY f.modelo
       ORDER BY f.modelo
       `,
-      [req.params.id]
+      [ids]
     );
 
     const venta = ventaRes.rows[0];

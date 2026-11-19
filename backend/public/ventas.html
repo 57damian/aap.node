@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Remitos y facturación — Transformadores ERP</title>
+  <title>Entregas y remitos — Transformadores ERP</title>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
@@ -12,10 +12,91 @@
 
   <div class="page-head">
     <div>
-      <h1>Remitos y facturación</h1>
-      <p>Cada fila es un remito entregado y muestra si ya está facturado</p>
+      <h1>Entregas y remitos</h1>
+      <p>Entregá a un cliente lo que tiene pendiente en sus órdenes de compra y seguí qué falta facturar</p>
+    </div>
+    <div class="page-head-actions">
+      <button class="b b-primary" id="btnNuevaEntrega">Nueva entrega</button>
     </div>
   </div>
+
+  <!-- ============ NUEVA ENTREGA ============
+       Se entrega por cliente, no por orden de compra: se elige el cliente, se
+       ve lo que le falta de TODAS sus OC y se cargan las cantidades. El
+       servidor reparte lo entregado entre las OC (la más vieja primero, para
+       ir liquidando lo pedido) y sale un solo remito. -->
+  <div class="panel" id="panelNuevaEntrega" hidden>
+    <div class="panel-head"><h2>Nueva entrega</h2></div>
+    <div class="panel-body">
+      <form id="entregaForm" novalidate>
+        <div class="form-grid">
+          <div class="field ancho-total">
+            <label for="entCliente">Cliente</label>
+            <select class="input" id="entCliente">
+              <option value="">Elegí un cliente…</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="entPendientes" style="margin-top:var(--space-4)" hidden>
+          <div class="table-wrap">
+            <table class="t">
+              <thead>
+                <tr>
+                  <th>Modelo</th>
+                  <th class="num">Pendiente</th>
+                  <th class="num">Stock disponible</th>
+                  <th class="num" style="width:140px">Entregar ahora</th>
+                  <th class="solo-escritorio">Se imputa a</th>
+                </tr>
+              </thead>
+              <tbody id="entItems"></tbody>
+            </table>
+          </div>
+          <div style="padding:var(--space-3) 0;display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+            <button type="button" class="b b-ghost b-sm" id="btnTodoDisponible">Cargar todo lo disponible</button>
+            <button type="button" class="b b-ghost b-sm" id="btnLimpiarCantidades">Limpiar cantidades</button>
+            <span class="muted" id="entResumen"></span>
+          </div>
+
+          <div class="form-grid" style="margin-top:var(--space-3)">
+            <div class="field">
+              <label for="entRemitoNumero">N° de remito</label>
+              <input class="input" type="text" id="entRemitoNumero" autocomplete="off">
+              <small class="muted">Vacío = el número automático. Escribilo si usás un talonario.</small>
+            </div>
+            <div class="field">
+              <label for="entRemitoFecha">Fecha</label>
+              <input class="input" type="date" id="entRemitoFecha">
+            </div>
+          </div>
+
+          <details style="margin-top:var(--space-3)">
+            <summary class="muted" style="cursor:pointer">Más datos (dólar y observaciones)</summary>
+            <div class="form-grid" style="margin-top:var(--space-3)">
+              <div class="field">
+                <label for="entCotizacion">Cotización del dólar (ARS por USD)</label>
+                <input class="input" type="number" id="entCotizacion" step="0.01" min="0.01">
+                <small class="muted">Se usa para guardar el precio de la entrega; la factura puede cambiarlo.</small>
+              </div>
+              <div class="field ancho-total">
+                <label for="entObservaciones">Observaciones <span class="muted">(opcional)</span></label>
+                <input class="input" type="text" id="entObservaciones" placeholder="Observaciones del remito…">
+              </div>
+            </div>
+          </details>
+
+          <div style="margin-top:var(--space-4)">
+            <button type="submit" class="b b-primary" id="btnRegistrarEntrega">Registrar entrega</button>
+            <button type="button" class="b b-ghost" id="btnCancelarEntrega">Cancelar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Qué falta facturar: lo primero que se mira. Un toque filtra el listado. -->
+  <div class="kpi-row" id="kpiRemitos" style="margin-bottom:var(--space-4)"></div>
 
   <div class="filters">
     <div class="field grow">
@@ -53,16 +134,40 @@
           <th class="solo-escritorio">Orden de compra</th>
           <th class="solo-escritorio">Modelos / cantidad</th>
           <th class="solo-escritorio">Factura</th>
-          <th class="solo-escritorio">Observaciones</th>
           <th>Estado</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="tablaVentas">
-        <tr><td colspan="9" class="muted">Cargando…</td></tr>
+        <tr><td colspan="8" class="muted">Cargando…</td></tr>
       </tbody>
     </table>
   </div></div></div>
+
+  <!-- Entrega registrada: ofrece lo que sigue (imprimir el remito, facturar). -->
+  <dialog id="entregaListaModal" class="panel">
+    <div class="panel-head"><h2>Entrega registrada</h2></div>
+    <div class="panel-body">
+      <p id="entregaListaTexto"></p>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="entregaListaModal">Cerrar</button>
+        <button type="button" class="b b-ghost" id="btnEntregaPdf">Descargar remito PDF</button>
+        <button type="button" class="b b-primary" id="btnEntregaFacturar">Facturar ahora</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Un remito que cubre varias OC se factura una OC por vez. -->
+  <dialog id="facturarOcModal" class="panel">
+    <div class="panel-head"><h2>¿Qué orden de compra facturás?</h2></div>
+    <div class="panel-body">
+      <p class="muted">Este remito lleva material de más de una orden de compra y cada factura corresponde a una sola.</p>
+      <div id="facturarOcLista" style="display:grid;gap:var(--space-2);margin:var(--space-3) 0"></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" data-cerrar="facturarOcModal">Cancelar</button>
+      </div>
+    </div>
+  </dialog>
 
 </div>
 
@@ -70,13 +175,14 @@
 <script src="js/shell.js"></script>
 <script src="js/api.js"></script>
 <script>
-  Shell.montar({ titulo: 'Remitos y facturación', sub: 'Entregas a clientes' });
+  Shell.montar({ titulo: 'Entregas y remitos', sub: 'Entregas a clientes' });
 </script>
 <script src="js/auth.js"></script>
 <script src="js/roleGuard.js"></script>
 <script>
   verificarRolPagina(['admin']);
 </script>
+<script src="js/facturar-wizard.js"></script>
 <script src="js/ventas.js"></script>
 </body>
 </html>

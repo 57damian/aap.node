@@ -93,6 +93,13 @@ async function cargarResumen() {
       titulo.textContent = `${data.numero_oc || '—'} · ${data.cliente || '—'}`;
     }
 
+    // La entrega se registra por cliente: el link lleva a esa pantalla con el
+    // cliente cargado y esta OC como la primera a la que se imputa.
+    const linkEntrega = document.getElementById('linkNuevaEntrega');
+    if (linkEntrega && data.cliente_id) {
+      linkEntrega.href = `ventas.html?nueva=1&cliente=${encodeURIComponent(data.cliente_id)}&oc=${encodeURIComponent(ocId)}`;
+    }
+
     const resumen = document.getElementById('resumen');
     if (!resumen) return;
 
@@ -161,7 +168,6 @@ async function cargarDetalle() {
       }
     }
 
-    pintarEntregaItems(items);
   } catch (err) {
     console.error('Error cargando detalle:', err);
   }
@@ -238,56 +244,6 @@ async function eliminarItem() {
     console.error('Error eliminando item:', err);
     mostrarNotificacion(err.error || err.message || 'Error al eliminar el item', 'error');
   }
-}
-
-// =====================
-// PINTAR ITEMS PARA ENTREGA (a partir de los items que ya trajo cargarDetalle)
-// =====================
-function pintarEntregaItems(items) {
-  const tbody = document.getElementById('entregaItems');
-  if (!tbody) return;
-
-  tbody.innerHTML = '';
-  const pendientes = items.filter((item) => Number(item.pendiente) > 0);
-
-  if (!pendientes.length) {
-    tbody.innerHTML = `<tr><td colspan="5">${Shell.vacio(
-      'No hay nada pendiente de entrega',
-      'Todos los items de esta orden ya se entregaron.')}</td></tr>`;
-    return;
-  }
-
-  pendientes.forEach((item) => {
-    const stockDisponible = Number(item.stock_disponible) || 0;
-    const maxEntrega = Math.max(0, Math.min(Number(item.pendiente), stockDisponible));
-    const sinStock = maxEntrega <= 0;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${item.modelo}</strong></td>
-      <td class="num" data-label="Pendiente">${item.pendiente}</td>
-      <td class="num muted" data-label="Stock disponible">${stockDisponible}</td>
-      <td data-label="Entregar ahora">
-        <input
-          type="number"
-          min="1"
-          max="${maxEntrega}"
-          value="${maxEntrega || ''}"
-          data-ficha-id="${item.ficha_id}"
-          class="entrega-cantidad input"
-          placeholder="Cantidad"
-          ${sinStock ? 'disabled' : ''}
-        />
-        ${sinStock ? `<small class="muted">Sin stock producido todavía —
-          <a href="produccion.html?ficha_id=${item.ficha_id}" target="_blank" rel="noopener">registrar producción</a></small>` : ''}
-      </td>
-      <td data-label="Incluir">
-        <label class="check">
-          <input type="checkbox" class="entrega-check" data-ficha-id="${item.ficha_id}" ${sinStock ? 'disabled' : 'checked'}><span></span>
-        </label>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
 }
 
 // =====================
@@ -417,7 +373,7 @@ async function cargarRemitos() {
     if (!ventasConRemito.length) {
       tbody.innerHTML = `<tr><td colspan="6">${Shell.vacio(
         'Todavía no hay remitos',
-        'Se registran al entregar items en la pestaña "Registrar entrega".')}</td></tr>`;
+        'Se registran en "Entregas y remitos", al entregarle al cliente.')}</td></tr>`;
       return;
     }
 
@@ -445,143 +401,9 @@ async function cargarRemitos() {
   }
 }
 
-// Cotización del día, para precargar el campo de "Registrar entrega" apenas
-// se abre la pantalla (antes recién se pedía al final, en un modal aparte,
-// después de completar remito y cantidades).
-async function cargarCotizacionEntrega() {
-  const input = document.getElementById('entrega_cotizacion');
-  const texto = document.getElementById('entregaDolarActual');
-  if (!input) return;
-  try {
-    const dolarData = await apiFetch('/api/precios/parametros/dolar');
-    const dolarActual = Number(dolarData.dolar || 0);
-    input.value = dolarActual ? dolarActual.toFixed(2) : '';
-    if (texto) {
-      texto.textContent = dolarActual
-        ? `Cargada hoy en Precios: ARS ${dolarActual.toFixed(2)}`
-        : 'No hay cotización cargada en Precios';
-    }
-  } catch (err) {
-    console.error('Error cargando cotización:', err);
-    if (texto) texto.textContent = 'No se pudo cargar la cotización actual';
-  }
-}
-
-let entregaEnviando = false;
-
-async function registrarEntrega() {
-  if (entregaEnviando) return;
-
-  const remitoNumero = document.getElementById('remito_numero')?.value?.trim();
-  const remitoFecha = document.getElementById('remito_fecha')?.value;
-  const remitoObservaciones = document.getElementById('remito_observaciones')?.value?.trim() || null;
-  const tipoCambio = Number(document.getElementById('entrega_cotizacion')?.value);
-
-  if (!remitoNumero) {
-    mostrarNotificacion('El número de remito es obligatorio', 'warning');
-    return;
-  }
-
-  if (!remitoFecha) {
-    mostrarNotificacion('La fecha del remito es obligatoria', 'warning');
-    return;
-  }
-
-  if (!tipoCambio || Number.isNaN(tipoCambio) || tipoCambio <= 0) {
-    mostrarNotificacion('Ingresá la cotización del dólar', 'warning');
-    return;
-  }
-
-  const checkboxes = document.querySelectorAll('.entrega-check:checked');
-  if (!checkboxes.length) {
-    mostrarNotificacion('Seleccione al menos un modelo para entregar', 'warning');
-    return;
-  }
-
-  const itemsEntrega = [];
-  for (const checkbox of checkboxes) {
-    const fichaId = checkbox.dataset.fichaId;
-    const inputCantidad = document.querySelector(`.entrega-cantidad[data-ficha-id="${fichaId}"]`);
-    const cantidad = Number.parseInt(inputCantidad?.value, 10);
-    const maxDisponible = Number.parseInt(inputCantidad?.max, 10);
-
-    if (!cantidad || cantidad <= 0) {
-      mostrarNotificacion('Ingrese cantidad válida para todos los items seleccionados', 'warning');
-      return;
-    }
-
-    if (Number.isFinite(maxDisponible) && cantidad > maxDisponible) {
-      mostrarNotificacion(
-        `No hay suficiente stock: pidió ${cantidad} pero solo hay ${maxDisponible} disponibles`,
-        'warning'
-      );
-      return;
-    }
-
-    itemsEntrega.push({
-      ficha_id: Number.parseInt(fichaId, 10),
-      cantidad
-    });
-  }
-
-  entregaEnviando = true;
-  const btn = document.getElementById('btnRegistrarEntrega');
-  const textoBoton = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
-
-  try {
-    // La venta y sus items se crean juntos, en una sola transacción del
-    // backend: si algún item falla (por ejemplo stock insuficiente) no
-    // queda un remito a medio registrar.
-    const venta = await apiFetch('/api/ventas', {
-      method: 'POST',
-      body: JSON.stringify({
-        orden_compra_id: Number.parseInt(ocId, 10),
-        tipo_cambio: tipoCambio,
-        remito_numero: remitoNumero,
-        remito_fecha: remitoFecha,
-        remito_observaciones: remitoObservaciones,
-        items: itemsEntrega
-      })
-    });
-
-    mostrarNotificacion(
-      `Entrega registrada correctamente | Remito: ${remitoNumero} | Dólar: ARS ${tipoCambio.toFixed(2)}`,
-      'success'
-    );
-
-    const remitoNumeroInput = document.getElementById('remito_numero');
-    const remitoObsInput = document.getElementById('remito_observaciones');
-    if (remitoNumeroInput) remitoNumeroInput.value = '';
-    if (remitoObsInput) remitoObsInput.value = '';
-    // La cotización queda como está: suele registrarse más de un remito
-    // seguido al mismo tipo de cambio, así que no tiene sentido borrarla.
-
-    await Promise.all([
-      cargarDetalle(),
-      cargarResumen(),
-      cargarFacturas(),
-      cargarRemitos(),
-      cargarPendienteFacturar()
-    ]);
-  } catch (err) {
-    console.error('Error registrando entrega:', err);
-    mostrarNotificacion(err.error || err.message || 'Error al registrar entrega', 'error');
-  } finally {
-    entregaEnviando = false;
-    if (btn) { btn.disabled = false; btn.textContent = textoBoton; }
-  }
-}
-
 function inicializarEventos() {
   const itemForm = document.getElementById('itemForm');
-  const btnRegistrarEntrega = document.getElementById('btnRegistrarEntrega');
   const btnVolver = document.getElementById('btnVolver');
-  const remitoFecha = document.getElementById('remito_fecha');
-
-  if (remitoFecha) {
-    remitoFecha.value = new Date().toISOString().split('T')[0];
-  }
 
   if (itemForm) {
     itemForm.addEventListener('submit', async (e) => {
@@ -612,10 +434,6 @@ function inicializarEventos() {
         mostrarNotificacion(err.error || err.message || 'Error al agregar item', 'error');
       }
     });
-  }
-
-  if (btnRegistrarEntrega) {
-    btnRegistrarEntrega.addEventListener('click', registrarEntrega);
   }
 
   // Editar / eliminar items de la OC (botones que arma cargarDetalle)
@@ -668,7 +486,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     cargarDetalle(),
     cargarFacturas(),
     cargarRemitos(),
-    cargarPendienteFacturar(),
-    cargarCotizacionEntrega()
+    cargarPendienteFacturar()
   ]);
 });
