@@ -173,6 +173,179 @@ async function calcularNecesidad(client, fichaId, unidades, { bloquear = false }
   };
 }
 
+/* ---------------------------------------------------------------------------
+ * Materiales para un PEDIDO (varios modelos juntos) — 20/11/2026.
+ *
+ * Es solo una consulta para planificar compras: no descuenta nada. Suma lo que
+ * pide la receta de cada modelo × su cantidad, material por material, y lo
+ * compara con el stock. No falla si a un modelo le faltan datos: calcula lo que
+ * se puede y dice, modelo por modelo, qué falta cargar para que el número sea
+ * completo.
+ *
+ * Además de lo vinculado al catálogo (devanados con material + renglones de la
+ * receta) informa aparte lo que la ficha tiene anotado pero NO está vinculado
+ * (alambre con peso y sin material elegido, laminación, tipo de carretel):
+ * se ve cuánto hace falta aunque todavía no se pueda comparar con el stock.
+ * ------------------------------------------------------------------------- */
+
+/** Unidades que se compran enteras: se redondea para arriba lo que falta. */
+const UNIDADES_ENTERAS = new Set(['UNI', 'ROLLO', 'PAR', 'JUEGO', 'BOLSA', 'CAJA']);
+
+const MAX_MODELOS_PEDIDO = 60;
+
+async function calcularNecesidadPedido(client, pedido) {
+  if (!Array.isArray(pedido) || !pedido.length) throw fallo(400, 'Agregá al menos un modelo con su cantidad');
+
+  // Un modelo repetido se suma.
+  const porFicha = new Map();
+  pedido.forEach((p, i) => {
+    const fichaId = Number(p && p.ficha_id);
+    const cantidad = Number(p && p.cantidad);
+    if (!Number.isInteger(fichaId) || fichaId <= 0) throw fallo(400, `Renglón ${i + 1}: elegí el modelo`);
+    if (!Number.isInteger(cantidad) || cantidad <= 0 || cantidad > 1000000) {
+      throw fallo(400, `Renglón ${i + 1}: la cantidad tiene que ser un número entero mayor a cero`);
+    }
+    porFicha.set(fichaId, (porFicha.get(fichaId) || 0) + cantidad);
+  });
+  if (porFicha.size > MAX_MODELOS_PEDIDO) throw fallo(400, `El pedido admite hasta ${MAX_MODELOS_PEDIDO} modelos distintos`);
+
+  const fichaIds = [...porFicha.keys()];
+
+  // Fichas (no eliminadas) con lo que anotan aparte de la receta.
+  const fichas = await client.query(`
+    SELECT id, modelo, tipo_carretel, laminacion, peso_laminacion_kg AS peso_laminacion
+      FROM ficha_transformador WHERE id = ANY($1::int[]) AND deleted_at IS NULL`, [fichaIds]);
+  const fichaPorId = new Map(fichas.rows.map(f => [f.id, f]));
+  for (const id of fichaIds) {
+    if (!fichaPorId.has(id)) throw fallo(404, 'Uno de los modelos no existe o fue eliminado');
+  }
+
+  // Etiquetas cargadas (PDF) de cada modelo: se informa cuántas imprimir.
+  const et = await client.query(`
+    SELECT ficha_id, id, nombre_original FROM ficha_archivos
+     WHERE tipo = 'ETIQUETA' AND ficha_id = ANY($1::int[]) ORDER BY ficha_id, id`, [fichaIds]);
+  const etiquetasPorFicha = new Map();
+  et.rows.forEach(e => {
+    if (!etiquetasPorFicha.has(e.ficha_id)) etiquetasPorFicha.set(e.ficha_id, []);
+    etiquetasPorFicha.get(e.ficha_id).push({ id: e.id, nombre: e.nombre_original });
+  });
+
+  const modelos = [];
+  const acumulado = new Map();   // materia_prima_id -> línea del pedido
+  const sinVincular = new Map(); // concepto -> { concepto, cantidad, unidad, modelos: [] }
+  const etiquetas = [];
+
+  function sumarSinVincular(concepto, cantidad, unidad, modelo) {
+    const k = `${concepto}|${unidad}`;
+    const s = sinVincular.get(k) || { concepto, cantidad: 0, unidad, modelos: [] };
+    s.cantidad += cantidad;
+    s.modelos.push(modelo);
+    sinVincular.set(k, s);
+  }
+
+  for (const fichaId of fichaIds) {
+    const unidades = porFicha.get(fichaId);
+    const ficha = fichaPorId.get(fichaId);
+    const receta = await leerReceta(client, fichaId);
+    const n = await calcularNecesidad(client, fichaId, unidades);
+    const faltanDatos = [];
+
+    // Alambre de cada devanado.
+    for (const d of receta.devanados) {
+      const nombre = d.nombre.toLowerCase();
+      const tieneAlambre = String(d.alambre || '').trim() !== '';
+      if (d.peso_gr > 0 && d.material_id) continue; // ya está en las líneas
+      if (d.peso_gr > 0 && !d.material_id) {
+        faltanDatos.push(`Devanado ${nombre}: tiene el peso pero no el material de alambre elegido (no se puede comparar con el stock).`);
+        sumarSinVincular(`Alambre ${nombre}${tieneAlambre ? ` (${d.alambre})` : ''}`, d.peso_gr * unidades, 'GR', ficha.modelo);
+      } else if (tieneAlambre) {
+        faltanDatos.push(`Devanado ${nombre} (${d.alambre}): no tiene el peso cargado, no se puede calcular el alambre.`);
+      }
+    }
+
+    // Laminación: la ficha anota el peso, pero no está vinculada al catálogo.
+    const pesoLam = ficha.peso_laminacion === null ? null : Number(ficha.peso_laminacion);
+    if (pesoLam > 0) {
+      sumarSinVincular(`Laminación${ficha.laminacion ? ` ${ficha.laminacion}` : ''}`, pesoLam * unidades, 'GR', ficha.modelo);
+    } else if (String(ficha.laminacion || '').trim()) {
+      faltanDatos.push(`Laminación ${ficha.laminacion}: no tiene el peso cargado.`);
+    }
+
+    if (!n.tiene_receta) faltanDatos.push('No tiene receta ni alambre vinculado: no suma materiales.');
+
+    // Carretel: si la ficha dice el tipo pero la receta no tiene ningún carretel cargado, se informa aparte.
+    const tipoCarretel = String(ficha.tipo_carretel || '').trim();
+    const idsReceta = receta.items.map(i => i.materia_prima_id);
+    let recetaTieneCarretel = false;
+    if (idsReceta.length) {
+      const c = await client.query(`
+        SELECT 1 FROM materias_primas mp
+          JOIN categorias_materia_prima c ON c.id = mp.categoria_id
+         WHERE mp.id = ANY($1::int[]) AND c.nombre ILIKE 'carretel%' LIMIT 1`, [idsReceta]);
+      recetaTieneCarretel = c.rows.length > 0;
+    }
+    if (tipoCarretel && !recetaTieneCarretel) {
+      sumarSinVincular(`Carretel ${tipoCarretel}`, unidades, 'UNI', ficha.modelo);
+      faltanDatos.push(`Carretel ${tipoCarretel}: está en la ficha pero no en la receta (se cuenta 1 por transformador).`);
+    }
+
+    const etiquetasModelo = etiquetasPorFicha.get(fichaId) || [];
+    if (etiquetasModelo.length) etiquetas.push({ ficha_id: fichaId, modelo: ficha.modelo, cantidad: unidades, archivos: etiquetasModelo });
+
+    modelos.push({
+      ficha_id: fichaId, modelo: ficha.modelo, cantidad: unidades,
+      tiene_receta: n.tiene_receta, lleva_etiqueta: etiquetasModelo.length > 0,
+      etiquetas: etiquetasModelo.length, faltan_datos: faltanDatos, errores: n.errores
+    });
+
+    // Se acumulan las líneas de este modelo en el total del pedido.
+    for (const l of n.lineas) {
+      const a = acumulado.get(l.materia_prima_id) || {
+        materia_prima_id: l.materia_prima_id, nombre: l.nombre, unidad: l.unidad,
+        necesaria: 0, stock_actual: l.stock_actual, por_modelo: []
+      };
+      a.necesaria += l.necesaria;
+      a.por_modelo.push({ modelo: ficha.modelo, cantidad: unidades, por_unidad: l.por_unidad, necesaria: l.necesaria, origenes: l.origenes });
+      acumulado.set(l.materia_prima_id, a);
+    }
+  }
+
+  // Datos de catálogo de los materiales: categoría y metros por rollo.
+  const idsMat = [...acumulado.keys()];
+  const cat = new Map();
+  if (idsMat.length) {
+    const r = await client.query(`
+      SELECT mp.id, c.nombre AS categoria, mp.metros_por_rollo
+        FROM materias_primas mp LEFT JOIN categorias_materia_prima c ON c.id = mp.categoria_id
+       WHERE mp.id = ANY($1::int[])`, [idsMat]);
+    r.rows.forEach(m => cat.set(m.id, m));
+  }
+
+  const materiales = [...acumulado.values()].map(a => {
+    const necesaria = redondear4(a.necesaria);
+    const faltante = redondear4(Math.max(0, necesaria - a.stock_actual));
+    const entera = UNIDADES_ENTERAS.has(normalizarUnidad(a.unidad));
+    const c = cat.get(a.materia_prima_id) || {};
+    return {
+      materia_prima_id: a.materia_prima_id, nombre: a.nombre, unidad: a.unidad,
+      categoria: c.categoria || null,
+      necesaria, stock_actual: a.stock_actual, faltante,
+      // Lo que conviene comprar: unidades enteras hacia arriba (no se compra 0,6 de un rollo).
+      a_comprar: entera ? Math.ceil(faltante - 1e-9) : faltante,
+      por_modelo: a.por_modelo
+    };
+  }).sort((x, y) => (x.categoria || '~').localeCompare(y.categoria || '~', 'es') || x.nombre.localeCompare(y.nombre, 'es'));
+
+  return {
+    unidades_total: [...porFicha.values()].reduce((s, n) => s + n, 0),
+    modelos,
+    materiales,
+    faltantes: materiales.filter(m => m.faltante > 0).length,
+    sin_vincular: [...sinVincular.values()].map(s => ({ ...s, cantidad: redondear4(s.cantidad), modelos: [...new Set(s.modelos)] })),
+    etiquetas
+  };
+}
+
 /**
  * Descuenta del stock lo calculado por calcularNecesidad(…, { bloquear: true }),
  * dentro de la transacción de quien llama. Nunca deja el stock negativo: si no
@@ -338,4 +511,4 @@ async function guardarItems(client, fichaId, items) {
   }
 }
 
-module.exports = { leerReceta, calcularNecesidad, aplicarConsumo, leerConsumos, devolverConsumo, normalizarUnidad, normalizarItems, guardarItems };
+module.exports = { leerReceta, calcularNecesidad, calcularNecesidadPedido, aplicarConsumo, leerConsumos, devolverConsumo, normalizarUnidad, normalizarItems, guardarItems };

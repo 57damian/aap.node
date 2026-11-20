@@ -87,6 +87,7 @@
       { id: 'ficha',   txt: 'Fichas técnicas', url: 'ficha.html',      icon: 'ficha', roles: ['admin'], alias: 'modelos transformador' },
       { id: 'prod',    txt: 'Producción',      url: 'produccion.html', icon: 'prod',  roles: ['admin','operario'] },
       { id: 'stock',   txt: 'Stock',           url: 'stock.html',      icon: 'stock', roles: ['admin'], alias: 'materias primas materiales' },
+      { id: 'matpedido', txt: 'Materiales para un pedido', url: 'materiales-pedido.html', icon: 'pedido', roles: ['admin'], alias: 'receta calcular materiales necesito comprar alambre carretel barniz cinta estaño soldadura cuanto' },
       { id: 'calctrafo', txt: 'Calculadora de trafos', url: 'calculadora-trafo.html', icon: 'ficha', roles: ['admin'], alias: 'calcular espiras alambre carretel bobinado' }
     ]},
     { grupo: 'Finanzas', items: [

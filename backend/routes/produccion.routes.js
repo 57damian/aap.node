@@ -5,7 +5,8 @@ const { verificarToken, soloAdmin, adminYOperario } = require('../middlewares/au
 const { generarPdfReporte, ANCHO_UTIL_REPORTE } = require('../services/pdf-reporte');
 const { fecha } = require('../services/pdf-base');
 const { vistaPreviaAnulacionProduccion, anularProduccion } = require('../services/anulaciones');
-const { calcularNecesidad, aplicarConsumo } = require('../services/receta');
+const { calcularNecesidad, calcularNecesidadPedido, aplicarConsumo } = require('../services/receta');
+const { generarPdfMaterialesPedido } = require('../services/pdf-materiales-pedido');
 
 const COLS_PDF_PRODUCCION = [
   { campo: 'fecha', titulo: 'Fecha', x: 0, ancho: 70 },
@@ -16,6 +17,36 @@ const COLS_PDF_PRODUCCION = [
 ];
 
 router.use(verificarToken);
+
+/* ============================================
+   MATERIALES PARA UN PEDIDO (solo consulta, no descuenta nada)
+   POST /api/produccion/materiales-pedido   { items: [{ ficha_id, cantidad }] }
+   Suma la receta de cada modelo × su cantidad, la compara con el stock e informa
+   qué datos faltan cargar. Sin precios: lo puede consultar también el operario.
+============================================ */
+router.post('/materiales-pedido', adminYOperario, async (req, res) => {
+  try {
+    res.json(await calcularNecesidadPedido(pool, req.body && req.body.items));
+  } catch (err) {
+    if (!err.status) console.error('Error calculando materiales del pedido:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Error interno del servidor' });
+  }
+});
+
+// Mismo cálculo, en PDF. Es POST porque la lista de modelos viaja en el cuerpo.
+router.post('/materiales-pedido/pdf', adminYOperario, async (req, res) => {
+  try {
+    const resultado = await calcularNecesidadPedido(pool, req.body && req.body.items);
+    const hoy = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Materiales-para-pedido-${hoy}.pdf"`);
+    generarPdfMaterialesPedido(resultado, res);
+  } catch (err) {
+    if (!err.status) console.error('Error generando PDF de materiales del pedido:', err);
+    if (!res.headersSent) res.status(err.status || 500).json({ error: err.status ? err.message : 'Error interno del servidor' });
+  }
+});
+
 /* ============================================
    REGISTRAR PRODUCCIÓN
    POST /api/produccion

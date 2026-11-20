@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Materiales para un pedido — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Materiales para un pedido</h1>
+      <p>Elegí los modelos y las cantidades: se suman las recetas y se compara con el stock para saber qué hay que comprar.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Qué vas a fabricar</h2></div>
+    <div class="panel-body">
+      <div class="filters" style="margin-bottom:var(--space-3)">
+        <div class="field grow">
+          <label for="mp_cliente">Cargar lo pendiente de un cliente</label>
+          <select class="input" id="mp_cliente">
+            <option value="">Elegí un cliente…</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="button" class="b b-ghost" id="btnCargarPendientes">Cargar pendientes</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="t">
+          <thead>
+            <tr>
+              <th style="width:60%">Modelo</th>
+              <th style="width:30%">Cantidad</th>
+              <th style="width:10%"></th>
+            </tr>
+          </thead>
+          <tbody id="mp_filas"></tbody>
+        </table>
+      </div>
+      <div style="padding:var(--space-3) 0">
+        <button type="button" class="b b-ghost" id="btnAgregarModelo">+ Agregar modelo</button>
+      </div>
+
+      <div class="notice notice-err" id="mp_error" role="alert" hidden></div>
+      <button type="button" class="b b-primary" id="btnCalcular">Calcular materiales</button>
+    </div>
+  </div>
+
+  <div id="mp_resultado" hidden>
+
+    <div class="panel" id="mp_panelAvisos" hidden>
+      <div class="panel-head"><h2>Datos que faltan cargar</h2></div>
+      <div class="panel-body" id="mp_avisos"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Materiales a comprar</h2>
+        <div class="page-head-actions">
+          <button type="button" class="b b-primary" id="btnPdf">Ver PDF</button>
+          <button type="button" class="b b-ghost" id="btnCsv">Descargar CSV</button>
+          <button type="button" class="b b-ghost" id="btnImprimir">Imprimir</button>
+        </div>
+      </div>
+      <div class="panel-body flush">
+        <p class="muted" id="mp_resumen" style="padding:var(--space-3) var(--space-4) 0;margin:0"></p>
+        <div class="table-wrap">
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Material</th>
+                <th class="num">Necesario</th>
+                <th class="num">En stock</th>
+                <th class="num">Falta</th>
+                <th>De dónde sale</th>
+              </tr>
+            </thead>
+            <tbody id="mp_materiales"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="mp_panelSinVincular" hidden>
+      <div class="panel-head"><h2>Anotado en la ficha, sin material del catálogo</h2></div>
+      <div class="panel-body flush">
+        <p class="muted" style="padding:var(--space-3) var(--space-4) 0;margin:0">
+          Estos materiales salen de los pesos y datos de la ficha pero no están vinculados a una materia prima,
+          así que no se pueden comparar con el stock. Elegí el material en la ficha (alambre) o agregalo a la receta para que se controle.
+        </p>
+        <div class="table-wrap">
+          <table class="t">
+            <thead><tr><th>Concepto</th><th class="num">Necesario</th><th>Modelos</th></tr></thead>
+            <tbody id="mp_sinVincular"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="mp_panelEtiquetas" hidden>
+      <div class="panel-head"><h2>Etiquetas a imprimir</h2></div>
+      <div class="panel-body flush">
+        <div class="table-wrap">
+          <table class="t">
+            <thead><tr><th>Modelo</th><th class="num">Cantidad</th><th>Etiquetas cargadas en la ficha</th></tr></thead>
+            <tbody id="mp_etiquetas"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Materiales para un pedido', sub: 'Qué comprar para fabricar' });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/materiales-pedido.js"></script>
+</body>
+</html>

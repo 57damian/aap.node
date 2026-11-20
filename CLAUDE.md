@@ -315,6 +315,14 @@ Producir no descontaba materia prima y la ficha no estaba vinculada al catálogo
 - Las cantidades de stock llegan del API como texto con 4 decimales (`"236400.0000"`): comparar con `Number()` (se corrigió el estado de stock BAJO/CRÍTICO que comparaba strings) y mostrar con `toLocaleString('es-AR', { maximumFractionDigits: 4 })` (`numEs()` en `stock.js`).
 - Pendiente aparte: el trigger `trg_actualizar_stock_factura` (`actualizar_stock_desde_factura`) usa columnas que ya no existen (`materias_primas.updated_at`, `stock_movimientos.created_by`); un `UPDATE` de `estado` en una factura de compra puede fallar o duplicar stock. No se tocó.
 
+### Materiales para un pedido (20/11/2026)
+
+Pantalla `materiales-pedido.html` (menú Producción, admin): se arma una lista modelo × cantidad (a mano o con "Cargar pendientes" de un cliente, que usa `GET /api/ordenes-compra/pendientes`) y `POST /api/produccion/materiales-pedido` (`{ items: [{ ficha_id, cantidad }] }`, `calcularNecesidadPedido` en `services/receta.js`) suma la receta de todos los modelos, material por material, contra el stock. **Solo consulta: no descuenta nada y no tiene precios.** Un modelo repetido se suma; las unidades enteras (UNI, ROLLO…) se compran redondeadas hacia arriba (`a_comprar`).
+- No se frena si faltan datos: calcula lo que se puede y por modelo lista `faltan_datos` (devanado con alambre pero sin peso, peso sin material elegido, modelo sin receta). Lo que la ficha anota pero **no está vinculado al catálogo** sale aparte en `sin_vincular` (alambre con peso y sin material, laminación `peso_laminacion_kg`, `tipo_carretel` si la receta no tiene ningún carretel: se cuenta 1 por transformador).
+- `etiquetas`: modelos del pedido con PDF de etiqueta cargado (`ficha_archivos`), con la cantidad a imprimir (una por transformador por cada etiqueta cargada).
+- **PDF** (botón "Ver PDF"): `POST /api/produccion/materiales-pedido/pdf` con la misma lista (POST porque la lista viaja en el cuerpo: no sirve `verArchivoProtegido`, que es GET; la pantalla hace el `fetch` y abre el blob). Generador en `services/pdf-materiales-pedido.js`; usa la lista con la que se calculó, así coincide con lo que se ve.
+- Pendiente: armar un pedido a proveedor (`pedidos-proveedor`) desde lo que falta, y vincular la laminación al catálogo.
+
 ## Diagrama de salidas de la ficha (06/10/2026)
 
 Dibujo libre de cómo salen las conexiones: **pines numerados** (primario / secundario / otro, cada uno con su color), **cables con color y texto** (para los transformadores grandes), **borneras** con posiciones numeradas, textos y una **foto o boceto de fondo**. Solapa "Diagrama de salidas" del detalle de la ficha.
