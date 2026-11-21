@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Copias de seguridad — Transformadores ERP</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div data-content>
+
+  <div class="page-head">
+    <div>
+      <h1>Copias de seguridad</h1>
+      <p>Bajá una copia de todos los datos del sistema o volvé a un estado anterior.</p>
+    </div>
+  </div>
+
+  <div class="notice notice-info" id="baseActual" style="margin-bottom:var(--space-4)">Cargando…</div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Descargar backup</h2></div>
+    <div class="panel-body">
+      <p>Genera un archivo <strong>.sql.gz</strong> con <strong>todos los datos</strong>: clientes, facturas, cobros, stock, fichas (con sus fotos y etiquetas), usuarios, etc. Guardalo en tu computadora y, si querés, subilo a Drive.</p>
+      <p class="muted">No modifica nada y se puede hacer con el sistema en uso. No incluye las fotos de las órdenes de compra de clientes (están aparte, en el servidor).</p>
+      <div class="notice notice-err" id="descargaError" role="alert" hidden></div>
+      <div class="page-head-actions" style="justify-content:flex-start">
+        <button type="button" class="b b-primary" id="btnDescargar">Descargar backup</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:var(--space-4)">
+    <div class="panel-head"><h2>Restaurar un backup</h2></div>
+    <div class="panel-body">
+      <div class="notice notice-warn">
+        <strong>Reemplaza todos los datos actuales</strong> por los del archivo: todo lo cargado después de esa copia se pierde.
+        Antes de empezar, el sistema te descarga automáticamente un backup del estado de ahora, por si hay que volver atrás.
+      </div>
+      <div class="field" style="margin-top:var(--space-3)">
+        <label for="archivoBackup">Archivo de backup <span class="muted">(.sql.gz, generado por este sistema)</span></label>
+        <input class="input" type="file" id="archivoBackup" accept=".gz,.sql,application/gzip,application/x-gzip">
+      </div>
+      <div class="notice notice-err" id="restaurarError" role="alert" hidden></div>
+      <div class="page-head-actions" style="justify-content:flex-start">
+        <button type="button" class="b b-danger" id="btnRestaurar" disabled>Restaurar…</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Confirmar restauración ================= -->
+  <dialog id="restaurarModal" class="panel" style="max-width:560px;width:100%">
+    <div class="panel-head"><h2>Restaurar backup</h2></div>
+    <div class="panel-body">
+      <div class="dialog-bloque">
+        <p>Vas a reemplazar <strong>todos los datos de <span id="rm_base"></span></strong> por los del archivo:</p>
+        <p><strong id="rm_archivo"></strong> <span class="muted" id="rm_tamano"></span></p>
+        <ul>
+          <li>Se pierde todo lo cargado después de que se hizo esa copia.</li>
+          <li>Los usuarios y contraseñas también vuelven a los de esa copia: <strong>puede que tengas que volver a entrar</strong>.</li>
+          <li>Si el backup es de una versión anterior del sistema (antes de alguna migración de la base), el sistema puede dejar de funcionar. Ante la duda, no restaures.</li>
+          <li>Si algo falla durante la restauración, no se cambia nada.</li>
+        </ul>
+      </div>
+      <div class="field">
+        <label for="rm_confirmacion">Para confirmar, escribí <strong>RESTAURAR</strong></label>
+        <input class="input" type="text" id="rm_confirmacion" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="muted" id="rm_estado" role="status" hidden></p>
+      <div class="notice notice-err" id="rm_error" role="alert" hidden></div>
+      <div class="page-head-actions">
+        <button type="button" class="b b-ghost" id="rm_cancelar" data-cerrar="restaurarModal">Cancelar</button>
+        <button type="button" class="b b-danger" id="rm_confirmar" disabled>Restaurar ahora</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ================= Resultado ================= -->
+  <dialog id="resultadoModal" class="panel" style="max-width:480px;width:100%">
+    <div class="panel-head"><h2>Backup restaurado</h2></div>
+    <div class="panel-body">
+      <p id="rs_texto"></p>
+      <p class="muted">Volvé a iniciar sesión para seguir trabajando con los datos restaurados.</p>
+      <div class="page-head-actions">
+        <button type="button" class="b b-primary" id="rs_login">Ir al inicio de sesión</button>
+      </div>
+    </div>
+  </dialog>
+
+</div>
+
+<script src="js/ayuda.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/api.js"></script>
+<script>
+  Shell.montar({ titulo: 'Copias de seguridad', sub: 'Descargar y restaurar los datos' });
+
+  document.querySelectorAll('[data-cerrar]').forEach(b => {
+    b.addEventListener('click', () => document.getElementById(b.dataset.cerrar)?.close());
+  });
+</script>
+<script src="js/auth.js"></script>
+<script src="js/roleGuard.js"></script>
+<script>
+  verificarRolPagina(['admin']);
+</script>
+<script src="js/backup.js"></script>
+</body>
+</html>

@@ -8,6 +8,8 @@
     "dev": "nodemon index.js",
     "db:create-admin": "node scripts/create-admin.js",
     "db:migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup-base.js",
+    "backup:neon": "node scripts/backup-base.js --url-file .env.neon.txt",
     "postinstall": "echo '✅ Dependencias instaladas correctamente'"
   },
   "dependencies": {

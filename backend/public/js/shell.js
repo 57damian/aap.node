@@ -40,6 +40,7 @@
     precios:  'M20.6 13.4 12 22l-9-9V3h10zM7 7h.01',
     usuarios: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 11h-6',
     correcciones: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4',
+    backup:   'M12 3v12M7 10l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2',
     gastos:   'M20 12V8H6a2 2 0 0 1 0-4h12v4M4 6v12a2 2 0 0 0 2 2h14v-4M18 12a2 2 0 0 0 0 4h4v-4z',
     informes: 'M3 3v18h18M7 14v4M12 8v10M17 11v7',
     alerta:   'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0M12 9v4M12 17h.01',
@@ -96,7 +97,8 @@
     ]},
     { grupo: 'Configuración', items: [
       { id: 'precios',  txt: 'Precios y dólar', url: 'precios.html',  icon: 'precios',  roles: ['admin'], alias: 'cotizacion tipo de cambio aumento' },
-      { id: 'usuarios', txt: 'Usuarios',        url: 'usuarios.html', icon: 'usuarios', roles: ['admin'] }
+      { id: 'usuarios', txt: 'Usuarios',        url: 'usuarios.html', icon: 'usuarios', roles: ['admin'] },
+      { id: 'backup',   txt: 'Copias de seguridad', url: 'backup.html', icon: 'backup', roles: ['admin'], alias: 'backup respaldo descargar restaurar exportar datos neon drive' }
     ]}
   ];
 
