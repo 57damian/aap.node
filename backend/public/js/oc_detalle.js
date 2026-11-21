@@ -277,6 +277,8 @@ async function cargarFacturas() {
           · ${Shell.fecha(factura.fecha_factura)}
           · Remitos: ${factura.remitos || '—'}
           · Total ${Shell.money(factura.total_factura)} (con IVA)
+          ${String(factura.ocs || '').includes(',')
+            ? `· <span title="Una factura puede juntar remitos de varias órdenes de compra">Factura compartida con otras OC (${String(factura.ocs).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))}) — de esta OC: ${Shell.money(factura.total_de_esta_oc)}</span>` : ''}
           · <a href="#" onclick="verFacturaPdf(${factura.factura_id}); return false;">PDF</a>
           ${anulada ? '' : `· Cobrado ${Shell.money(factura.total_cobrado)}
           · <a href="cobros.html?factura=${encodeURIComponent(factura.factura_id)}" title="Ver el saldo, el vencimiento y los cobros de esta factura">Ver en Cobros</a>

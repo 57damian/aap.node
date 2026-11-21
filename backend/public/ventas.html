@@ -47,7 +47,7 @@
                   <th class="num">Pendiente</th>
                   <th class="num">Stock disponible</th>
                   <th class="num" style="width:140px">Entregar ahora</th>
-                  <th class="solo-escritorio">Se imputa a</th>
+                  <th>Imputar a la OC</th>
                 </tr>
               </thead>
               <tbody id="entItems"></tbody>
@@ -153,18 +153,6 @@
         <button type="button" class="b b-ghost" data-cerrar="entregaListaModal">Cerrar</button>
         <button type="button" class="b b-ghost" id="btnEntregaPdf">Descargar remito PDF</button>
         <button type="button" class="b b-primary" id="btnEntregaFacturar">Facturar ahora</button>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- Un remito que cubre varias OC se factura una OC por vez. -->
-  <dialog id="facturarOcModal" class="panel">
-    <div class="panel-head"><h2>¿Qué orden de compra facturás?</h2></div>
-    <div class="panel-body">
-      <p class="muted">Este remito lleva material de más de una orden de compra y cada factura corresponde a una sola.</p>
-      <div id="facturarOcLista" style="display:grid;gap:var(--space-2);margin:var(--space-3) 0"></div>
-      <div class="page-head-actions">
-        <button type="button" class="b b-ghost" data-cerrar="facturarOcModal">Cancelar</button>
       </div>
     </div>
   </dialog>

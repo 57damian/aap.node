@@ -422,13 +422,23 @@ function pintarVistaFactura(facturas) {
     </tr>`;
 }
 
+/* Las OC que cubre una factura (puede ser más de una), como links a cada OC. */
+function linksOc(o, { corto = false } = {}) {
+  const ordenes = (o.ordenes && o.ordenes.length) ? o.ordenes
+    : (o.orden_compra_id ? [{ id: o.orden_compra_id, numero_oc: o.numero_oc }] : []);
+  const visibles = corto ? ordenes.slice(0, 2) : ordenes;
+  const links = visibles.map(oc =>
+    `<a href="oc_detalle.html?id=${oc.id}&tab=facturas" class="ec-link" title="Abrir la orden de compra">OC ${esc(oc.numero_oc)}</a>`);
+  if (corto && ordenes.length > 2) links.push(`+${ordenes.length - 2}`);
+  return links.join(', ');
+}
+
 /* OC y remitos de una factura, en una línea (para la fila). */
 function origenCorto(f) {
   const o = f.origen || {};
   const partes = [];
-  if (o.orden_compra_id) {
-    partes.push(`<a href="oc_detalle.html?id=${o.orden_compra_id}&tab=facturas" class="ec-link" title="Abrir la orden de compra">OC ${esc(o.numero_oc)}</a>`);
-  }
+  const ocs = linksOc(o, { corto: true });
+  if (ocs) partes.push(ocs);
   const rem = o.remitos || [];
   if (rem.length) {
     partes.push(esc(rem.slice(0, 2).map(r => r.numero_remito).join(', ')) +
@@ -474,12 +484,11 @@ function filasFacturas(facturas, conCliente) {
 function origenHtml(f) {
   const o = f.origen || {};
   const rem = o.remitos || [];
-  if (!o.orden_compra_id && !rem.length) {
+  const ocs = linksOc(o);
+  if (!ocs && !rem.length) {
     return '<div class="fx-bloque"><div class="fx-titulo">Origen</div><span class="muted">Factura cargada manualmente, sin OC ni remitos asociados.</span></div>';
   }
-  const oc = o.orden_compra_id
-    ? `<a href="oc_detalle.html?id=${o.orden_compra_id}&tab=facturas" class="ec-link" title="Abrir la orden de compra">OC ${esc(o.numero_oc)}</a>`
-    : '<span class="muted">sin OC</span>';
+  const oc = ocs || '<span class="muted">sin OC</span>';
   const remitos = rem.length
     ? rem.map(r => `<a href="#" class="ec-link" data-pdf="api/ventas/${r.id}/pdf" title="Ver el PDF del remito">Remito ${esc(r.numero_remito)}</a>` +
         (r.fecha ? ` <span class="muted">(${Shell.fecha(r.fecha)})</span>` : '')).join(', ')

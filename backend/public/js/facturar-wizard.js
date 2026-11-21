@@ -3,10 +3,13 @@
  * Antes vivía dentro de oc_detalle.js/html. Se sacó a un módulo para usarlo
  * también desde la ficha del cliente (cliente.html) sin duplicar lógica.
  *
- *   FacturarWizard.abrir({ ocId, onListo })
+ *   FacturarWizard.abrir({ clienteId | ocId, ventaIds, onListo })
  *
- * Una factura agrupa uno o varios remitos de la MISMA OC, de cualquier
- * fecha; un renglón por modelo. El precio puede haber cambiado desde la
+ * Una factura agrupa uno o varios remitos del MISMO cliente, de cualquier
+ * fecha y de cualquier OC (la OC y el remito son un control interno; lo que
+ * vale es la factura real); un renglón por modelo. Se listan todos los
+ * remitos pendientes del cliente: `ventaIds` deja tildados esos remitos (si
+ * no viene, los de `ocId`, o todos). El precio puede haber cambiado desde la
  * entrega: se edita la cotización del dólar y el precio USD de cada modelo;
  * el precio en pesos se calcula solo, pero también se puede escribir a mano.
  * Pasos: 1 Remitos → 2 Precios → 3 Datos de la factura → 4 Revisar y
@@ -27,7 +30,6 @@
   // Lo que devolvió /pendiente-facturar: remitos con items sin facturar,
   // precios de lista, dólar e IVA vigentes.
   let pendiente = null;
-  let ocId = null;
   let onListo = null;
   // Renglones de la factura, uno por modelo: { ficha_id, modelo, cantidad,
   // preciosEntrega (Map usd -> Set de remito), usd, pesos, pesosManual }.
@@ -56,7 +58,7 @@
       <div class="wizard-panel" data-paso="1">
         <div class="table-wrap">
           <table class="t">
-            <thead><tr><th>Incluir</th><th>Remito</th><th>Fecha</th><th>Ítems</th></tr></thead>
+            <thead><tr><th>Incluir</th><th>Remito</th><th>OC</th><th>Fecha</th><th>Ítems</th></tr></thead>
             <tbody id="facturarRemitos"></tbody>
           </table>
         </div>
@@ -154,17 +156,40 @@
 
   /* ---------------------- utilidades ---------------------- */
 
+  const nombreRemito = (r) => r.remito_numero || `venta #${r.venta_id}`;
+  const escapar = (v) => String(v ?? '').replace(/[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // Cada fila del paso 1 es un remito; un remito que cubre varias OC son varios
+  // tramos (una fila de ventas por OC) con el mismo N°, y se tilda junto.
+  function gruposDeRemitos() {
+    const grupos = new Map();
+    for (const r of pendiente?.remitos || []) {
+      const clave = r.remito_numero ? `n|${r.remito_numero}` : `v|${r.venta_id}`;
+      if (!grupos.has(clave)) grupos.set(clave, []);
+      grupos.get(clave).push(r);
+    }
+    return [...grupos.values()];
+  }
+
+  // Tramos (ventas) de los remitos tildados.
   function remitosSeleccionados() {
-    const ids = [...document.querySelectorAll('.facturar-remito:checked')]
-      .map((c) => Number(c.dataset.ventaId));
-    return (pendiente?.remitos || []).filter((r) => ids.includes(r.venta_id));
+    const ids = new Set([...document.querySelectorAll('.facturar-remito:checked')]
+      .flatMap((c) => c.dataset.ventaIds.split(',').map(Number)));
+    return (pendiente?.remitos || []).filter((r) => ids.has(r.venta_id));
   }
 
   function textoRemitosSeleccionados() {
     const remitos = remitosSeleccionados();
     return remitos.length
-      ? remitos.map((r) => r.remito_numero || `venta #${r.venta_id}`).join(' · ')
+      ? [...new Set(remitos.map(nombreRemito))].join(' · ')
       : '—';
+  }
+
+  // "Remitos incluidos: R-000001 · 135 — OC: 0001-00002222 · 0001000002"
+  function resumenSeleccion() {
+    const ocs = [...new Set(remitosSeleccionados().map((r) => r.numero_oc).filter(Boolean))];
+    return `Remitos incluidos: ${textoRemitosSeleccionados()}${ocs.length ? ` — OC: ${ocs.join(' · ')}` : ''}`;
   }
 
   function cotizacion() {
@@ -205,37 +230,54 @@
 
   async function abrir(opciones) {
     montar();
-    ocId = opciones.ocId;
     onListo = opciones.onListo || null;
+    const ocFoco = Number(opciones.ocId) || null;
 
     try {
-      pendiente = await apiFetch(`/api/reportes-oc/orden-compra/${ocId}/pendiente-facturar`);
+      const consulta = opciones.clienteId
+        ? `cliente_id=${encodeURIComponent(opciones.clienteId)}`
+        : `orden_compra_id=${encodeURIComponent(opciones.ocId)}`;
+      pendiente = await apiFetch(`/api/reportes-oc/pendiente-facturar?${consulta}`);
     } catch (err) {
       Shell.error(err, 'No se pudo cargar lo pendiente de facturar');
       return;
     }
 
     const remitos = pendiente.remitos || [];
-    if (!remitos.length) {
-      Shell.toast('warn', 'No hay remitos pendientes de facturar en esta orden.');
+    if (!remitos.length || (ocFoco && !opciones.ventaIds && !remitos.some((r) => r.orden_compra_id === ocFoco))) {
+      Shell.toast('warn', ocFoco
+        ? 'No hay remitos pendientes de facturar en esta orden.'
+        : 'No hay remitos pendientes de facturar.');
       return;
     }
 
     renglones = new Map();
-    $('facturarTitulo').textContent = `Facturar remitos · OC ${pendiente.numero_oc || ''}`.trim();
+    $('facturarTitulo').textContent = `Facturar remitos · ${pendiente.cliente || ''}`.trim();
 
-    $('facturarRemitos').innerHTML = remitos.map((r) => `
+    // Tildados de entrada: los que se pidieron; si no, los de la OC; si no, todos.
+    const inicial = new Set((opciones.ventaIds || []).map(Number));
+    const tildado = (tramos) => (inicial.size
+      ? tramos.some((t) => inicial.has(t.venta_id))
+      : (ocFoco ? tramos.some((t) => t.orden_compra_id === ocFoco) : true));
+
+    $('facturarRemitos').innerHTML = gruposDeRemitos().map((tramos) => {
+      const porModelo = new Map();
+      tramos.forEach((t) => t.items.forEach((i) =>
+        porModelo.set(i.modelo, (porModelo.get(i.modelo) || 0) + Number(i.cantidad))));
+      const ocs = [...new Set(tramos.map((t) => t.numero_oc).filter(Boolean))];
+      return `
       <tr>
         <td data-label="Incluir">
           <label class="check">
-            <input type="checkbox" class="facturar-remito" data-venta-id="${r.venta_id}" checked><span></span>
+            <input type="checkbox" class="facturar-remito" data-venta-ids="${tramos.map((t) => t.venta_id).join(',')}"${tildado(tramos) ? ' checked' : ''}><span></span>
           </label>
         </td>
-        <td><strong>${r.remito_numero || `venta #${r.venta_id}`}</strong></td>
-        <td data-label="Fecha">${Shell.fecha(r.remito_fecha)}</td>
-        <td data-label="Ítems">${r.items.map((i) => `${i.cantidad} x ${i.modelo}`).join('<br>')}</td>
-      </tr>
-    `).join('');
+        <td><strong>${escapar(nombreRemito(tramos[0]))}</strong></td>
+        <td data-label="OC">${ocs.length ? ocs.map(escapar).join('<br>') : '<span class="muted">—</span>'}</td>
+        <td data-label="Fecha">${Shell.fecha(tramos[0].remito_fecha)}</td>
+        <td data-label="Ítems">${[...porModelo].map(([modelo, cant]) => `${cant} x ${escapar(modelo)}`).join('<br>')}</td>
+      </tr>`;
+    }).join('');
 
     const dolar = Number(pendiente.dolar_actual) || 0;
     $('facturar_cotizacion').value = dolar ? dolar.toFixed(2) : '';
@@ -261,10 +303,10 @@
     renglones = new Map();
     const cot = cotizacion();
 
-    $('facturarRemitosResumen').textContent = `Remitos incluidos: ${textoRemitosSeleccionados()}`;
+    $('facturarRemitosResumen').textContent = resumenSeleccion();
 
     remitosSeleccionados().forEach((remito) => {
-      const remitoNombre = remito.remito_numero || `venta #${remito.venta_id}`;
+      const remitoNombre = nombreRemito(remito);
       remito.items.forEach((item) => {
         const key = String(item.ficha_id);
         let renglon = renglones.get(key);
@@ -453,7 +495,7 @@
   }
 
   function pintarRevision() {
-    $('facturarRevisionRemitos').textContent = `Remitos incluidos: ${textoRemitosSeleccionados()}`;
+    $('facturarRevisionRemitos').textContent = resumenSeleccion();
 
     $('facturarRevisionRenglones').innerHTML = [...renglones.values()].map((r) => {
       const m = montosRenglon(r);
@@ -559,7 +601,7 @@
         })
       });
 
-      Shell.toast('ok', `Factura ${factura.numero_factura} generada por ${remitos.length} remito(s)`);
+      Shell.toast('ok', `Factura ${factura.numero_factura} generada por ${new Set(remitos.map(nombreRemito)).size} remito(s)`);
       $('facturarModal').close();
       if (onListo) await onListo(factura);
     } catch (err) {

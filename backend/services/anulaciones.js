@@ -13,6 +13,7 @@
 
 const { leerConsumos, devolverConsumo } = require('./receta');
 const { idsDelRemito } = require('./remitos');
+const { FACTURA_OC_PARTE } = require('./factura-oc');
 
 const MOTIVO_MIN = 10;
 
@@ -382,11 +383,13 @@ async function vistaPreviaAnulacionOC(client, ocId, { bloquear = false } = {}) {
     ORDER BY v.id
   `, [ocId])).rows;
 
+  // Facturas vigentes que cubren esta OC (una factura puede juntar varias OC).
   const facturas = (await client.query(`
-    SELECT id, numero_factura
-    FROM facturas
-    WHERE orden_compra_id = $1 AND COALESCE(upper(estado), 'EMITIDA') <> 'ANULADA'
-    ORDER BY numero_factura
+    SELECT DISTINCT fa.id, fa.numero_factura
+    FROM facturas fa
+    JOIN (${FACTURA_OC_PARTE}) fop ON fop.factura_id = fa.id
+    WHERE fop.oc_id = $1 AND COALESCE(upper(fa.estado), 'EMITIDA') <> 'ANULADA'
+    ORDER BY fa.numero_factura
   `, [ocId])).rows;
 
   const bloqueos = [];

@@ -252,9 +252,11 @@ async function estadoCuenta(pool, clienteId, { desde, hasta, soloPendientes } = 
 }
 
 /**
- * De dónde sale cada factura: la OC del cliente, los remitos que se
- * facturaron juntos y lo que dice cada renglón (modelo × cantidad).
- * Devuelve Map(factura_id → { orden_compra_id, numero_oc, remitos[], items[] }).
+ * Origen de cada factura: las OC del cliente que cubre (puede ser más de una:
+ * la OC y el remito son un control interno), los remitos que se facturaron
+ * juntos y lo que dice cada renglón (modelo × cantidad).
+ * Devuelve Map(factura_id → { ordenes[{id, numero_oc}], orden_compra_id, numero_oc,
+ * remitos[], items[] }); orden_compra_id solo viene si es una sola OC.
  * Un remito con varios tramos (una fila de `ventas` por OC) sale una sola
  * vez, con el id del tramo de esa factura para abrir su PDF.
  */
@@ -264,32 +266,31 @@ async function origenFacturas(pool, ids) {
 
   const { rows } = await pool.query(`
     SELECT fvi.factura_id,
-           f.orden_compra_id, oc.numero_oc,
+           v.orden_compra_id, oc.numero_oc,
            v.id AS venta_id, v.remito_numero, COALESCE(v.remito_fecha, v.fecha) AS remito_fecha,
            COALESCE(ft.modelo, '—') AS modelo,
            SUM(fvi.cantidad) AS cantidad
     FROM factura_venta_items fvi
-    JOIN facturas f           ON f.id = fvi.factura_id
     JOIN venta_items vi       ON vi.id = fvi.venta_item_id
     JOIN ventas v             ON v.id = vi.venta_id
-    LEFT JOIN ordenes_compra oc ON oc.id = f.orden_compra_id
+    LEFT JOIN ordenes_compra oc ON oc.id = v.orden_compra_id
     LEFT JOIN ficha_transformador ft ON ft.id = fvi.ficha_id
     WHERE fvi.factura_id = ANY($1::int[])
-    GROUP BY fvi.factura_id, f.orden_compra_id, oc.numero_oc,
+    GROUP BY fvi.factura_id, v.orden_compra_id, oc.numero_oc,
              v.id, v.remito_numero, v.remito_fecha, v.fecha, ft.modelo
     ORDER BY fvi.factura_id, COALESCE(v.remito_fecha, v.fecha), v.id, ft.modelo
   `, [ids]);
 
   rows.forEach(r => {
     if (!mapa.has(r.factura_id)) {
-      mapa.set(r.factura_id, {
-        orden_compra_id: r.orden_compra_id,
-        numero_oc: r.numero_oc,
-        remitos: [],
-        items: []
-      });
+      mapa.set(r.factura_id, { ordenes: [], orden_compra_id: null, numero_oc: null, remitos: [], items: [] });
     }
     const o = mapa.get(r.factura_id);
+    if (r.orden_compra_id && !o.ordenes.some(x => x.id === r.orden_compra_id)) {
+      o.ordenes.push({ id: r.orden_compra_id, numero_oc: r.numero_oc });
+      o.orden_compra_id = o.ordenes.length === 1 ? r.orden_compra_id : null;
+      o.numero_oc = o.ordenes.map(x => x.numero_oc).join(', ');
+    }
     const clave = r.remito_numero || `venta #${r.venta_id}`;
     if (!o.remitos.some(x => x.numero_remito === clave)) {
       o.remitos.push({ id: r.venta_id, numero_remito: clave, fecha: r.remito_fecha });

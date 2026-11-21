@@ -261,15 +261,10 @@ function verVenta(id) {
 
 /* =====================
    FACTURAR UN REMITO
-   Una factura es de una sola OC (el wizard junta los remitos pendientes de
-   esa OC y deja destildar los que no van). Un remito que cubre varias OC se
-   factura una por una.
+   La factura es lo que vale: puede juntar remitos del mismo cliente de
+   cualquier OC. El asistente lista todos los remitos pendientes del cliente y
+   deja tildado el que se eligió (con todos sus tramos, aunque cubra varias OC).
 ===================== */
-function abrirWizardFactura(ocId) {
-  document.getElementById('facturarOcModal').close();
-  FacturarWizard.abrir({ ocId, onListo: cargarVentas });
-}
-
 function facturarRemito(ventaId) {
   const venta = ventasCache.find(v => v.id === ventaId);
   if (!venta) return;
@@ -278,18 +273,11 @@ function facturarRemito(ventaId) {
     Shell.toast('warn', 'Este remito ya está facturado.');
     return;
   }
-  if (pendientes.length === 1) {
-    abrirWizardFactura(pendientes[0].orden_compra_id);
-    return;
-  }
-  const lista = document.getElementById('facturarOcLista');
-  lista.innerHTML = pendientes.map(t => `
-    <button type="button" class="b b-ghost" data-oc="${Number(t.orden_compra_id)}">
-      Facturar OC ${esc(t.numero_oc || t.orden_compra_id)}
-    </button>`).join('');
-  lista.querySelectorAll('[data-oc]').forEach(b =>
-    b.addEventListener('click', () => abrirWizardFactura(Number(b.dataset.oc))));
-  document.getElementById('facturarOcModal').showModal();
+  FacturarWizard.abrir({
+    clienteId: venta.cliente_id,
+    ventaIds: pendientes.map(t => t.id),
+    onListo: cargarVentas
+  });
 }
 
 /* =====================
@@ -307,17 +295,26 @@ function hoyISO() {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-// El mismo reparto que hace el servidor, solo para mostrarlo: la OC
-// prioritaria primero y después la más vieja (ya vienen ordenadas por fecha).
+// OC elegida para un modelo en el selector "Imputar a la OC" (null = automático:
+// la más vieja primero). Los modelos con una sola OC no tienen selector.
+function ocElegida(fichaId) {
+  const sel = document.querySelector(`.ent-oc-prio[data-ficha-id="${fichaId}"]`);
+  return sel ? (Number(sel.value) || null) : null;
+}
+
+// El reparto de un modelo entre sus OC: la OC elegida primero y después la más
+// vieja (ya vienen ordenadas por fecha). Es lo que se muestra y lo que se manda
+// al servidor, así que lo que se ve es lo que se guarda.
 function repartoPreview(modelo, cantidad) {
+  const prio = ocElegida(modelo.ficha_id);
   const orden = [...modelo.ordenes].sort((a, b) =>
-    (b.oc_id === entOcPrioritaria) - (a.oc_id === entOcPrioritaria));
+    (b.oc_id === prio) - (a.oc_id === prio));
   const partes = [];
   let resto = cantidad;
   for (const oc of orden) {
     if (resto <= 0) break;
     const toma = Math.min(resto, oc.pendiente);
-    partes.push({ numero_oc: oc.numero_oc, cantidad: toma });
+    partes.push({ oc_id: oc.oc_id, numero_oc: oc.numero_oc, cantidad: toma });
     resto -= toma;
   }
   return partes;
@@ -354,11 +351,19 @@ function pintarItemsEntrega() {
           ${sinStock ? `<small class="muted">Sin stock —
             <a href="produccion.html?ficha_id=${Number(m.ficha_id)}" target="_blank" rel="noopener">registrar producción</a></small>` : ''}
         </td>
-        <td class="muted solo-escritorio" data-label="Se imputa a"><small class="ent-reparto" data-ficha-id="${Number(m.ficha_id)}">—</small></td>
+        <td data-label="Imputar a la OC">
+          ${m.ordenes.length > 1 ? `
+          <select class="select ent-oc-prio" data-ficha-id="${Number(m.ficha_id)}" aria-label="Imputar primero a la OC">
+            <option value="">Automático (la OC más vieja primero)</option>
+            ${m.ordenes.map(o => `<option value="${Number(o.oc_id)}"${o.oc_id === entOcPrioritaria ? ' selected' : ''}>OC ${esc(o.numero_oc)} · ${num(o.pendiente)} pendientes</option>`).join('')}
+          </select>` : ''}
+          <small class="muted ent-reparto" data-ficha-id="${Number(m.ficha_id)}">—</small>
+        </td>
       </tr>`;
   }).join('');
 
   tbody.querySelectorAll('.ent-cantidad').forEach((i) => i.addEventListener('input', actualizarEntrega));
+  tbody.querySelectorAll('.ent-oc-prio').forEach((s) => s.addEventListener('change', actualizarEntrega));
   actualizarEntrega();
 }
 
@@ -470,7 +475,12 @@ async function registrarEntrega(e) {
         remito_fecha: fecha,
         tipo_cambio: cotizacion > 0 ? cotizacion : null,
         remito_observaciones: document.getElementById('entObservaciones').value.trim() || null,
-        lineas: lineas.map(l => ({ ficha_id: l.modelo.ficha_id, cantidad: l.cantidad }))
+        // Se manda el reparto que se ve en pantalla; el servidor lo valida contra el pendiente de cada OC.
+        lineas: lineas.map(l => ({
+          ficha_id: l.modelo.ficha_id,
+          cantidad: l.cantidad,
+          reparto: repartoPreview(l.modelo, l.cantidad).map(p => ({ orden_compra_id: p.oc_id, cantidad: p.cantidad }))
+        }))
       })
     });
 
@@ -526,11 +536,12 @@ function inicializarEntrega() {
   document.getElementById('btnEntregaFacturar').addEventListener('click', () => {
     if (!ultimaEntrega) return;
     document.getElementById('entregaListaModal').close();
-    const ocs = ultimaEntrega.ventas.map(v => v.orden_compra_id);
-    if (ocs.length === 1) { abrirWizardFactura(ocs[0]); return; }
-    // Varias OC: la lista de remitos ya sabe cuáles tienen pendiente.
-    const venta = ventasCache.find(v => v.ids?.includes(ultimaEntrega.ventas[0].id));
-    if (venta) facturarRemito(venta.id);
+    // El remito recién cargado queda tildado (aunque cubra varias OC).
+    FacturarWizard.abrir({
+      clienteId: ultimaEntrega.cliente_id,
+      ventaIds: ultimaEntrega.ventas.map(v => v.id),
+      onListo: cargarVentas
+    });
   });
 
   document.getElementById('filtroSinFacturar').addEventListener('change', () => { pintarVentas(); pintarKpis(); });
